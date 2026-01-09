@@ -80,26 +80,26 @@ func (c *Client) CreateTask(ctx context.Context, queue string, meta schema.TaskM
 }
 
 // ReleaseTask releases a task (PATCH /task/{id}).
-// If err is non-nil, marks the task as failed with err as the error payload.
-// If err is nil, marks the task as completed successfully.
-func (c *Client) ReleaseTask(ctx context.Context, id uint64, err any) (*schema.TaskWithStatus, error) {
+// If result is non-nil, marks the task as failed with result as the error payload.
+// If result is nil, marks the task as completed successfully.
+func (c *Client) ReleaseTask(ctx context.Context, id uint64, result any) (*schema.TaskWithStatus, error) {
 	payload := struct {
 		Result any  `json:"result,omitempty"`
 		Fail   bool `json:"fail,omitempty"`
 	}{
-		Result: err,
-		Fail:   err != nil,
+		Result: result,
+		Fail:   result != nil,
 	}
 
-	req, reqErr := client.NewJSONRequestEx(http.MethodPatch, payload, "")
-	if reqErr != nil {
-		return nil, reqErr
+	req, err := client.NewJSONRequestEx(http.MethodPatch, payload, "")
+	if err != nil {
+		return nil, err
 	}
 
 	// Perform request
 	var response schema.TaskWithStatus
-	if reqErr := c.DoWithContext(ctx, req, &response, client.OptPath("task", fmt.Sprint(id))); reqErr != nil {
-		return nil, reqErr
+	if err := c.DoWithContext(ctx, req, &response, client.OptPath("task", fmt.Sprint(id))); err != nil {
+		return nil, err
 	}
 
 	// Return the responses

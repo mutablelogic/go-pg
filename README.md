@@ -6,8 +6,10 @@ Postgresql Support for Go, built on top of [pgx](https://github.com/jackc/pgx). 
 * Support for mapping go structures to SQL tables, and vice versa;
 * Easy semantics for Insert, Delete, Update, Get and List operations;
 * Bulk insert operations and transactions;
+* Support for queries stored in external files with named parameters to improve separation of concerns;
 * Support for tracing and observability;
 * [PostgreSQL Manager](pkg/manager/README.md) for server administration with REST API, an optional frontend and prometheus metrics;
+* [Task Queue](pkg/queue/README.md) for task queue (and interval task) processing using PostgreSQL as a backend;
 * [Testing utilities](pkg/test/README.md) for integration testing with testcontainers.
 
 Documentation: <https://pkg.go.dev/github.com/mutablelogic/go-pg>

@@ -24,6 +24,11 @@ func (conn *bulkconn) With(params ...any) Conn {
 	return &bulkconn{conn.conn, conn.batch, conn.bind.Copy(params...)}
 }
 
+// Return a new connection with bound queries
+func (conn *bulkconn) WithQueries(queries ...*Queries) Conn {
+	return &bulkconn{conn.conn, conn.batch, conn.bind.withQueries(queries...)}
+}
+
 // Return nil for remote bulk connections
 func (conn *bulkconn) Remote(database string) Conn {
 	return nil

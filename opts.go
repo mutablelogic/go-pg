@@ -126,6 +126,19 @@ func WithDatabase(name string) Opt {
 	}
 }
 
+// WithSchemaSearchPath sets the schema search path for the connection.
+// If no schemas are provided, the search_path parameter is removed.
+func WithSchemaSearchPath(schemas ...string) Opt {
+	return func(o *opt) error {
+		if len(schemas) > 0 {
+			o.Set("search_path", strings.Join(schemas, ","))
+		} else {
+			o.Del("search_path")
+		}
+		return nil
+	}
+}
+
 // WithAddr sets the address (host) or (host:port) for the connection.
 func WithAddr(addr string) Opt {
 	return func(o *opt) error {

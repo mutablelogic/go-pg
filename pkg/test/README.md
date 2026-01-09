@@ -84,12 +84,24 @@ defer pool.Close()
 defer container.Close(ctx)
 ```
 
+With optional schema search path:
+
+```go
+container, pool, err := pgtest.NewPgxContainer(ctx, "mytest", verbose, traceFn, "myschema", "public")
+if err != nil {
+  t.Fatal(err)
+}
+defer pool.Close()
+defer container.Close(ctx)
+```
+
 Parameters:
 
 - `ctx` - Context with timeout
 - `name` - Container name prefix (timestamp is appended)
 - `verbose` - Enable verbose SQL logging
 - `traceFn` - Optional trace function for SQL queries
+- `searchPath` - Optional variadic parameter to set schema search path
 
 ## Verbose Mode
 

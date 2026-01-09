@@ -70,7 +70,7 @@ func NewPool(ctx context.Context, opts ...Opt) (PoolConn, error) {
 		o.TraceFn(ctx, "CONNECT", parts, nil)
 	}
 
-	// Return the connection pool
+	// Create the connection pool
 	p, err := pgxpool.NewWithConfig(ctx, poolconfig)
 	if err != nil {
 		return nil, err
@@ -121,6 +121,11 @@ func (p *poolconn) Reset() {
 // Return a new connection with new bound parameters
 func (p *poolconn) With(params ...any) Conn {
 	return &poolconn{p.conn, p.bind.Copy(params...)}
+}
+
+// Return a new connection with new bound parameters
+func (p *poolconn) WithQueries(queries ...*Queries) Conn {
+	return &poolconn{p.conn, p.bind.withQueries(queries...)}
 }
 
 // Return a new connection to a remote database

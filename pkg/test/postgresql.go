@@ -13,15 +13,15 @@ import (
 
 const (
 	pgxContainer = "ghcr.io/mutablelogic/docker-postgres:17-bookworm"
-	//pgxContainer = "postgis/postgis:16-master" // Postgresql container
-	pgxPort = "5432/tcp"
+	pgxPort      = "5432/tcp"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
 // NewPgxContainer creates a new PostgreSQL container and connection pool.
-func NewPgxContainer(ctx context.Context, name string, verbose bool, tracer pg.TraceFn) (*Container, pg.PoolConn, error) {
+// Optional searchPath parameter sets the schema search path for the connection.
+func NewPgxContainer(ctx context.Context, name string, verbose bool, tracer pg.TraceFn, searchPath ...string) (*Container, pg.PoolConn, error) {
 	// Create a new container with postgresql package
 	container, err := NewContainer(ctx, name, pgxContainer,
 		OptEnv("POSTGRES_REPLICATION_PASSWORD", "password"),
@@ -39,12 +39,13 @@ func NewPgxContainer(ctx context.Context, name string, verbose bool, tracer pg.T
 		return nil, nil, err
 	}
 
-	// Create a connection pool
+	// Create a connection pool with optional search path
 	pool, err := pg.NewPool(ctx,
 		pg.WithCredentials("postgres", "password"),
 		pg.WithDatabase(name),
 		pg.WithHostPort(host, port),
 		pg.WithTrace(tracer),
+		pg.WithSchemaSearchPath(searchPath...),
 	)
 	if err != nil {
 		return nil, nil, errors.Join(err, container.Close(ctx))

@@ -3,10 +3,12 @@ package queue_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	queue "github.com/mutablelogic/go-pg/pkg/queue"
+	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	assert "github.com/stretchr/testify/assert"
 )
@@ -57,6 +59,48 @@ func Test_Manager_New(t *testing.T) {
 		// Both managers should be valid but independent
 		assert.NotEqual(mgr1, mgr2)
 	})
+
+	t.Run("ReservedNamespace", func(t *testing.T) {
+		_, err := queue.New(context.TODO(), conn, "pgqueue")
+		assert.Error(err)
+		assert.ErrorIs(err, pg.ErrBadParameter)
+		assert.Contains(err.Error(), "reserved for system use")
+	})
+}
+
+func Test_Manager_Run(t *testing.T) {
+	assert := assert.New(t)
+	conn := conn.Begin(t)
+	defer conn.Close()
+	ctx := context.TODO()
+
+	mgr, err := queue.New(ctx, conn, "test_run")
+	assert.NoError(err)
+	assert.NotNil(mgr)
+
+	// Create a test queue
+	_, err = mgr.RegisterQueue(ctx, schema.QueueMeta{
+		Queue: "test-cleanup-queue",
+	})
+	assert.NoError(err)
+
+	// Start Run in background with a short-lived context
+	runCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- mgr.Run(runCtx)
+	}()
+
+	// Wait for context to timeout
+	select {
+	case err := <-errCh:
+		// Should return nil when context is cancelled
+		assert.NoError(err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not exit after context cancellation")
+	}
 }
 
 func Test_Manager_WithSchemaSearchPath(t *testing.T) {

@@ -9,11 +9,13 @@ import (
 // GLOBALS
 
 const (
-	SchemaName      = "pgqueue"
-	QueueListLimit  = 100
-	TickerListLimit = 100
-	TickerPeriod    = 15 * time.Second
-	TaskPeriod      = 15 * time.Second
+	SchemaName         = "pgqueue"
+	QueueListLimit     = 100
+	TickerListLimit    = 100
+	TickerPeriod       = 15 * time.Second
+	TaskPeriod         = 15 * time.Second
+	CleanupTickerName  = "cleanup"
+	CleanupInterval    = 1 * time.Hour
 )
 
 ////////////////////////////////////////////////////////////////////////////////

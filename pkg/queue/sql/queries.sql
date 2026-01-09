@@ -47,10 +47,13 @@ WHERE
 SELECT * FROM queue_clean(@ns, @id)
 
 -- pgqueue.stats
-SELECT qs."queue", qs."status", qs."count" 
-FROM queue_status qs 
-JOIN queue q ON qs."queue" = q."queue" 
+SELECT qs."queue", qs."status", qs."count"
+FROM queue_status qs
+JOIN queue q ON qs."queue" = q."queue"
 WHERE q."ns" = @ns ${where}
+
+-- pgqueue.namespace_list
+SELECT DISTINCT "ns" FROM queue ORDER BY "ns"
 
 -- pgqueue.retain
 -- Returns the id of the task which has been retained

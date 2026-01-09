@@ -20,6 +20,8 @@ func RegisterBackendHandlers(router *http.ServeMux, prefix string, manager *queu
 	RegisterQueueHandlers(router, prefix, manager)
 	RegisterTaskHandlers(router, prefix, manager)
 	RegisterTickerHandlers(router, prefix, manager)
+	RegisterNamespaceHandlers(router, prefix, manager)
+	RegisterMetricsHandler(router, prefix, manager)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

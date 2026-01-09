@@ -177,6 +177,17 @@ func WithSSLMode(mode string) Opt {
 	}
 }
 
+// WithApplicationName sets the application name for the connection.
+// This appears in pg_stat_activity and helps identify connections.
+func WithApplicationName(name string) Opt {
+	return func(o *opt) error {
+		if name != "" {
+			o.Set("application_name", name)
+		}
+		return nil
+	}
+}
+
 // WithTrace sets the trace function for the connection pool.
 func WithTrace(fn TraceFn) Opt {
 	return func(o *opt) error {

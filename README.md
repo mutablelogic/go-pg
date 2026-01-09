@@ -104,25 +104,25 @@ func main() {
 
 The options that can be passed to `pg.NewPool` are:
 
-* `WithURL(string)` - Set connection parameters from a PostgreSQL URL in the format
+* `pg.WithURL(string)` - Set connection parameters from a PostgreSQL URL in the format
   `postgres://user:password@host:port/database?sslmode=disable`. Query parameters are
   passed as additional connection options.
-* `WithCredentials(string,string)` - Set connection pool username and password.
+* `pg.WithCredentials(string, string)` - Set connection pool username and password.
   If the database name is not set, then the username will be used as the default database name.
-* `WithDatabase(string)` - Set the database name for the connection. If the user name is not set,
+* `pg.WithDatabase(string)` - Set the database name for the connection. If the user name is not set,
   then the database name will be used as the user name.
-* `WithAddr(string)` - Set the address (host) or (host:port) for the connection
-* `WithHostPort(string, string)` - Set the hostname and port for the
-  connection. If the port is not set, then the default port 5432 will be used.
-* `WithSSLMode( string)` - Set the SSL connection mode. Valid values are
-  "disable", "allow", "prefer", "require",  "verify-ca", "verify-full". See
+* `pg.WithAddr(string)` - Set the address (host) or (host:port) for the connection.
+* `pg.WithHostPort(string, string)` - Set the hostname and port for the connection. If the port
+  is not set, then the default port 5432 will be used.
+* `pg.WithSSLMode(string)` - Set the SSL connection mode. Valid values are "disable", "allow",
+  "prefer", "require", "verify-ca", "verify-full". See
   <https://www.postgresql.org/docs/current/libpq-ssl.html> for more information.
-* `pg.WithTrace(pg.TraceFn)` -  Set the trace function for the connection pool.
-  The signature of the trace unction is
-  `func(ctx context.Context, sql string, args any, err error)`
-  and is called for every query executed by the connection pool.
-* `pg.WithBind(string,any)` - Set the bind variable to a value the
-  the lifetime of the connection.
+* `pg.WithApplicationName(string)` - Set the application name for the connection.
+  This appears in `pg_stat_activity` and helps identify connections.
+* `pg.WithSchemaSearchPath(string...)` - Set the schema search path for the connection.
+* `pg.WithTrace(pg.TraceFn)` - Set the trace function for the connection pool.
+  The signature is `func(ctx context.Context, sql string, args any, err error)`.
+* `pg.WithBind(string, any)` - Set a bind variable for the lifetime of the connection.
 
 ## Executing Statements
 
@@ -236,13 +236,13 @@ func (obj *MyList) Scan(row pg.Row) error {
   if err := row.Scan(&name); err != nil {
     return err
   }
-  obj = append(obj, row.String())
+  obj.Names = append(obj.Names, name)
   return nil
 }
 
 // ListReader - optional interface to scan count of all rows
-func (obj MyList) Scan(row pg.Row) error {
- return row.Scan(&obj.Count)
+func (obj *MyList) ScanCount(row pg.Row) error {
+  return row.Scan(&obj.Count)
 }
 
 // Selector - select rows from database. Use bind variables
@@ -253,7 +253,7 @@ func (obj MyListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
   case pg.List:
     return `SELECT name FROM mytable`, nil
   default:
-    return "", fmt.Errorf("Unsupported operation: ",op)
+    return "", fmt.Errorf("unsupported operation: %v", op)
   }
 }
 ```
@@ -490,7 +490,5 @@ The `pkg/test` package provides utilities for integration testing with PostgreSQ
 See [pkg/test/README.md](pkg/test/README.md) for documentation.
 
 ## PostgreSQL Manager
-
-The `pkg/manager` package provides a comprehensive API for managing PostgreSQL server resources including roles, databases, schemas, tables, connections, replication slots, and more. It includes a REST API with Prometheus metrics.
 
 See [pkg/manager/README.md](pkg/manager/README.md) for documentation.

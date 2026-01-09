@@ -5,6 +5,10 @@ This package implements RESTful HTTP handlers for managing queues, tasks, and ti
 It follows the same pattern as pkg/manager/httphandler, providing a consistent API
 interface for queue operations.
 
+# Namespace Endpoints
+
+	GET    /namespace       - List all namespaces
+
 # Queue Endpoints
 
 	GET    /queue           - List all queues
@@ -25,8 +29,13 @@ interface for queue operations.
 	GET    /ticker          - List all tickers
 	POST   /ticker          - Create/register a new ticker
 	GET    /ticker/{name}   - Get a specific ticker
+	GET    /ticker/next     - SSE stream of matured tickers
 	PATCH  /ticker/{name}   - Update a ticker
 	DELETE /ticker/{name}   - Delete a ticker
+
+# Metrics Endpoint
+
+	GET    /metrics         - Prometheus metrics
 
 # Usage
 
@@ -39,7 +48,7 @@ To register all handlers:
 	)
 
 	func main() {
-		manager := queue.NewManager(conn, "myapp")
+		manager, _ := queue.New(ctx, conn, "myapp")
 		router := http.NewServeMux()
 
 		httphandler.RegisterBackendHandlers(router, "/api", manager)
@@ -49,8 +58,10 @@ To register all handlers:
 
 Or register individual handler groups:
 
+	httphandler.RegisterNamespaceHandlers(router, "/api", manager)
 	httphandler.RegisterQueueHandlers(router, "/api", manager)
 	httphandler.RegisterTaskHandlers(router, "/api", manager)
 	httphandler.RegisterTickerHandlers(router, "/api", manager)
+	httphandler.RegisterMetricsHandler(router, "/api", manager)
 */
 package httphandler

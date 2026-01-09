@@ -26,7 +26,7 @@ To use the client:
 
 ```bash
 build/pgqueue queues
-build/pgqueue tasks --status=pending
+build/pgqueue tasks --status=new
 ```
 
 Run `build/pgqueue --help` for more information and to understand the available commands and settings.
@@ -219,23 +219,31 @@ Exposes the `queue_tasks` gauge metric with labels for namespace, queue, and sta
 ## CLI Commands
 
 ```bash
+# Namespace operations
+pgqueue namespaces                 # List namespaces
+
 # Queue operations
 pgqueue queues                     # List queues
+pgqueue queue myqueue              # Get queue details
 pgqueue create-queue myqueue       # Create queue
+pgqueue update-queue myqueue       # Update queue
 pgqueue delete-queue myqueue       # Delete queue
 
 # Task operations
 pgqueue tasks                      # List all tasks
-pgqueue tasks --queue=myqueue      # List tasks in queue
-pgqueue tasks --status=pending     # Filter by status
+pgqueue tasks --queue=myqueue      # Filter by queue
+pgqueue tasks --status=new         # Filter by status
 pgqueue create-task myqueue        # Create task
-pgqueue retain-task myqueue worker # Get next task
-pgqueue complete-task 123          # Mark task complete
-pgqueue complete-task 123 --error '{"msg":"failed"}'  # Mark failed
+pgqueue retain-task myqueue worker # Retain next task
+pgqueue complete-task 123          # Release task (success)
+pgqueue complete-task 123 --error '{"msg":"failed"}'  # Release task (failure)
 
 # Ticker operations
 pgqueue tickers                    # List tickers
+pgqueue ticker myticker            # Get ticker details
 pgqueue create-ticker myticker     # Create ticker
+pgqueue update-ticker myticker     # Update ticker
+pgqueue delete-ticker myticker     # Delete ticker
 pgqueue next-ticker                # Stream matured tickers (SSE)
 
 # Server

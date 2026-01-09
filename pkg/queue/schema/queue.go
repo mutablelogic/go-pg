@@ -41,9 +41,9 @@ type QueueCleanRequest struct {
 	Queue string `json:"queue,omitempty" arg:"" help:"Queue name"`
 }
 
-/*type QueueCleanResponse struct {
+type QueueCleanResponse struct {
 	Body []Task `json:"body,omitempty"`
-}*/
+}
 
 type QueueStatus struct {
 	Queue  string `json:"queue"`
@@ -69,6 +69,10 @@ func (q QueueMeta) String() string {
 }
 
 func (q QueueList) String() string {
+	return stringify(q)
+}
+
+func (q QueueCleanResponse) String() string {
 	return stringify(q)
 }
 
@@ -99,7 +103,6 @@ func (l *QueueList) ScanCount(row pg.Row) error {
 	return row.Scan(&l.Count)
 }
 
-/*
 // QueueCleanResponse
 func (l *QueueCleanResponse) Scan(row pg.Row) error {
 	var task Task
@@ -109,7 +112,6 @@ func (l *QueueCleanResponse) Scan(row pg.Row) error {
 	l.Body = append(l.Body, task)
 	return nil
 }
-*/
 
 // QueueStatus
 func (s *QueueStatus) Scan(row pg.Row) error {
@@ -182,12 +184,12 @@ func (l QueueStatusRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 	// Bind parameters
 	if bind.Has("id") {
-		where = append(where, `queue = @id`)
+		where = append(where, `q."queue" = @id`)
 	}
 
-	// Where clause
+	// Where clause - note: query already has "WHERE q.ns = @ns", so we use AND
 	if len(where) > 0 {
-		bind.Set("where", "WHERE "+strings.Join(where, " AND "))
+		bind.Set("where", "AND "+strings.Join(where, " AND "))
 	} else {
 		bind.Set("where", "")
 	}

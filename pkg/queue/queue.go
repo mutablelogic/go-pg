@@ -73,7 +73,6 @@ func (manager *Manager) UpdateQueue(ctx context.Context, name string, meta schem
 	return &queue, nil
 }
 
-/*
 // CleanQueue removes stale tasks from a queue, and returns the tasks removed
 func (manager *Manager) CleanQueue(ctx context.Context, name string) ([]schema.Task, error) {
 	var resp schema.QueueCleanResponse
@@ -82,4 +81,12 @@ func (manager *Manager) CleanQueue(ctx context.Context, name string) ([]schema.T
 	}
 	return resp.Body, nil
 }
-*/
+
+// ListQueueStatuses returns the status breakdown for all queues in the namespace
+func (manager *Manager) ListQueueStatuses(ctx context.Context) ([]schema.QueueStatus, error) {
+	var resp schema.QueueStatusResponse
+	if err := manager.conn.List(ctx, &resp, schema.QueueStatusRequest{}); err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
+}

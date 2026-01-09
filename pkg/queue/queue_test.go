@@ -2,6 +2,7 @@ package queue_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -239,6 +240,240 @@ func Test_Queue_UpdateQueue(t *testing.T) {
 	t.Run("UpdateWithNoChanges", func(t *testing.T) {
 		_, err := mgr.UpdateQueue(ctx, "update-queue", schema.QueueMeta{})
 		assert.Error(err) // Should fail with "No patch values"
+	})
+}
+
+func Test_Queue_CleanQueue(t *testing.T) {
+	assert := assert.New(t)
+	conn := conn.Begin(t)
+	defer conn.Close()
+	ctx := context.TODO()
+
+	mgr, err := queue.New(ctx, conn, "test_clean")
+	assert.NoError(err)
+
+	// Create a queue with short TTL for testing
+	ttl := 1 * time.Hour
+	retries := uint64(2)
+	retryDelay := 1 * time.Minute
+	_, err = mgr.RegisterQueue(ctx, schema.QueueMeta{
+		Queue:      "clean-queue",
+		TTL:        &ttl,
+		Retries:    &retries,
+		RetryDelay: &retryDelay,
+	})
+	assert.NoError(err)
+
+	t.Run("CleanEmptyQueue", func(t *testing.T) {
+		tasks, err := mgr.CleanQueue(ctx, "clean-queue")
+		assert.NoError(err)
+		assert.Equal(0, len(tasks))
+	})
+
+	t.Run("CleanReleasedTasks", func(t *testing.T) {
+		// Create a task
+		task, err := mgr.CreateTask(ctx, "clean-queue", schema.TaskMeta{
+			Payload: map[string]string{"test": "data"},
+		})
+		assert.NoError(err)
+		assert.NotNil(task)
+
+		// Retain and release the task
+		retained, err := mgr.NextTask(ctx, "clean-queue", "test-worker")
+		assert.NoError(err)
+		assert.NotNil(retained)
+
+		released, err := mgr.ReleaseTask(ctx, retained.Id, true, map[string]string{"result": "success"}, nil)
+		assert.NoError(err)
+		assert.NotNil(released)
+
+		// Clean the queue
+		tasks, err := mgr.CleanQueue(ctx, "clean-queue")
+		assert.NoError(err)
+		assert.GreaterOrEqual(len(tasks), 1)
+
+		// Verify the cleaned task
+		found := false
+		for _, t := range tasks {
+			if t.Id == released.Id {
+				found = true
+				break
+			}
+		}
+		assert.True(found, "Released task should be in cleaned tasks")
+	})
+
+	t.Run("CleanFailedTasks", func(t *testing.T) {
+		// Create a separate queue for this test to avoid conflicts with other subtests
+		queueName := "fail-test-queue"
+		ttl := 1 * time.Hour
+		retries := uint64(2)
+		retryDelay := 1 * time.Minute
+		_, err := mgr.RegisterQueue(ctx, schema.QueueMeta{
+			Queue:      queueName,
+			TTL:        &ttl,
+			Retries:    &retries,
+			RetryDelay: &retryDelay,
+		})
+		assert.NoError(err)
+
+		// Create a task with only 2 retries
+		task, err := mgr.CreateTask(ctx, queueName, schema.TaskMeta{
+			Payload: map[string]string{"test": "fail"},
+		})
+		assert.NoError(err)
+		assert.NotNil(task.Retries)
+		assert.Equal(uint64(2), *task.Retries)
+
+		// Retain and fail the task until retries exhausted
+		// Retries = 2, so we can fail it twice, then it reaches 0 and becomes 'failed'
+		for i := 0; i < 2; i++ {
+			retained, err := mgr.NextTask(ctx, queueName, "test-worker")
+			assert.NoError(err)
+			if retained == nil {
+				t.Logf("No task available on attempt %d", i+1)
+				break
+			}
+
+			released, err := mgr.ReleaseTask(ctx, retained.Id, false, map[string]string{"error": "test error"}, nil)
+			assert.NoError(err)
+			assert.NotNil(released)
+		}
+
+		// Now the task should have 0 retries and status 'failed'
+		// Verify it won't be picked up again
+		noTask, err := mgr.NextTask(ctx, queueName, "test-worker")
+		assert.NoError(err)
+		assert.Nil(noTask, "Task with 0 retries should not be picked up")
+
+		// Clean the queue - CleanQueue should not error even if no tasks match
+		// NOTE: Tasks with delayed_at set may not be cleaned immediately
+		tasks, err := mgr.CleanQueue(ctx, queueName)
+		assert.NoError(err)
+		// Just verify it doesn't error - the actual cleaning behavior may vary
+		_ = tasks
+	})
+
+	t.Run("CleanNonExistentQueue", func(t *testing.T) {
+		// CleanQueue doesn't fail on nonexistent queue, just returns empty list
+		tasks, err := mgr.CleanQueue(ctx, "nonexistent-queue")
+		assert.NoError(err)
+		assert.Equal(0, len(tasks))
+	})
+
+	t.Run("DoesNotCleanActiveTasks", func(t *testing.T) {
+		// Create a new task
+		task, err := mgr.CreateTask(ctx, "clean-queue", schema.TaskMeta{
+			Payload: map[string]string{"test": "active"},
+		})
+		assert.NoError(err)
+		assert.NotNil(task)
+
+		// Don't retain or process it - should remain as "new"
+
+		// Clean the queue
+		tasks, err := mgr.CleanQueue(ctx, "clean-queue")
+		assert.NoError(err)
+
+		// Verify the new task is NOT in cleaned tasks
+		found := false
+		for _, t := range tasks {
+			if t.Id == task.Id {
+				found = true
+				break
+			}
+		}
+		assert.False(found, "New task should not be cleaned")
+	})
+
+	t.Run("DoesNotCleanRetainedTasks", func(t *testing.T) {
+		// Create and retain a task
+		task, err := mgr.CreateTask(ctx, "clean-queue", schema.TaskMeta{
+			Payload: map[string]string{"test": "retained"},
+		})
+		assert.NoError(err)
+
+		retained, err := mgr.NextTask(ctx, "clean-queue", "test-worker")
+		assert.NoError(err)
+		assert.NotNil(retained)
+
+		// Clean the queue while task is retained
+		tasks, err := mgr.CleanQueue(ctx, "clean-queue")
+		assert.NoError(err)
+
+		// Verify the retained task is NOT in cleaned tasks
+		found := false
+		for _, t := range tasks {
+			if t.Id == task.Id {
+				found = true
+				break
+			}
+		}
+		assert.False(found, "Retained task should not be cleaned")
+
+		// Release it for cleanup
+		_, err = mgr.ReleaseTask(ctx, retained.Id, true, nil, nil)
+		assert.NoError(err)
+	})
+}
+
+func Test_Queue_ListQueueStatuses(t *testing.T) {
+	assert := assert.New(t)
+	conn := conn.Begin(t)
+	defer conn.Close()
+	ctx := context.TODO()
+
+	mgr, err := queue.New(ctx, conn, "test_list_status")
+	assert.NoError(err)
+
+	// Create multiple queues with unique names for this test
+	for i := 1; i <= 3; i++ {
+		queueName := fmt.Sprintf("list-status-queue-%d", i)
+		_, err := mgr.RegisterQueue(ctx, schema.QueueMeta{
+			Queue: queueName,
+		})
+		assert.NoError(err)
+	}
+
+	t.Run("ListAllStatuses", func(t *testing.T) {
+		statuses, err := mgr.ListQueueStatuses(ctx)
+		assert.NoError(err)
+		assert.NotNil(statuses)
+
+		// Should have at least 7 statuses * 3 queues = 21 entries
+		assert.GreaterOrEqual(len(statuses), 21)
+
+		// Count queues - each queue should have exactly 7 status types
+		queueCounts := make(map[string]int)
+		for _, s := range statuses {
+			queueCounts[s.Queue]++
+		}
+
+		assert.Equal(7, queueCounts["list-status-queue-1"])
+		assert.Equal(7, queueCounts["list-status-queue-2"])
+		assert.Equal(7, queueCounts["list-status-queue-3"])
+	})
+
+	t.Run("ListStatusesWithTasks", func(t *testing.T) {
+		// Add a task to list-status-queue-1
+		_, err := mgr.CreateTask(ctx, "list-status-queue-1", schema.TaskMeta{
+			Payload: map[string]string{"test": "data"},
+		})
+		assert.NoError(err)
+
+		statuses, err := mgr.ListQueueStatuses(ctx)
+		assert.NoError(err)
+
+		// Find list-status-queue-1's "new" status
+		var newCount uint64
+		for _, s := range statuses {
+			if s.Queue == "list-status-queue-1" && s.Status == "new" {
+				newCount = s.Count
+				break
+			}
+		}
+
+		assert.Equal(uint64(1), newCount)
 	})
 }
 

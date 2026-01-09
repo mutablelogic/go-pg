@@ -53,7 +53,11 @@ JOIN queue q ON qs."queue" = q."queue"
 WHERE q."ns" = @ns ${where}
 
 -- pgqueue.namespace_list
-SELECT DISTINCT "ns" FROM queue ORDER BY "ns"
+SELECT DISTINCT "ns" FROM (
+    SELECT "ns" FROM queue
+    UNION
+    SELECT "ns" FROM ticker
+) AS namespaces ORDER BY "ns"
 
 -- pgqueue.retain
 -- Returns the id of the task which has been retained

@@ -45,14 +45,18 @@ func Test_HTTPClient_ListNamespaces(t *testing.T) {
 	server := httptest.NewServer(router)
 	defer server.Close()
 
-	// Create HTTP client
-	client, err := httpclient.New(server.URL)
+	// Create HTTP client with /api prefix
+	client, err := httpclient.New(server.URL + "/api")
 	assert.NoError(err)
 
 	// List namespaces
 	namespaces, err := client.ListNamespaces(ctx)
-	assert.NoError(err)
-	assert.NotNil(namespaces)
+	if !assert.NoError(err) {
+		return
+	}
+	if !assert.NotNil(namespaces) {
+		return
+	}
 
 	// Should have at least our 2 namespaces (plus potentially pgqueue system namespace)
 	assert.GreaterOrEqual(len(namespaces.Body), 2)

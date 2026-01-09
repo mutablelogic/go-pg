@@ -33,6 +33,15 @@ func (manager *Manager) CreateTask(ctx context.Context, queue string, meta schem
 	return &task.Task, nil
 }
 
+// ListTasks returns all tasks in a namespace as a list, with optional filtering
+func (manager *Manager) ListTasks(ctx context.Context, req schema.TaskListRequest) (*schema.TaskList, error) {
+	var list schema.TaskList
+	if err := manager.conn.List(ctx, &list, req); err != nil {
+		return nil, err
+	}
+	return &list, nil
+}
+
 // NextTask retains a task, and returns it. Returns nil if there is no task to retain
 func (manager *Manager) NextTask(ctx context.Context, queue, worker string) (*schema.Task, error) {
 	var taskId schema.TaskId

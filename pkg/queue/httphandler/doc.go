@@ -15,9 +15,10 @@ interface for queue operations.
 
 # Task Endpoints
 
-	POST   /task            - Create a new task (requires ?queue parameter)
-	GET    /task/next       - Get next available task (requires ?queue and ?worker parameters)
-	POST   /task/{id}/release - Release a task (mark as complete or failed)
+	GET    /task            - List tasks (optional ?queue, ?status, ?offset, ?limit)
+	POST   /task            - Create a new task (requires queue in body)
+	GET    /task/{queue}    - Retain next available task (requires ?worker parameter)
+	PATCH  /task/{id}       - Release a task with result (mark as complete or failed)
 
 # Ticker Endpoints
 

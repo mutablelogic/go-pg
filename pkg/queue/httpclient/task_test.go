@@ -20,8 +20,7 @@ func Test_Client_RetainTask(t *testing.T) {
 	t.Run("GetNextTask", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal("GET", r.Method)
-			assert.Equal("/task", r.URL.Path)
-			assert.Equal("test-queue", r.URL.Query().Get("queue"))
+			assert.Equal("/task/test-queue", r.URL.Path)
 			assert.Equal("worker-001", r.URL.Query().Get("worker"))
 
 			now := time.Now()
@@ -60,7 +59,7 @@ func Test_Client_RetainTask(t *testing.T) {
 	t.Run("NoTaskAvailable", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal("GET", r.Method)
-			assert.Equal("/task", r.URL.Path)
+			assert.Equal("/task/empty-queue", r.URL.Path)
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		defer server.Close()
@@ -76,7 +75,7 @@ func Test_Client_RetainTask(t *testing.T) {
 	t.Run("EmptyQueueName", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal("GET", r.Method)
-			assert.Equal("", r.URL.Query().Get("queue"))
+			// Empty queue name results in /task/ path
 			assert.Equal("worker-001", r.URL.Query().Get("worker"))
 			w.WriteHeader(http.StatusBadRequest)
 		}))
@@ -216,24 +215,25 @@ func Test_Client_CreateTask(t *testing.T) {
 func Test_Client_ReleaseTask(t *testing.T) {
 	assert := assert.New(t)
 
-	t.Run("WithResult", func(t *testing.T) {
+	t.Run("SuccessWithNilError", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal("PATCH", r.Method)
 			assert.Equal("/task/12345", r.URL.Path)
 
 			var request struct {
 				Result interface{} `json:"result,omitempty"`
+				Fail   bool        `json:"fail,omitempty"`
 			}
 			err := json.NewDecoder(r.Body).Decode(&request)
 			assert.NoError(err)
-			assert.NotNil(request.Result)
+			assert.False(request.Fail)
+			assert.Nil(request.Result)
 
 			response := schema.TaskWithStatus{
 				Task: schema.Task{
-					Id:     12345,
-					Result: request.Result,
+					Id: 12345,
 				},
-				Status: "pending",
+				Status: "completed",
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(response)
@@ -243,29 +243,33 @@ func Test_Client_ReleaseTask(t *testing.T) {
 		client, err := httpclient.New(server.URL)
 		assert.NoError(err)
 
-		result := map[string]interface{}{
-			"status": "processed",
-			"count":  42,
-		}
-
-		task, err := client.ReleaseTask(context.Background(), 12345, result)
+		task, err := client.ReleaseTask(context.Background(), 12345, nil)
 		assert.NoError(err)
 		assert.NotNil(task)
 		assert.Equal(uint64(12345), task.Id)
-		assert.NotNil(task.Result)
+		assert.Equal("completed", task.Status)
 	})
 
-	t.Run("WithNilResult", func(t *testing.T) {
+	t.Run("FailureWithError", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal("PATCH", r.Method)
 			assert.Equal("/task/12346", r.URL.Path)
 
+			var request struct {
+				Result interface{} `json:"result,omitempty"`
+				Fail   bool        `json:"fail,omitempty"`
+			}
+			err := json.NewDecoder(r.Body).Decode(&request)
+			assert.NoError(err)
+			assert.True(request.Fail)
+			assert.NotNil(request.Result)
+
 			response := schema.TaskWithStatus{
 				Task: schema.Task{
 					Id:     12346,
-					Result: nil,
+					Result: request.Result,
 				},
-				Status: "pending",
+				Status: "pending", // will retry
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(response)
@@ -275,7 +279,11 @@ func Test_Client_ReleaseTask(t *testing.T) {
 		client, err := httpclient.New(server.URL)
 		assert.NoError(err)
 
-		task, err := client.ReleaseTask(context.Background(), 12346, nil)
+		errPayload := map[string]interface{}{
+			"error": "something went wrong",
+		}
+
+		task, err := client.ReleaseTask(context.Background(), 12346, errPayload)
 		assert.NoError(err)
 		assert.NotNil(task)
 		assert.Equal(uint64(12346), task.Id)
@@ -292,70 +300,6 @@ func Test_Client_ReleaseTask(t *testing.T) {
 		assert.NoError(err)
 
 		task, err := client.ReleaseTask(context.Background(), 99999, nil)
-		assert.Error(err)
-		assert.Nil(task)
-	})
-}
-
-func Test_Client_CompleteTask(t *testing.T) {
-	assert := assert.New(t)
-
-	t.Run("SuccessfulCompletion", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal("DELETE", r.Method)
-			assert.Equal("/task/12345", r.URL.Path)
-
-			now := time.Now()
-			response := schema.TaskWithStatus{
-				Task: schema.Task{
-					Id:         12345,
-					FinishedAt: &now,
-				},
-				Status: "completed",
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
-		}))
-		defer server.Close()
-
-		client, err := httpclient.New(server.URL)
-		assert.NoError(err)
-
-		task, err := client.CompleteTask(context.Background(), 12345)
-		assert.NoError(err)
-		assert.NotNil(task)
-		assert.Equal(uint64(12345), task.Id)
-		assert.Equal("completed", task.Status)
-		assert.NotNil(task.FinishedAt)
-	})
-
-	t.Run("TaskNotFound", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal("DELETE", r.Method)
-			assert.Equal("/task/99999", r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
-		}))
-		defer server.Close()
-
-		client, err := httpclient.New(server.URL)
-		assert.NoError(err)
-
-		task, err := client.CompleteTask(context.Background(), 99999)
-		assert.Error(err)
-		assert.Nil(task)
-	})
-
-	t.Run("AlreadyCompleted", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal("DELETE", r.Method)
-			w.WriteHeader(http.StatusConflict)
-		}))
-		defer server.Close()
-
-		client, err := httpclient.New(server.URL)
-		assert.NoError(err)
-
-		task, err := client.CompleteTask(context.Background(), 12345)
 		assert.Error(err)
 		assert.Nil(task)
 	})

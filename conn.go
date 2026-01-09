@@ -15,6 +15,9 @@ type Conn interface {
 	// Return a new connection with bound parameters
 	With(...any) Conn
 
+	// Return a new connection with bound queries
+	WithQueries(...*Queries) Conn
+
 	// Return a connection to a remote database
 	Remote(database string) Conn
 
@@ -124,6 +127,11 @@ func (o Op) String() string {
 // Return a new connection with new bound parameters
 func (p *conn) With(params ...any) Conn {
 	return &conn{p.conn, p.bind.Copy(params...)}
+}
+
+// Return a new connection with bound queries
+func (p *conn) WithQueries(queries ...*Queries) Conn {
+	return &conn{p.conn, p.bind.withQueries(queries...)}
 }
 
 // Return a connection to a remote database

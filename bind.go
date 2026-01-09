@@ -86,6 +86,27 @@ func (bind *Bind) withRemote(database string) *Bind {
 	return &Bind{vars: varsCopy, dblink: "dbname=" + types.Quote(database)}
 }
 
+// Return a new bind object with one or more sets of queries
+func (bind *Bind) withQueries(queries ...*Queries) *Bind {
+	if len(queries) == 0 {
+		return bind
+	}
+
+	// Make a copy of the bind vars
+	varsCopy := make(pgx.NamedArgs, len(bind.vars))
+	maps.Copy(varsCopy, bind.vars)
+
+	// Iterate through queries
+	for _, q := range queries {
+		for _, key := range q.Keys() {
+			varsCopy[key] = q.Get(key)
+		}
+	}
+
+	// Return the copied Bind object
+	return &Bind{vars: varsCopy}
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // STRINGIFY
 

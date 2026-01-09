@@ -133,12 +133,11 @@ func (manager *Manager) NextTicker(ctx context.Context) (*schema.Ticker, error) 
 }
 
 // RunTickerLoop runs a loop to process matured tickers in a namespace, until the context is cancelled,
-// or an error occurs. The period parameter controls the initial sleep duration between checks.
+// or an error occurs. The period parameter controls the sleep duration between checks when no ticker is found.
+// When a ticker is found, it immediately polls again to drain all matured tickers.
 func (manager *Manager) RunTickerLoop(ctx context.Context, namespace string, ch chan<- *schema.Ticker, period time.Duration) error {
-	delta := period
 	timer := time.NewTimer(100 * time.Millisecond)
 	defer timer.Stop()
-	prev := time.Now()
 
 	// Loop until context is cancelled
 	for {
@@ -154,24 +153,12 @@ func (manager *Manager) RunTickerLoop(ctx context.Context, namespace string, ch 
 
 			if ticker != nil {
 				ch <- ticker
-
-				// Reset timer to minimum period
-				if dur := types.PtrDuration(ticker.Interval); dur >= time.Second && dur < delta {
-					delta = dur
-				}
-				// Adjust based on time since last ticker
-				if since := time.Since(prev); since > delta {
-					delta += (since - delta) / 2
-				} else if since < delta {
-					delta -= (delta - since) / 2
-				}
-
-				// Reset the timer
-				prev = time.Now()
+				// Ticker found - poll again immediately to drain any other matured tickers
+				timer.Reset(1 * time.Millisecond)
+			} else {
+				// No ticker found - wait for the full period
+				timer.Reset(period)
 			}
-
-			// Next loop
-			timer.Reset(delta)
 		}
 	}
 }

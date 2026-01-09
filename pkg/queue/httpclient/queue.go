@@ -88,16 +88,3 @@ func (c *Client) DeleteQueue(ctx context.Context, name string) (*schema.Queue, e
 	// Return the responses
 	return &response, nil
 }
-
-func (c *Client) CleanQueue(ctx context.Context, name string) ([]schema.Task, error) {
-	req := client.NewRequest()
-
-	// Perform request
-	var response []schema.Task
-	if err := c.DoWithContext(ctx, req, &response, client.OptPath("queue", name, "clean")); err != nil {
-		return nil, err
-	}
-
-	// Return the response
-	return response, nil
-}

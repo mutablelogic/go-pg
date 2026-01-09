@@ -13,12 +13,32 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// RetainTask gets the next available task from a queue (GET /task).
+// ListTasks returns all tasks with optional filtering by status (GET /task).
+func (c *Client) ListTasks(ctx context.Context, opts ...Opt) (*schema.TaskList, error) {
+	req := client.NewRequest()
+
+	// Apply options
+	opt, err := applyOpts(opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Perform request
+	var response schema.TaskList
+	if err := c.DoWithContext(ctx, req, &response, client.OptPath("task"), client.OptQuery(opt.Values)); err != nil {
+		return nil, err
+	}
+
+	// Return the responses
+	return &response, nil
+}
+
+// RetainTask gets the next available task from a queue (GET /task/{queue}?worker=XX).
 func (c *Client) RetainTask(ctx context.Context, queue, worker string) (*schema.TaskWithStatus, error) {
 	req := client.NewRequest()
 
 	// Apply options
-	opts := []Opt{WithQueue(queue), WithWorker(worker)}
+	opts := []Opt{WithWorker(worker)}
 	opt, err := applyOpts(opts...)
 	if err != nil {
 		return nil, err
@@ -26,7 +46,7 @@ func (c *Client) RetainTask(ctx context.Context, queue, worker string) (*schema.
 
 	// Perform request
 	var response schema.TaskWithStatus
-	if err := c.DoWithContext(ctx, req, &response, client.OptPath("task"), client.OptQuery(opt.Values)); err != nil {
+	if err := c.DoWithContext(ctx, req, &response, client.OptPath("task", queue), client.OptQuery(opt.Values)); err != nil {
 		return nil, err
 	}
 
@@ -59,32 +79,22 @@ func (c *Client) CreateTask(ctx context.Context, queue string, meta schema.TaskM
 	return &response, nil
 }
 
-// ReleaseTask releases a task with a result (PATCH /task/{id}).
+// ReleaseTask releases a task (PATCH /task/{id}).
+// If result is non-nil, marks the task as failed with result as the error payload.
+// If result is nil, marks the task as completed successfully.
 func (c *Client) ReleaseTask(ctx context.Context, id uint64, result any) (*schema.TaskWithStatus, error) {
 	payload := struct {
-		Result any `json:"result,omitempty"`
+		Result any  `json:"result,omitempty"`
+		Fail   bool `json:"fail,omitempty"`
 	}{
 		Result: result,
+		Fail:   result != nil,
 	}
 
 	req, err := client.NewJSONRequestEx(http.MethodPatch, payload, "")
 	if err != nil {
 		return nil, err
 	}
-
-	// Perform request
-	var response schema.TaskWithStatus
-	if err := c.DoWithContext(ctx, req, &response, client.OptPath("task", fmt.Sprint(id))); err != nil {
-		return nil, err
-	}
-
-	// Return the responses
-	return &response, nil
-}
-
-// CompleteTask marks a task as successfully completed (DELETE /task/{id}).
-func (c *Client) CompleteTask(ctx context.Context, id uint64) (*schema.TaskWithStatus, error) {
-	req := client.NewRequestEx(http.MethodDelete, "")
 
 	// Perform request
 	var response schema.TaskWithStatus

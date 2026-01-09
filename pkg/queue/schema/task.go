@@ -2,7 +2,6 @@ package schema
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -123,12 +122,12 @@ func (l *TaskList) ScanCount(row pg.Row) error {
 
 func (t TaskMeta) Insert(bind *pg.Bind) (string, error) {
 	if !bind.Has("id") {
-		return "", fmt.Errorf("missing queue id")
+		return "", httpresponse.ErrBadRequest.With("missing queue id")
 	} else {
 		bind.Set("queue", bind.Get("id"))
 	}
 	if t.Payload == nil {
-		return "", fmt.Errorf("missing payload")
+		return "", httpresponse.ErrBadRequest.With("missing payload")
 	} else if data, err := json.Marshal(t.Payload); err != nil {
 		return "", err
 	} else {
@@ -136,7 +135,7 @@ func (t TaskMeta) Insert(bind *pg.Bind) (string, error) {
 	}
 	if t.DelayedAt != nil {
 		if t.DelayedAt.Before(time.Now()) {
-			return "", fmt.Errorf("delayed_at is in the past")
+			return "", httpresponse.ErrBadRequest.With("delayed_at is in the past")
 		}
 		bind.Set("delayed_at", t.DelayedAt.UTC())
 	} else {
@@ -151,7 +150,7 @@ func (t TaskMeta) Update(bind *pg.Bind) error {
 	// DelayedAt
 	if t.DelayedAt != nil {
 		if t.DelayedAt.Before(time.Now()) {
-			return fmt.Errorf("delayed_at is in the past")
+			return httpresponse.ErrBadRequest.With("delayed_at is in the past")
 		}
 		bind.Append("patch", `delayed_at = `+bind.Set("delayed_at", t.DelayedAt))
 	}
@@ -167,7 +166,7 @@ func (t TaskMeta) Update(bind *pg.Bind) error {
 
 	// Set patch
 	if patch := bind.Join("patch", ", "); patch == "" {
-		return fmt.Errorf("no fields to update")
+		return httpresponse.ErrBadRequest.With("no fields to update")
 	} else {
 		bind.Set("patch", patch)
 	}
@@ -185,7 +184,7 @@ func (t TaskId) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	case pg.Get:
 		return bind.Replace("${pgqueue.task_get}"), nil
 	default:
-		return "", fmt.Errorf("unsupported TaskId operation %q", op)
+		return "", httpresponse.ErrInternalError.Withf("unsupported TaskId operation %q", op)
 	}
 }
 
@@ -206,7 +205,7 @@ func (l TaskListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	case pg.List:
 		return bind.Replace("${pgqueue.task_list}"), nil
 	default:
-		return "", fmt.Errorf("unsupported TaskListRequest operation %q", op)
+		return "", httpresponse.ErrInternalError.Withf("unsupported TaskListRequest operation %q", op)
 	}
 }
 
@@ -230,7 +229,7 @@ func (t TaskRetain) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	case pg.Get:
 		return bind.Replace("${pgqueue.retain}"), nil
 	default:
-		return "", fmt.Errorf("unsupported TaskRetain operation %q", op)
+		return "", httpresponse.ErrInternalError.Withf("unsupported TaskRetain operation %q", op)
 	}
 }
 
@@ -258,6 +257,6 @@ func (t TaskRelease) Select(bind *pg.Bind, op pg.Op) (string, error) {
 			return bind.Replace("${pgqueue.release}"), nil
 		}
 	default:
-		return "", fmt.Errorf("unsupported TaskRelease operation %q", op)
+		return "", httpresponse.ErrInternalError.Withf("unsupported TaskRelease operation %q", op)
 	}
 }

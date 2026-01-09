@@ -45,6 +45,26 @@ func WithOffsetLimit(offset uint64, limit *uint64) Opt {
 	}
 }
 
+// WithOffset sets the offset query parameter.
+func WithOffset(offset uint64) Opt {
+	return func(o *opt) error {
+		if offset > 0 {
+			o.Set("offset", fmt.Sprint(offset))
+		}
+		return nil
+	}
+}
+
+// WithLimit sets the limit query parameter.
+func WithLimit(limit uint64) Opt {
+	return func(o *opt) error {
+		if limit > 0 {
+			o.Set("limit", fmt.Sprint(limit))
+		}
+		return nil
+	}
+}
+
 // WithQueue sets the queue query parameter.
 func WithQueue(queue string) Opt {
 	return func(o *opt) error {
@@ -60,6 +80,16 @@ func WithWorker(worker string) Opt {
 	return func(o *opt) error {
 		if worker != "" {
 			o.Set("worker", worker)
+		}
+		return nil
+	}
+}
+
+// WithStatus sets the status query parameter for filtering tasks.
+func WithStatus(status string) Opt {
+	return func(o *opt) error {
+		if status != "" {
+			o.Set("status", status)
 		}
 		return nil
 	}

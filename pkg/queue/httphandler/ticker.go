@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"sync"
-	"time"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
@@ -108,7 +107,7 @@ func tickerNext(w http.ResponseWriter, r *http.Request, manager *queue.Manager) 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		manager.RunTickerLoop(r.Context(), manager.Namespace(), ch, 15*time.Second)
+		manager.RunTickerLoop(r.Context(), manager.Namespace(), ch, schema.TickerPeriod)
 	}()
 
 	// Receive tickers from the channel and write them to the response

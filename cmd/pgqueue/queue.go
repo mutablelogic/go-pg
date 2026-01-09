@@ -1,0 +1,145 @@
+package main
+
+import (
+	"fmt"
+	"time"
+
+	// Packages
+	httpclient "github.com/mutablelogic/go-pg/pkg/queue/httpclient"
+	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
+)
+
+///////////////////////////////////////////////////////////////////////////////
+// TYPES
+
+type QueueCommands struct {
+	ListQueue   ListQueueCommand   `cmd:"" name:"queues" help:"List queues." group:"QUEUE"`
+	GetQueue    GetQueueCommand    `cmd:"" name:"queue" help:"Get queue." group:"QUEUE"`
+	CreateQueue CreateQueueCommand `cmd:"" name:"create-queue" help:"Create queue." group:"QUEUE"`
+	DeleteQueue DeleteQueueCommand `cmd:"" name:"delete-queue" help:"Delete queue." group:"QUEUE"`
+	UpdateQueue UpdateQueueCommand `cmd:"" name:"update-queue" help:"Update queue." group:"QUEUE"`
+}
+
+type ListQueueCommand struct {
+	Offset uint64  `name:"offset" help:"Offset for pagination"`
+	Limit  *uint64 `name:"limit" help:"Limit for pagination"`
+}
+
+type GetQueueCommand struct {
+	Name string `arg:"" name:"name" help:"Queue name"`
+}
+
+type CreateQueueCommand struct {
+	Name       string         `arg:"" name:"name" help:"Queue name"`
+	TTL        *time.Duration `name:"ttl" help:"Time-to-live for queue messages"`
+	Retries    *uint64        `name:"retries" help:"Number of retries before failing"`
+	RetryDelay *time.Duration `name:"retry-delay" help:"Backoff delay between retries"`
+}
+
+type DeleteQueueCommand struct {
+	Name string `arg:"" name:"name" help:"Queue name"`
+}
+
+type UpdateQueueCommand struct {
+	Name       string         `arg:"" name:"name" help:"Queue name"`
+	TTL        *time.Duration `name:"ttl" help:"Time-to-live for queue messages"`
+	Retries    *uint64        `name:"retries" help:"Number of retries before failing"`
+	RetryDelay *time.Duration `name:"retry-delay" help:"Backoff delay between retries"`
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// COMMANDS
+
+func (cmd *ListQueueCommand) Run(ctx *Globals) error {
+	client, err := ctx.Client()
+	if err != nil {
+		return err
+	}
+
+	// List queues
+	queues, err := client.ListQueues(ctx.ctx, httpclient.WithOffsetLimit(cmd.Offset, cmd.Limit))
+	if err != nil {
+		return err
+	}
+
+	// Print
+	fmt.Println(queues)
+	return nil
+}
+
+func (cmd *GetQueueCommand) Run(ctx *Globals) error {
+	client, err := ctx.Client()
+	if err != nil {
+		return err
+	}
+
+	// Get one queue
+	queue, err := client.GetQueue(ctx.ctx, cmd.Name)
+	if err != nil {
+		return err
+	}
+
+	// Print
+	fmt.Println(queue)
+	return nil
+}
+
+func (cmd *CreateQueueCommand) Run(ctx *Globals) error {
+	client, err := ctx.Client()
+	if err != nil {
+		return err
+	}
+
+	// Create queue
+	queue, err := client.CreateQueue(ctx.ctx, schema.QueueMeta{
+		Queue:      cmd.Name,
+		TTL:        cmd.TTL,
+		Retries:    cmd.Retries,
+		RetryDelay: cmd.RetryDelay,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Print
+	fmt.Println(queue)
+	return nil
+}
+
+func (cmd *DeleteQueueCommand) Run(ctx *Globals) error {
+	client, err := ctx.Client()
+	if err != nil {
+		return err
+	}
+
+	// Delete queue
+	queue, err := client.DeleteQueue(ctx.ctx, cmd.Name)
+	if err != nil {
+		return err
+	}
+
+	// Print
+	fmt.Println(queue)
+	return nil
+}
+
+func (cmd *UpdateQueueCommand) Run(ctx *Globals) error {
+	client, err := ctx.Client()
+	if err != nil {
+		return err
+	}
+
+	// Update queue
+	queue, err := client.UpdateQueue(ctx.ctx, cmd.Name, schema.QueueMeta{
+		TTL:        cmd.TTL,
+		Retries:    cmd.Retries,
+		RetryDelay: cmd.RetryDelay,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Print
+	fmt.Println(queue)
+	return nil
+}

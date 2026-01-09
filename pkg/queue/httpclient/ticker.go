@@ -1,13 +1,12 @@
 package httpclient
-package httpclient
 
 import (
 	"context"
 	"net/http"
 
 	// Packages
-	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
 	client "github.com/mutablelogic/go-client"
+	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -88,4 +87,20 @@ func (c *Client) DeleteTicker(ctx context.Context, name string) (*schema.Ticker,
 
 	// Return the responses
 	return &response, nil
+}
+
+func (c *Client) NextTicker(ctx context.Context, callback func(client.TextStreamEvent) error) error {
+	req, err := client.NewJSONRequestEx(http.MethodGet, nil, "text/event-stream")
+	if err != nil {
+		return err
+	}
+
+	// Perform request
+	var response schema.Ticker
+	if err := c.DoWithContext(ctx, req, &response, client.OptPath("ticker"), client.OptNoTimeout(), client.OptTextStreamCallback(callback)); err != nil {
+		return err
+	}
+
+	// Return the response
+	return nil
 }

@@ -1,5 +1,4 @@
 package httpclient
-package httpclient
 
 import (
 	"context"
@@ -7,8 +6,8 @@ import (
 	"net/http"
 
 	// Packages
-	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
 	client "github.com/mutablelogic/go-client"
+	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
 )
 
 ///////////////////////////////////////////////////////////////////////////////

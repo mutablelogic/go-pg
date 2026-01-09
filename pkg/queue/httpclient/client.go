@@ -1,5 +1,4 @@
 package httpclient
-package httpclient
 
 import (
 	// Packages

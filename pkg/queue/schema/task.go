@@ -17,8 +17,8 @@ import (
 type TaskId uint64
 
 type TaskRetain struct {
-	Queue  string `json:"queue,omitempty"`
-	Worker string `json:"worker,omitempty"`
+	Queues []string `json:"queues,omitempty"`
+	Worker string   `json:"worker,omitempty"`
 }
 
 type TaskRelease struct {
@@ -210,12 +210,8 @@ func (l TaskListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 }
 
 func (t TaskRetain) Select(bind *pg.Bind, op pg.Op) (string, error) {
-	// Queue is required
-	if queue := strings.TrimSpace(t.Queue); queue == "" {
-		return "", httpresponse.ErrBadRequest.Withf("Missing queue")
-	} else {
-		bind.Set("queue", queue)
-	}
+	// Queues can be empty (any queue) or specific queue names
+	bind.Set("queues", t.Queues)
 
 	// Worker is required
 	if worker := strings.TrimSpace(t.Worker); worker == "" {

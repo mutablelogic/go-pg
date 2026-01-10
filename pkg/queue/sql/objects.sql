@@ -127,7 +127,8 @@ AFTER INSERT ON "task" FOR EACH ROW EXECUTE FUNCTION
 
 -- pgqueue.queue_lock
 -- A specific worker locks a task in a queue for processing
-CREATE OR REPLACE FUNCTION queue_lock(n TEXT, q TEXT, w TEXT) RETURNS BIGINT AS $$
+-- q can be empty array (any queue) or specific queue names
+CREATE OR REPLACE FUNCTION queue_lock(n TEXT, q TEXT[], w TEXT) RETURNS BIGINT AS $$
 UPDATE "task" SET 
     "started_at" = NOW(), "worker" = w, "result" = 'null'
 WHERE "id" = (
@@ -138,7 +139,7 @@ WHERE "id" = (
     WHERE
         "ns" = n
     AND
-        "queue" = q
+        (CARDINALITY(q) = 0 OR "queue" = ANY(q))
     AND
         ("started_at" IS NULL AND "finished_at" IS NULL AND "dies_at" > NOW())
     AND 

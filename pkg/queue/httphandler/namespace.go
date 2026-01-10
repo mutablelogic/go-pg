@@ -6,24 +6,24 @@ import (
 	// Packages
 	queue "github.com/mutablelogic/go-pg/pkg/queue"
 	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
-	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
 // RegisterNamespaceHandlers registers namespace-related HTTP handlers
-func RegisterNamespaceHandlers(router *http.ServeMux, prefix string, manager *queue.Manager) {
+func RegisterNamespaceHandlers(router *http.ServeMux, prefix string, manager *queue.Manager, middleware HTTPMiddlewareFuncs) {
 	// List namespaces
-	router.HandleFunc(joinPath(prefix, "namespace"), func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc(joinPath(prefix, "namespace"), middleware.Wrap(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			_ = namespaceList(w, r, manager)
 		default:
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
-	})
+	}))
 }
 
 ////////////////////////////////////////////////////////////////////////////////

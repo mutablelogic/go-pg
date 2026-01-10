@@ -38,7 +38,7 @@ func Test_Queue_List(t *testing.T) {
 	}
 
 	router := http.NewServeMux()
-	httphandler.RegisterQueueHandlers(router, "/api", mgr)
+	httphandler.RegisterQueueHandlers(router, "/api", mgr, nil)
 
 	t.Run("ListQueues", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/queue", nil)
@@ -120,7 +120,7 @@ func Test_Queue_Create(t *testing.T) {
 	assert.NoError(err)
 
 	router := http.NewServeMux()
-	httphandler.RegisterQueueHandlers(router, "/api", mgr)
+	httphandler.RegisterQueueHandlers(router, "/api", mgr, nil)
 
 	t.Run("CreateSuccess", func(t *testing.T) {
 		body := `{"queue": "test_http_create", "retries": 3, "ttl": 300000000000}`
@@ -174,7 +174,7 @@ func Test_Queue_Get(t *testing.T) {
 	assert.NoError(err)
 
 	router := http.NewServeMux()
-	httphandler.RegisterQueueHandlers(router, "/api", mgr)
+	httphandler.RegisterQueueHandlers(router, "/api", mgr, nil)
 
 	t.Run("GetExisting", func(t *testing.T) {
 		// Create a queue first
@@ -223,7 +223,7 @@ func Test_Queue_Update(t *testing.T) {
 	assert.NoError(err)
 
 	router := http.NewServeMux()
-	httphandler.RegisterQueueHandlers(router, "/api", mgr)
+	httphandler.RegisterQueueHandlers(router, "/api", mgr, nil)
 
 	t.Run("UpdateSuccess", func(t *testing.T) {
 		// Create a queue first
@@ -277,7 +277,7 @@ func Test_Queue_Delete(t *testing.T) {
 	assert.NoError(err)
 
 	router := http.NewServeMux()
-	httphandler.RegisterQueueHandlers(router, "/api", mgr)
+	httphandler.RegisterQueueHandlers(router, "/api", mgr, nil)
 
 	t.Run("DeleteSuccess", func(t *testing.T) {
 		// Create a queue first

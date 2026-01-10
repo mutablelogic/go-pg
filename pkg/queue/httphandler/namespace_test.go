@@ -47,7 +47,7 @@ func Test_Namespace_Handler(t *testing.T) {
 
 	// Create HTTP server with namespace handler
 	router := http.NewServeMux()
-	httphandler.RegisterNamespaceHandlers(router, "/api", mgr1)
+	httphandler.RegisterNamespaceHandlers(router, "/api", mgr1, nil)
 
 	server := httptest.NewServer(router)
 	defer server.Close()

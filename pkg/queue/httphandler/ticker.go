@@ -19,12 +19,8 @@ import (
 
 // RegisterTickerHandlers registers HTTP handlers for ticker CRUD operations
 // on the provided router with the given path prefix. The manager must be non-nil.
-func RegisterTickerHandlers(router *http.ServeMux, prefix string, manager *queue.Manager) {
-	if manager == nil {
-		panic("manager is nil")
-	}
-
-	router.HandleFunc(joinPath(prefix, "ticker"), func(w http.ResponseWriter, r *http.Request) {
+func RegisterTickerHandlers(router *http.ServeMux, prefix string, manager *queue.Manager, middleware HTTPMiddlewareFuncs) {
+	router.HandleFunc(joinPath(prefix, "ticker"), middleware.Wrap(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			// Determine the content type - default to JSON if no Accept header
@@ -45,9 +41,9 @@ func RegisterTickerHandlers(router *http.ServeMux, prefix string, manager *queue
 		default:
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
-	})
+	}))
 
-	router.HandleFunc(joinPath(prefix, "ticker/{name}"), func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc(joinPath(prefix, "ticker/{name}"), middleware.Wrap(func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		switch r.Method {
 		case http.MethodGet:
@@ -59,7 +55,7 @@ func RegisterTickerHandlers(router *http.ServeMux, prefix string, manager *queue
 		default:
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
-	})
+	}))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -107,7 +103,7 @@ func tickerNext(w http.ResponseWriter, r *http.Request, manager *queue.Manager) 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		manager.RunTickerLoop(r.Context(), manager.Namespace(), ch, schema.TickerPeriod)
+		manager.RunTickerLoopNs(r.Context(), manager.Namespace(), ch, schema.TickerPeriod)
 	}()
 
 	// Receive tickers from the channel and write them to the response

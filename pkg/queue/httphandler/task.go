@@ -16,27 +16,31 @@ import (
 // PUBLIC METHODS
 
 // RegisterTaskHandlers registers HTTP handlers for task operations
-func RegisterTaskHandlers(router *http.ServeMux, prefix string, manager *queue.Manager) {
+func RegisterTaskHandlers(router *http.ServeMux, prefix string, manager *queue.Manager, middleware HTTPMiddlewareFuncs) {
 	// GET /task lists tasks (with optional queue/status/offset/limit params)
 	// POST /task creates a new task
-	router.HandleFunc(joinPath(prefix, "task"), func(w http.ResponseWriter, r *http.Request) {
+	// PUT /task?worker=XX retains next available task from any queue
+	router.HandleFunc(joinPath(prefix, "task"), middleware.Wrap(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			_ = taskList(w, r, manager)
 		case http.MethodPost:
 			_ = taskCreate(w, r, manager)
+		case http.MethodPut:
+			_ = taskRetain(w, r, manager, "")
 		default:
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
-	})
+	}))
 
-	// GET /task/{queue}?worker=XX retains next available task from queue (queue cannot start with digit)
+	// PUT /task/{queue}?worker=XX retains next available task from specific queue
 	// PATCH /task/{id} marks a task as succeeded or failed with a payload
-	router.HandleFunc(joinPath(prefix, "task/{queue_or_id}"), func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc(joinPath(prefix, "task/{queue_or_id}"), middleware.Wrap(func(w http.ResponseWriter, r *http.Request) {
 		pathValue := r.PathValue("queue_or_id")
 
 		switch r.Method {
-		case http.MethodGet:
+		case http.MethodPut:
+			// Validate queue name
 			if !types.IsIdentifier(pathValue) {
 				_ = httpresponse.Error(w, httpresponse.ErrBadRequest.With("invalid queue name"), pathValue)
 				return
@@ -52,7 +56,7 @@ func RegisterTaskHandlers(router *http.ServeMux, prefix string, manager *queue.M
 		default:
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
-	})
+	}))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -109,7 +113,13 @@ func taskRetain(w http.ResponseWriter, r *http.Request, manager *queue.Manager, 
 	}
 
 	// Retain the task
-	task, err := manager.NextTask(r.Context(), queue, worker)
+	var task *schema.Task
+	var err error
+	if queue == "" {
+		task, err = manager.NextTask(r.Context(), worker)
+	} else {
+		task, err = manager.NextTask(r.Context(), worker, queue)
+	}
 	if err != nil {
 		return httpresponse.Error(w, httperr(err))
 	} else if task == nil {

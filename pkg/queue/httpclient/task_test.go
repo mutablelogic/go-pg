@@ -19,7 +19,7 @@ func Test_Client_RetainTask(t *testing.T) {
 
 	t.Run("GetNextTask", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal("GET", r.Method)
+			assert.Equal("PUT", r.Method)
 			assert.Equal("/task/test-queue", r.URL.Path)
 			assert.Equal("worker-001", r.URL.Query().Get("worker"))
 
@@ -47,7 +47,7 @@ func Test_Client_RetainTask(t *testing.T) {
 		client, err := httpclient.New(server.URL)
 		assert.NoError(err)
 
-		task, err := client.RetainTask(context.Background(), "test-queue", "worker-001")
+		task, err := client.RetainTask(context.Background(), "worker-001", "test-queue")
 		assert.NoError(err)
 		assert.NotNil(task)
 		assert.Equal(uint64(12345), task.Id)
@@ -58,7 +58,7 @@ func Test_Client_RetainTask(t *testing.T) {
 
 	t.Run("NoTaskAvailable", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal("GET", r.Method)
+			assert.Equal("PUT", r.Method)
 			assert.Equal("/task/empty-queue", r.URL.Path)
 			w.WriteHeader(http.StatusNoContent)
 		}))
@@ -67,24 +67,24 @@ func Test_Client_RetainTask(t *testing.T) {
 		client, err := httpclient.New(server.URL)
 		assert.NoError(err)
 
-		task, err := client.RetainTask(context.Background(), "empty-queue", "worker-001")
+		task, err := client.RetainTask(context.Background(), "worker-001", "empty-queue")
 		assert.Error(err)
 		assert.Nil(task)
 	})
 
-	t.Run("EmptyQueueName", func(t *testing.T) {
+	t.Run("AnyQueue", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal("GET", r.Method)
-			// Empty queue name results in /task/ path
+			assert.Equal("PUT", r.Method)
+			assert.Equal("/task", r.URL.Path)
 			assert.Equal("worker-001", r.URL.Query().Get("worker"))
-			w.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(http.StatusNoContent)
 		}))
 		defer server.Close()
 
 		client, err := httpclient.New(server.URL)
 		assert.NoError(err)
 
-		task, err := client.RetainTask(context.Background(), "", "worker-001")
+		task, err := client.RetainTask(context.Background(), "worker-001")
 		assert.Error(err)
 		assert.Nil(task)
 	})

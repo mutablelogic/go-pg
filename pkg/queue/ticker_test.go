@@ -332,7 +332,7 @@ func Test_Ticker_RunTickerLoop(t *testing.T) {
 		loopCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
-		go mgr.RunTickerLoop(loopCtx, "ticker_ns", tickerChan, 100*time.Millisecond)
+		go mgr.RunTickerLoopNs(loopCtx, "ticker_ns", tickerChan, 100*time.Millisecond)
 
 		// Wait for ticker to fire (it needs to mature first)
 		select {
@@ -363,7 +363,7 @@ func Test_Ticker_RunTickerLoop(t *testing.T) {
 		tickerChan := make(chan *schema.Ticker, 10)
 		loopCtx, cancel := context.WithCancel(ctx)
 
-		go mgr.RunTickerLoop(loopCtx, "ticker_ns", tickerChan, 100*time.Millisecond)
+		go mgr.RunTickerLoopNs(loopCtx, "ticker_ns", tickerChan, 100*time.Millisecond)
 
 		// Wait for first fire
 		select {
@@ -407,7 +407,7 @@ func Test_Ticker_RunTickerLoop(t *testing.T) {
 		loopCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 
-		go mgr.RunTickerLoop(loopCtx, "ticker_ns", tickerChan, 100*time.Millisecond)
+		go mgr.RunTickerLoopNs(loopCtx, "ticker_ns", tickerChan, 100*time.Millisecond)
 
 		// Collect all fires until context times out
 		fireCount := 0

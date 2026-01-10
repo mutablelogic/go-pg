@@ -34,8 +34,8 @@ type CreateTaskCommand struct {
 }
 
 type RetainTaskCommand struct {
-	Queue  string `arg:"" name:"queue" help:"Queue name"`
-	Worker string `arg:"" name:"worker" help:"Worker identifier"`
+	Queues []string `arg:"" name:"queues" optional:"" help:"Queue names (omit for any queue)"`
+	Worker string   `name:"worker" required:"" help:"Worker identifier"`
 }
 
 type CompleteTaskCommand struct {
@@ -106,7 +106,7 @@ func (cmd *RetainTaskCommand) Run(ctx *Globals) error {
 	}
 
 	// Retain task
-	task, err := client.RetainTask(ctx.ctx, cmd.Queue, cmd.Worker)
+	task, err := client.RetainTask(ctx.ctx, cmd.Worker, cmd.Queues...)
 	if err != nil {
 		return err
 	}

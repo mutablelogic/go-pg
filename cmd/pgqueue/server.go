@@ -26,6 +26,7 @@ type ServerCommands struct {
 type RunServer struct {
 	URL       string `arg:"" name:"url" help:"Database URL" default:""`
 	Namespace string `name:"namespace" help:"Queue namespace" default:"default"`
+	Trace     bool   `name:"trace" help:"Enable query tracing" default:"false"`
 
 	// Postgres options
 	PG struct {
@@ -56,9 +57,13 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	if cmd.PG.Schema != "" {
 		opts = append(opts, pg.WithSchemaSearchPath(cmd.PG.Schema))
 	}
-	if ctx.Debug {
-		opts = append(opts, pg.WithTrace(func(ctx context.Context, query string, args any, err error) {
-			fmt.Println("PG TRACE:", query, args, err)
+	if ctx.Debug || cmd.Trace {
+		opts = append(opts, pg.WithTrace(func(parent context.Context, query string, args any, err error) {
+			if err != nil {
+				ctx.logger.With("query", query, "args", args).Print(parent, "pg error: ", err)
+			} else if cmd.Trace {
+				ctx.logger.With("query", query, "args", args).Print(parent, "pg trace")
+			}
 		}))
 	}
 
@@ -80,10 +85,15 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 		return err
 	}
 
+	// Set middleware
+	middleware := httphandler.HTTPMiddlewareFuncs{
+		ctx.logger.HandleFunc,
+	}
+
 	// Register HTTP handlers
 	router := http.NewServeMux()
-	httphandler.RegisterBackendHandlers(router, ctx.HTTP.Prefix, manager)
-	httphandler.RegisterFrontendHandler(router, "", false)
+	httphandler.RegisterBackendHandlers(router, ctx.HTTP.Prefix, manager, middleware)
+	httphandler.RegisterFrontendHandler(router, "", false, middleware)
 
 	// Create a TLS config
 	var tlsconfig *tls.Config
@@ -103,7 +113,9 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	// We run the manager and the server concurrently
 	var wg sync.WaitGroup
 	var result error
-	fmt.Println(version.ExecName(), version.Version())
+
+	// Output the version
+	ctx.logger.Printf(ctx.ctx, "%s@%s", version.ExecName(), version.Version())
 
 	wg.Add(1)
 	go func() {
@@ -121,10 +133,13 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	go func() {
 		defer wg.Done()
 
-		fmt.Println("...listening on", ctx.HTTP.Addr+ctx.HTTP.Prefix)
+		// Output listening information
+		ctx.logger.With("addr", ctx.HTTP.Addr, "prefix", ctx.HTTP.Prefix).Print(ctx.ctx, "http server starting")
+
+		// Run the server
 		if err := server.Run(ctx.ctx); err != nil {
 			if !errors.Is(err, context.Canceled) {
-				result = errors.Join(result, fmt.Errorf("server error: %w", err))
+				result = errors.Join(result, err)
 			}
 			ctx.cancel()
 		}
@@ -135,7 +150,9 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 
 	// Terminated message
 	if result == nil {
-		fmt.Println(version.ExecName(), "terminated")
+		ctx.logger.With("addr", ctx.HTTP.Addr, "prefix", ctx.HTTP.Prefix).Print(ctx.ctx, "http server terminated")
+	} else {
+		ctx.logger.With("addr", ctx.HTTP.Addr, "prefix", ctx.HTTP.Prefix).Print(ctx.ctx, result)
 	}
 
 	// Return any error

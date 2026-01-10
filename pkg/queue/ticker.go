@@ -132,10 +132,36 @@ func (manager *Manager) NextTicker(ctx context.Context) (*schema.Ticker, error) 
 	return &ticker, nil
 }
 
-// RunTickerLoop runs a loop to process matured tickers in a namespace, until the context is cancelled,
+// RunTickerLoop runs a loop to process matured tickers, until the context is cancelled,
 // or an error occurs. The period parameter controls the sleep duration between checks when no ticker is found.
 // When a ticker is found, it immediately polls again to drain all matured tickers.
-func (manager *Manager) RunTickerLoop(ctx context.Context, namespace string, ch chan<- *schema.Ticker, period time.Duration) error {
+func (manager *Manager) RunTickerLoop(ctx context.Context, ch chan<- *schema.Ticker, period time.Duration) error {
+	timer := time.NewTimer(time.Millisecond)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-timer.C:
+			ticker, err := manager.NextTicker(ctx)
+			if err != nil {
+				return err
+			}
+			if ticker != nil {
+				ch <- ticker
+				timer.Reset(time.Millisecond)
+			} else {
+				timer.Reset(period)
+			}
+		}
+	}
+}
+
+// RunTickerLoopNs runs a loop to process matured tickers in a namespace, until the context is cancelled,
+// or an error occurs. The period parameter controls the sleep duration between checks when no ticker is found.
+// When a ticker is found, it immediately polls again to drain all matured tickers.
+func (manager *Manager) RunTickerLoopNs(ctx context.Context, namespace string, ch chan<- *schema.Ticker, period time.Duration) error {
 	timer := time.NewTimer(100 * time.Millisecond)
 	defer timer.Stop()
 

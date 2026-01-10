@@ -56,7 +56,7 @@ Use WorkerPool for concurrent task processing:
 
 	pool, err := queue.NewWorkerPool(mgr,
 		queue.WithWorkers(4),
-		queue.WithName("worker-1"),
+		queue.WithWorkerName("worker-1"),
 	)
 
 	// Register queue handlers

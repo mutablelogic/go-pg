@@ -42,9 +42,8 @@ func WithWorkerName(name string) Opt {
 	}
 }
 
-// WithWorkers sets the number of concurrent workers.
-// For NewWorkerPool, this sets the default workers for all queues.
-// For RegisterQueue, this overrides the pool default for that specific queue.
+// WithWorkers sets the number of concurrent workers for the worker pool.
+// The worker pool uses a shared pool of workers to process tasks from any registered queue.
 // Returns ErrInvalidWorkers if n < 1.
 func WithWorkers(n int) Opt {
 	return func(o *opts) error {

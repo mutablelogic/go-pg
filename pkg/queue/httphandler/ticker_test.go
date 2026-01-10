@@ -40,7 +40,7 @@ func Test_Ticker_List(t *testing.T) {
 	}
 
 	router := http.NewServeMux()
-	httphandler.RegisterTickerHandlers(router, "/api", mgr)
+	httphandler.RegisterTickerHandlers(router, "/api", mgr, nil)
 
 	t.Run("ListTickers", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/ticker", nil)
@@ -145,7 +145,7 @@ func Test_Ticker_Create(t *testing.T) {
 	assert.NoError(err)
 
 	router := http.NewServeMux()
-	httphandler.RegisterTickerHandlers(router, "/api", mgr)
+	httphandler.RegisterTickerHandlers(router, "/api", mgr, nil)
 
 	t.Run("CreateSuccess", func(t *testing.T) {
 		body := `{"ticker": "test_http_create", "duration": 60000000000}`
@@ -199,7 +199,7 @@ func Test_Ticker_Get(t *testing.T) {
 	assert.NoError(err)
 
 	router := http.NewServeMux()
-	httphandler.RegisterTickerHandlers(router, "/api", mgr)
+	httphandler.RegisterTickerHandlers(router, "/api", mgr, nil)
 
 	t.Run("GetExisting", func(t *testing.T) {
 		// Create a ticker first
@@ -248,7 +248,7 @@ func Test_Ticker_Update(t *testing.T) {
 	assert.NoError(err)
 
 	router := http.NewServeMux()
-	httphandler.RegisterTickerHandlers(router, "/api", mgr)
+	httphandler.RegisterTickerHandlers(router, "/api", mgr, nil)
 
 	t.Run("UpdateSuccess", func(t *testing.T) {
 		// Create a ticker first
@@ -304,7 +304,7 @@ func Test_Ticker_Delete(t *testing.T) {
 	assert.NoError(err)
 
 	router := http.NewServeMux()
-	httphandler.RegisterTickerHandlers(router, "/api", mgr)
+	httphandler.RegisterTickerHandlers(router, "/api", mgr, nil)
 
 	t.Run("DeleteSuccess", func(t *testing.T) {
 		// Create a ticker first

@@ -40,7 +40,7 @@ func Test_HTTPClient_ListNamespaces(t *testing.T) {
 
 	// Create HTTP server
 	router := http.NewServeMux()
-	httphandler.RegisterBackendHandlers(router, "/api", mgr1)
+	httphandler.RegisterBackendHandlers(router, "/api", mgr1, nil)
 
 	server := httptest.NewServer(router)
 	defer server.Close()

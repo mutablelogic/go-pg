@@ -38,7 +38,7 @@ func Test_Task_RetainWithoutAcceptHeader(t *testing.T) {
 	assert.NoError(err)
 
 	router := http.NewServeMux()
-	httphandler.RegisterTaskHandlers(router, "/api", mgr)
+	httphandler.RegisterTaskHandlers(router, "/api", mgr, nil)
 
 	t.Run("RetainWithoutAcceptHeader", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPut, "/api/task/test_queue?worker=test_worker", nil)
@@ -97,7 +97,7 @@ func Test_Task_Create(t *testing.T) {
 	defer mgr.DeleteQueue(ctx, "test_queue")
 
 	router := http.NewServeMux()
-	httphandler.RegisterTaskHandlers(router, "/api", mgr)
+	httphandler.RegisterTaskHandlers(router, "/api", mgr, nil)
 
 	t.Run("CreateSuccess", func(t *testing.T) {
 		body := `{"queue": "test_queue", "payload": {"test": "data"}}`
@@ -148,7 +148,7 @@ func Test_Task_Release(t *testing.T) {
 	defer mgr.DeleteQueue(ctx, "test_queue")
 
 	router := http.NewServeMux()
-	httphandler.RegisterTaskHandlers(router, "/api", mgr)
+	httphandler.RegisterTaskHandlers(router, "/api", mgr, nil)
 
 	t.Run("ReleaseWithPatch", func(t *testing.T) {
 		// Create and retain a task

@@ -46,7 +46,7 @@ func Test_Metrics_Handler(t *testing.T) {
 
 	// Create HTTP handler
 	router := http.NewServeMux()
-	httphandler.RegisterMetricsHandler(router, "/api", mgr)
+	httphandler.RegisterMetricsHandler(router, "/api", mgr, nil)
 
 	// Create test server
 	server := httptest.NewServer(router)
@@ -126,7 +126,7 @@ func Test_Metrics_WithMultipleQueues(t *testing.T) {
 
 	// Create HTTP handler
 	router := http.NewServeMux()
-	httphandler.RegisterMetricsHandler(router, "/", mgr)
+	httphandler.RegisterMetricsHandler(router, "/", mgr, nil)
 
 	// Create test server
 	server := httptest.NewServer(router)

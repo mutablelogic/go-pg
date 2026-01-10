@@ -12,20 +12,32 @@ import (
 )
 
 ///////////////////////////////////////////////////////////////////////////////
+// TYPES
+
+type HTTPMiddlewareFuncs []func(http.HandlerFunc) http.HandlerFunc
+
+///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
 // RegisterBackendHandlers registers all queue HTTP handlers on the provided
 // router with the given path prefix. The manager must be non-nil.
-func RegisterBackendHandlers(router *http.ServeMux, prefix string, manager *queue.Manager) {
-	RegisterQueueHandlers(router, prefix, manager)
-	RegisterTaskHandlers(router, prefix, manager)
-	RegisterTickerHandlers(router, prefix, manager)
-	RegisterNamespaceHandlers(router, prefix, manager)
-	RegisterMetricsHandler(router, prefix, manager)
+func RegisterBackendHandlers(router *http.ServeMux, prefix string, manager *queue.Manager, middleware HTTPMiddlewareFuncs) {
+	RegisterQueueHandlers(router, prefix, manager, middleware)
+	RegisterTaskHandlers(router, prefix, manager, middleware)
+	RegisterTickerHandlers(router, prefix, manager, middleware)
+	RegisterNamespaceHandlers(router, prefix, manager, middleware)
+	RegisterMetricsHandler(router, prefix, manager, middleware)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
+
+func (w HTTPMiddlewareFuncs) Wrap(handler http.HandlerFunc) http.HandlerFunc {
+	for i := len(w) - 1; i >= 0; i-- {
+		handler = w[i](handler)
+	}
+	return handler
+}
 
 func joinPath(prefix, path string) string {
 	return types.JoinPath(prefix, path)

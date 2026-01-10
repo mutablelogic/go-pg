@@ -17,8 +17,8 @@ import (
 
 // RegisterQueueHandlers registers HTTP handlers for queue CRUD operations
 // on the provided router with the given path prefix. The manager must be non-nil.
-func RegisterQueueHandlers(router *http.ServeMux, prefix string, manager *queue.Manager) {
-	router.HandleFunc(joinPath(prefix, "queue"), func(w http.ResponseWriter, r *http.Request) {
+func RegisterQueueHandlers(router *http.ServeMux, prefix string, manager *queue.Manager, middleware HTTPMiddlewareFuncs) {
+	router.HandleFunc(joinPath(prefix, "queue"), middleware.Wrap(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			_ = queueList(w, r, manager)
@@ -27,9 +27,9 @@ func RegisterQueueHandlers(router *http.ServeMux, prefix string, manager *queue.
 		default:
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
-	})
+	}))
 
-	router.HandleFunc(joinPath(prefix, "queue/{name}"), func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc(joinPath(prefix, "queue/{name}"), middleware.Wrap(func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		switch r.Method {
 		case http.MethodGet:
@@ -41,7 +41,7 @@ func RegisterQueueHandlers(router *http.ServeMux, prefix string, manager *queue.
 		default:
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
-	})
+	}))
 }
 
 ///////////////////////////////////////////////////////////////////////////////

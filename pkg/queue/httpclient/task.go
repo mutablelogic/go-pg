@@ -33,9 +33,10 @@ func (c *Client) ListTasks(ctx context.Context, opts ...Opt) (*schema.TaskList, 
 	return &response, nil
 }
 
-// RetainTask gets the next available task from a queue (GET /task/{queue}?worker=XX).
-func (c *Client) RetainTask(ctx context.Context, queue, worker string) (*schema.TaskWithStatus, error) {
-	req := client.NewRequest()
+// RetainTask gets the next available task (PUT /task or PUT /task/{queue}?worker=XX).
+// If queue is empty, tasks from any queue are considered.
+func (c *Client) RetainTask(ctx context.Context, worker string, queue ...string) (*schema.TaskWithStatus, error) {
+	req := client.NewRequestEx(http.MethodPut, "")
 
 	// Apply options
 	opts := []Opt{WithWorker(worker)}
@@ -44,9 +45,17 @@ func (c *Client) RetainTask(ctx context.Context, queue, worker string) (*schema.
 		return nil, err
 	}
 
+	// Build path - /task for any queue, /task/{queue} for specific queue
+	var pathOpt client.RequestOpt
+	if len(queue) > 0 && queue[0] != "" {
+		pathOpt = client.OptPath("task", queue[0])
+	} else {
+		pathOpt = client.OptPath("task")
+	}
+
 	// Perform request
 	var response schema.TaskWithStatus
-	if err := c.DoWithContext(ctx, req, &response, client.OptPath("task", queue), client.OptQuery(opt.Values)); err != nil {
+	if err := c.DoWithContext(ctx, req, &response, pathOpt, client.OptQuery(opt.Values)); err != nil {
 		return nil, err
 	}
 

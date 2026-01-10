@@ -279,7 +279,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 		assert.NotNil(task)
 
 		// Retain and release the task
-		retained, err := mgr.NextTask(ctx, "clean-queue", "test-worker")
+		retained, err := mgr.NextTask(ctx, "test-worker", "clean-queue")
 		assert.NoError(err)
 		assert.NotNil(retained)
 
@@ -328,7 +328,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 		// Retain and fail the task until retries exhausted
 		// Retries = 2, so we can fail it twice, then it reaches 0 and becomes 'failed'
 		for i := 0; i < 2; i++ {
-			retained, err := mgr.NextTask(ctx, queueName, "test-worker")
+			retained, err := mgr.NextTask(ctx, "test-worker", queueName)
 			assert.NoError(err)
 			if retained == nil {
 				t.Logf("No task available on attempt %d", i+1)
@@ -342,7 +342,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 
 		// Now the task should have 0 retries and status 'failed'
 		// Verify it won't be picked up again
-		noTask, err := mgr.NextTask(ctx, queueName, "test-worker")
+		noTask, err := mgr.NextTask(ctx, "test-worker", queueName)
 		assert.NoError(err)
 		assert.Nil(noTask, "Task with 0 retries should not be picked up")
 
@@ -393,7 +393,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 		})
 		assert.NoError(err)
 
-		retained, err := mgr.NextTask(ctx, "clean-queue", "test-worker")
+		retained, err := mgr.NextTask(ctx, "test-worker", "clean-queue")
 		assert.NoError(err)
 		assert.NotNil(retained)
 

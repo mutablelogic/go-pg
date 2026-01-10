@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 
@@ -10,6 +11,8 @@ import (
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
 	sql "github.com/mutablelogic/go-pg/pkg/queue/sql"
+	logger "github.com/mutablelogic/go-server/pkg/logger"
+	ref "github.com/mutablelogic/go-server/pkg/ref"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -27,14 +30,13 @@ type Manager struct {
 func New(ctx context.Context, conn pg.PoolConn, namespace string) (*Manager, error) {
 	self := new(Manager)
 
-	// Check parameters
-	if conn == nil {
-		return nil, pg.ErrBadParameter.With("connection is nil")
-	}
+	// Check namespace
 	if namespace = strings.TrimSpace(namespace); namespace == "" {
 		namespace = schema.SchemaName
 	} else if namespace == schema.SchemaName {
 		return nil, pg.ErrBadParameter.Withf("namespace %q is reserved for system use", schema.SchemaName)
+	} else {
+		self.ns = namespace
 	}
 
 	// Parse query SQL
@@ -49,13 +51,12 @@ func New(ctx context.Context, conn pg.PoolConn, namespace string) (*Manager, err
 		return nil, err
 	}
 
-	// Create connection with queries and namespace
-	self.conn = conn.WithQueries(queries).With(
-		"ns", namespace,
-	).(pg.PoolConn)
-
-	// Set the namespace
-	self.ns = namespace
+	// Check and set connection
+	if conn == nil {
+		return nil, pg.ErrBadParameter.With("connection is nil")
+	} else {
+		self.conn = conn.WithQueries(queries).With("ns", namespace).(pg.PoolConn)
+	}
 
 	// Execute object SQL
 	for _, key := range objects.Keys() {
@@ -79,7 +80,6 @@ func New(ctx context.Context, conn pg.PoolConn, namespace string) (*Manager, err
 	} else if err != nil {
 		return nil, err
 	}
-	// If no error, ticker already exists - don't update it
 
 	// Return success
 	return self, nil
@@ -111,6 +111,12 @@ func (manager *Manager) Run(ctx context.Context) error {
 	ch := make(chan *schema.Ticker, 1)
 	defer close(ch)
 
+	// Get the logger from the context
+	log := ref.Log(ctx)
+	if log == nil {
+		log = logger.New(os.Stdout, logger.Text, false)
+	}
+
 	// Start ticker loop in a goroutine
 	var wg sync.WaitGroup
 	errCh := make(chan error, 1)
@@ -118,7 +124,7 @@ func (manager *Manager) Run(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := manager.RunTickerLoop(ctx, schema.SchemaName, ch, schema.TickerPeriod); err != nil {
+		if err := manager.RunTickerLoopNs(ctx, schema.SchemaName, ch, schema.TickerPeriod); err != nil {
 			errCh <- err
 		}
 	}()
@@ -136,10 +142,9 @@ func (manager *Manager) Run(ctx context.Context) error {
 		case ticker := <-ch:
 			if ticker.Ticker == schema.CleanupTickerName {
 				// Run cleanup for all queues in this manager's namespace
+				log.With("ticker", ticker.Ticker).Debug(ctx, "running cleanup")
 				if err := manager.runCleanup(ctx); err != nil {
-					// Log error but continue running
-					// TODO: Add proper logging
-					_ = err
+					log.Print(ctx, "cleanup error ", err)
 				}
 			}
 		}
@@ -168,6 +173,8 @@ func (manager *Manager) runCleanup(ctx context.Context) error {
 
 // cleanNamespace cleans all queues in a specific namespace
 func (manager *Manager) cleanNamespace(ctx context.Context, namespace string) error {
+	var result error
+
 	// List all queues in this namespace
 	var queues schema.QueueList
 	if err := manager.conn.With("ns", namespace).List(ctx, &queues, schema.QueueListRequest{}); err != nil {
@@ -179,12 +186,12 @@ func (manager *Manager) cleanNamespace(ctx context.Context, namespace string) er
 		var resp schema.QueueCleanResponse
 		if err := manager.conn.With("ns", namespace).List(ctx, &resp, schema.QueueCleanRequest{Queue: queue.Queue}); err != nil {
 			// Continue cleaning other queues even if one fails
-			// TODO: Add proper logging
-			_ = err
+			result = errors.Join(result, err)
 		}
 	}
 
-	return nil
+	// Return any errors
+	return result
 }
 
 // listNamespaces returns all distinct namespaces from the queue table

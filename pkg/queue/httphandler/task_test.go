@@ -41,7 +41,7 @@ func Test_Task_RetainWithoutAcceptHeader(t *testing.T) {
 	httphandler.RegisterTaskHandlers(router, "/api", mgr)
 
 	t.Run("RetainWithoutAcceptHeader", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/task/test_queue?worker=test_worker", nil)
+		req := httptest.NewRequest(http.MethodPut, "/api/task/test_queue?worker=test_worker", nil)
 		// Explicitly not setting Accept header
 		w := httptest.NewRecorder()
 
@@ -62,7 +62,7 @@ func Test_Task_RetainWithoutAcceptHeader(t *testing.T) {
 		_, err = mgr.CreateTask(ctx, "test_queue", schema.TaskMeta{Payload: json.RawMessage(`{"test": "data2"}`)})
 		assert.NoError(err)
 
-		req := httptest.NewRequest(http.MethodGet, "/api/task/test_queue?worker=test_worker", nil)
+		req := httptest.NewRequest(http.MethodPut, "/api/task/test_queue?worker=test_worker", nil)
 		req.Header.Set("Accept", "application/json")
 		w := httptest.NewRecorder()
 
@@ -154,7 +154,7 @@ func Test_Task_Release(t *testing.T) {
 		// Create and retain a task
 		task, err := mgr.CreateTask(ctx, "test_queue", schema.TaskMeta{Payload: json.RawMessage(`{"test": "data"}`)})
 		assert.NoError(err)
-		task, err = mgr.NextTask(ctx, "test_queue", "test_worker")
+		task, err = mgr.NextTask(ctx, "test_worker", "test_queue")
 		assert.NoError(err)
 
 		// Release with result

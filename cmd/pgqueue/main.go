@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -12,6 +13,9 @@ import (
 	kong "github.com/alecthomas/kong"
 	client "github.com/mutablelogic/go-client"
 	httpclient "github.com/mutablelogic/go-pg/pkg/queue/httpclient"
+	"github.com/mutablelogic/go-server"
+	"github.com/mutablelogic/go-server/pkg/logger"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -31,6 +35,7 @@ type Globals struct {
 	// Private fields
 	ctx    context.Context
 	cancel context.CancelFunc
+	logger server.Logger
 }
 
 type CLI struct {
@@ -62,6 +67,13 @@ func main() {
 	// Create the context and cancel function
 	cli.Globals.ctx, cli.Globals.cancel = signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cli.Globals.cancel()
+
+	// Create a logger
+	if isTerminal(os.Stderr) {
+		cli.Globals.logger = logger.New(os.Stderr, logger.Term, cli.Debug)
+	} else {
+		cli.Globals.logger = logger.New(os.Stderr, logger.JSON, cli.Debug)
+	}
 
 	// Call the Run() method of the selected parsed command.
 	if err := ctx.Run(&cli.Globals); err != nil {
@@ -102,4 +114,11 @@ func (g *Globals) Client() (*httpclient.Client, error) {
 
 	// Create a client with the calculated endpoint
 	return httpclient.New(fmt.Sprintf("%s://%s:%v%s", scheme, host, portn, g.HTTP.Prefix), opts...)
+}
+
+func isTerminal(w io.Writer) bool {
+	if fd, ok := w.(*os.File); ok {
+		return terminal.IsTerminal(int(fd.Fd()))
+	}
+	return false
 }

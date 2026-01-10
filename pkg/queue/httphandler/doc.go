@@ -21,7 +21,8 @@ interface for queue operations.
 
 	GET    /task            - List tasks (optional ?queue, ?status, ?offset, ?limit)
 	POST   /task            - Create a new task (requires queue in body)
-	GET    /task/{queue}    - Retain next available task (requires ?worker parameter)
+	PUT    /task            - Retain next available task from any queue (requires ?worker)
+	PUT    /task/{queue}    - Retain next available task from specific queue (requires ?worker)
 	PATCH  /task/{id}       - Release a task with result (mark as complete or failed)
 
 # Ticker Endpoints

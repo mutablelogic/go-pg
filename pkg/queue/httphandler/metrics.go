@@ -23,13 +23,13 @@ const (
 // PUBLIC METHODS
 
 type metrics struct {
-	manager   *queue.Manager
+	manager    *queue.Manager
 	queueTasks *prometheus.Desc
 }
 
 // RegisterMetricsHandler registers a HTTP handler for prometheus metrics
 // on the provided router with the given path prefix. The manager must be non-nil.
-func RegisterMetricsHandler(router *http.ServeMux, prefix string, manager *queue.Manager) {
+func RegisterMetricsHandler(router *http.ServeMux, prefix string, manager *queue.Manager, middleware HTTPMiddlewareFuncs) {
 	if manager == nil {
 		panic("manager is nil")
 	}
@@ -47,14 +47,14 @@ func RegisterMetricsHandler(router *http.ServeMux, prefix string, manager *queue
 	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 
 	// Create a handler for metrics
-	router.HandleFunc(joinPath(prefix, "metrics"), func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc(joinPath(prefix, "metrics"), middleware.Wrap(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			handler.ServeHTTP(w, r)
 		default:
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
-	})
+	}))
 }
 
 ///////////////////////////////////////////////////////////////////////////////

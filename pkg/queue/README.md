@@ -124,8 +124,14 @@ task, err := mgr.CreateTask(ctx, "emails", schema.TaskMeta{
     DelayedAt: &delayedAt,
 })
 
-// Worker: get next available task
-task, err := mgr.NextTask(ctx, "emails", "worker-1")
+// Worker: get next available task from specific queue
+task, err := mgr.NextTask(ctx, "worker-1", "emails")
+
+// Worker: get next available task from any queue
+task, err := mgr.NextTask(ctx, "worker-1")
+
+// Worker: get next available task from multiple queues
+task, err := mgr.NextTask(ctx, "worker-1", "emails", "notifications")
 
 // Release task (success)
 mgr.ReleaseTask(ctx, task.Id, true, nil, &status)
@@ -194,7 +200,8 @@ All endpoints are prefixed with the configured path (e.g., `/api`):
 |--------|------|-------------|
 | GET | `{prefix}/task` | List tasks (filter: `?queue=`, `?status=`, `?offset=`, `?limit=`) |
 | POST | `{prefix}/task` | Create task |
-| GET | `{prefix}/task/{queue}` | Retain next task from queue (requires `?worker=`) |
+| PUT | `{prefix}/task` | Retain next task from any queue (requires `?worker=`) |
+| PUT | `{prefix}/task/{queue}` | Retain next task from specific queue (requires `?worker=`) |
 | PATCH | `{prefix}/task/{id}` | Release task with result (`{"fail": bool, "result": any}`) |
 
 ### Ticker
@@ -234,7 +241,9 @@ pgqueue tasks                      # List all tasks
 pgqueue tasks --queue=myqueue      # Filter by queue
 pgqueue tasks --status=new         # Filter by status
 pgqueue create-task myqueue        # Create task
-pgqueue retain-task myqueue worker # Retain next task
+pgqueue retain-task --worker=worker1 myqueue  # Retain next task from specific queue
+pgqueue retain-task --worker=worker1          # Retain next task from any queue
+pgqueue retain-task --worker=worker1 queue1 queue2  # Retain from multiple queues
 pgqueue complete-task 123          # Release task (success)
 pgqueue complete-task 123 --error '{"msg":"failed"}'  # Release task (failure)
 

@@ -115,7 +115,7 @@ func Test_Task_NextTask(t *testing.T) {
 	assert.NoError(err)
 
 	t.Run("NextTaskFromEmptyQueue", func(t *testing.T) {
-		task, err := mgr.NextTask(ctx, "work-queue", "worker-1")
+		task, err := mgr.NextTask(ctx, "worker-1", "work-queue")
 		assert.NoError(err)
 		assert.Nil(task)
 	})
@@ -130,7 +130,7 @@ func Test_Task_NextTask(t *testing.T) {
 		assert.NotNil(createdTask)
 
 		// Get next task
-		task, err := mgr.NextTask(ctx, "work-queue", "worker-1")
+		task, err := mgr.NextTask(ctx, "worker-1", "work-queue")
 		assert.NoError(err)
 		assert.NotNil(task)
 		assert.Equal(createdTask.Id, task.Id)
@@ -148,12 +148,12 @@ func Test_Task_NextTask(t *testing.T) {
 		assert.NoError(err)
 
 		// First worker gets the task
-		task1, err := mgr.NextTask(ctx, "work-queue", "worker-2")
+		task1, err := mgr.NextTask(ctx, "worker-2", "work-queue")
 		assert.NoError(err)
 		assert.NotNil(task1)
 
 		// Second worker should not get the same task
-		task2, err := mgr.NextTask(ctx, "work-queue", "worker-3")
+		task2, err := mgr.NextTask(ctx, "worker-3", "work-queue")
 		assert.NoError(err)
 		// Could be nil or a different task, but not the same one
 		if task2 != nil {
@@ -172,7 +172,7 @@ func Test_Task_NextTask(t *testing.T) {
 		assert.NoError(err)
 
 		// Should not get the delayed task
-		task, err := mgr.NextTask(ctx, "work-queue", "worker-4")
+		task, err := mgr.NextTask(ctx, "worker-4", "work-queue")
 		assert.NoError(err)
 		// Task should be nil or a different non-delayed task
 		if task != nil {
@@ -202,7 +202,7 @@ func Test_Task_ReleaseTask(t *testing.T) {
 		})
 		assert.NoError(err)
 
-		task, err := mgr.NextTask(ctx, "release-queue", "worker-release-1")
+		task, err := mgr.NextTask(ctx, "worker-release-1", "release-queue")
 		assert.NoError(err)
 		assert.NotNil(task)
 
@@ -227,7 +227,7 @@ func Test_Task_ReleaseTask(t *testing.T) {
 		})
 		assert.NoError(err)
 
-		task, err := mgr.NextTask(ctx, "release-queue", "worker-release-2")
+		task, err := mgr.NextTask(ctx, "worker-release-2", "release-queue")
 		assert.NoError(err)
 		assert.NotNil(task)
 
@@ -250,7 +250,7 @@ func Test_Task_ReleaseTask(t *testing.T) {
 		})
 		assert.NoError(err)
 
-		task, err := mgr.NextTask(ctx, "release-queue", "worker-release-3")
+		task, err := mgr.NextTask(ctx, "worker-release-3", "release-queue")
 		assert.NoError(err)
 		assert.NotNil(task)
 
@@ -310,7 +310,7 @@ func Test_Task_RunTaskLoop(t *testing.T) {
 		// Run loop in background
 		errCh := make(chan error, 1)
 		go func() {
-			errCh <- mgr.RunTaskLoop(loopCtx, ch, "loop-queue", "worker-loop")
+			errCh <- mgr.RunTaskLoop(loopCtx, ch, "worker-loop", "loop-queue")
 		}()
 
 		// Wait for task to be received
@@ -335,7 +335,7 @@ func Test_Task_RunTaskLoop(t *testing.T) {
 		// Cancel immediately
 		cancel()
 
-		err := mgr.RunTaskLoop(loopCtx, ch, "loop-queue", "worker-cancel")
+		err := mgr.RunTaskLoop(loopCtx, ch, "worker-cancel", "loop-queue")
 		assert.NoError(err)
 	})
 
@@ -356,7 +356,7 @@ func Test_Task_RunTaskLoop(t *testing.T) {
 		// Run loop
 		errCh := make(chan error, 1)
 		go func() {
-			errCh <- mgr.RunTaskLoop(loopCtx, ch, "loop-queue", "worker-multi")
+			errCh <- mgr.RunTaskLoop(loopCtx, ch, "worker-multi", "loop-queue")
 		}()
 
 		// Collect tasks

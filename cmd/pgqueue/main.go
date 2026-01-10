@@ -11,11 +11,14 @@ import (
 
 	// Packages
 	kong "github.com/alecthomas/kong"
+	version "github.com/djthorpe/go-pg/pkg/version"
 	client "github.com/mutablelogic/go-client"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	httpclient "github.com/mutablelogic/go-pg/pkg/queue/httpclient"
-	"github.com/mutablelogic/go-server"
-	"github.com/mutablelogic/go-server/pkg/logger"
-	"golang.org/x/crypto/ssh/terminal"
+	server "github.com/mutablelogic/go-server"
+	logger "github.com/mutablelogic/go-server/pkg/logger"
+	trace "go.opentelemetry.io/otel/trace"
+	terminal "golang.org/x/term"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -28,14 +31,22 @@ type Globals struct {
 
 	// HTTP server options
 	HTTP struct {
-		Prefix string `name:"prefix" help:"HTTP path prefix" default:"/api/v1"`
-		Addr   string `name:"addr" env:"PGQUEUE_ADDR" help:"HTTP Listen address" default:":8080"`
+		Prefix string `name:"prefix" help:"HTTP path prefix" default:"/api"`
+		Addr   string `name:"addr" env:"PGQUEUE_ADDR" help:"HTTP Listen address" default:"localhost:8080"`
 	} `embed:"" prefix:"http."`
+
+	// Open Telemetry options
+	OTel struct {
+		Endpoint string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" help:"Open Telemetry endpoint" default:""`
+		Header   string `env:"OTEL_EXPORTER_OTLP_HEADERS" help:"OpenTelemetry collector headers"`
+		Name     string `env:"OTEL_SERVICE_NAME" help:"OpenTelemetry service name" default:"${EXECUTABLE_NAME}"`
+	} `embed:"" prefix:"otel."`
 
 	// Private fields
 	ctx    context.Context
 	cancel context.CancelFunc
 	logger server.Logger
+	tracer trace.Tracer
 }
 
 type CLI struct {
@@ -51,12 +62,14 @@ type CLI struct {
 // LIFECYCLE
 
 func main() {
+	// Parse command-line arguments
 	cli := new(CLI)
 	ctx := kong.Parse(cli,
 		kong.Name("pgqueue"),
 		kong.Description("pgqueue command line interface"),
 		kong.Vars{
-			"version": VersionJSON(),
+			"version":         VersionJSON(),
+			"EXECUTABLE_NAME": version.ExecName(),
 		},
 		kong.UsageOnError(),
 		kong.ConfigureHelp(kong.HelpOptions{
@@ -64,22 +77,42 @@ func main() {
 		}),
 	)
 
-	// Create the context and cancel function
-	cli.Globals.ctx, cli.Globals.cancel = signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cli.Globals.cancel()
+	// Run the command
+	os.Exit(run(ctx, &cli.Globals))
+}
 
-	// Create a logger
+func run(ctx *kong.Context, globals *Globals) int {
+	// Create the context and cancel function
+	globals.ctx, globals.cancel = signal.NotifyContext(context.Background(), os.Interrupt)
+	defer globals.cancel()
+
+	// Logger
 	if isTerminal(os.Stderr) {
-		cli.Globals.logger = logger.New(os.Stderr, logger.Term, cli.Debug)
+		globals.logger = logger.New(os.Stderr, logger.Term, globals.Debug)
 	} else {
-		cli.Globals.logger = logger.New(os.Stderr, logger.JSON, cli.Debug)
+		globals.logger = logger.New(os.Stderr, logger.JSON, globals.Debug)
+	}
+
+	// Open Telemetry
+	if globals.OTel.Endpoint != "" {
+		provider, err := otel.NewProvider(globals.OTel.Endpoint, globals.OTel.Header, globals.OTel.Name)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			return -2
+		}
+		defer provider.Shutdown(context.Background())
+
+		// Store tracer for creating spans
+		globals.tracer = provider.Tracer(globals.OTel.Name)
 	}
 
 	// Call the Run() method of the selected parsed command.
-	if err := ctx.Run(&cli.Globals); err != nil {
+	if err := ctx.Run(globals); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
+		return -1
 	}
+
+	return 0
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -111,6 +144,9 @@ func (g *Globals) Client() (*httpclient.Client, error) {
 	if g.Debug {
 		opts = append(opts, client.OptTrace(os.Stderr, true))
 	}
+	if g.tracer != nil {
+		opts = append(opts, client.OptTracer(g.tracer))
+	}
 
 	// Create a client with the calculated endpoint
 	return httpclient.New(fmt.Sprintf("%s://%s:%v%s", scheme, host, portn, g.HTTP.Prefix), opts...)
@@ -121,4 +157,11 @@ func isTerminal(w io.Writer) bool {
 		return terminal.IsTerminal(int(fd.Fd()))
 	}
 	return false
+}
+
+// StartSpan starts a new OTEL span if a tracer is configured.
+// Returns the context (with span if available) and an end function that records
+// any error and ends the span. Use with: defer func() { endSpan(err) }()
+func (g *Globals) StartSpan(name string) (context.Context, func(error)) {
+	return otel.StartSpan(g.tracer, g.ctx, name)
 }

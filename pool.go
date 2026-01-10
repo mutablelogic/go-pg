@@ -58,16 +58,18 @@ func NewPool(ctx context.Context, opts ...Opt) (PoolConn, error) {
 	}
 
 	// If there is a trace function, then set it
-	if o.TraceFn != nil {
-		poolconfig.ConnConfig.Tracer = NewTracer(o.TraceFn)
+	if o.tracer != nil {
+		poolconfig.ConnConfig.Tracer = o.tracer
 
-		// Output the connection parameters
-		parts := map[string]string{}
-		for _, part := range o.encode("password") {
-			kv := strings.SplitN(part, "=", 2)
-			parts[kv[0]] = kv[1]
+		if o.TraceFn != nil {
+			// Output the connection parameters
+			parts := map[string]string{}
+			for _, part := range o.encode("password") {
+				kv := strings.SplitN(part, "=", 2)
+				parts[kv[0]] = kv[1]
+			}
+			o.TraceFn(ctx, "CONNECT", parts, nil)
 		}
-		o.TraceFn(ctx, "CONNECT", parts, nil)
 	}
 
 	// Create the connection pool

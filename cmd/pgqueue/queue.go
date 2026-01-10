@@ -50,14 +50,18 @@ type UpdateQueueCommand struct {
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *ListQueueCommand) Run(ctx *Globals) error {
+func (cmd *ListQueueCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("ListQueueCommand")
+	defer func() { endSpan(err) }()
+
 	// List queues
-	queues, err := client.ListQueues(ctx.ctx, httpclient.WithOffsetLimit(cmd.Offset, cmd.Limit))
+	queues, err := client.ListQueues(parent, httpclient.WithOffsetLimit(cmd.Offset, cmd.Limit))
 	if err != nil {
 		return err
 	}
@@ -67,14 +71,18 @@ func (cmd *ListQueueCommand) Run(ctx *Globals) error {
 	return nil
 }
 
-func (cmd *GetQueueCommand) Run(ctx *Globals) error {
+func (cmd *GetQueueCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("GetQueueCommand")
+	defer func() { endSpan(err) }()
+
 	// Get one queue
-	queue, err := client.GetQueue(ctx.ctx, cmd.Name)
+	queue, err := client.GetQueue(parent, cmd.Name)
 	if err != nil {
 		return err
 	}
@@ -84,14 +92,18 @@ func (cmd *GetQueueCommand) Run(ctx *Globals) error {
 	return nil
 }
 
-func (cmd *CreateQueueCommand) Run(ctx *Globals) error {
+func (cmd *CreateQueueCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("CreateQueueCommand")
+	defer func() { endSpan(err) }()
+
 	// Create queue
-	queue, err := client.CreateQueue(ctx.ctx, schema.QueueMeta{
+	queue, err := client.CreateQueue(parent, schema.QueueMeta{
 		Queue:      cmd.Name,
 		TTL:        cmd.TTL,
 		Retries:    cmd.Retries,
@@ -106,14 +118,18 @@ func (cmd *CreateQueueCommand) Run(ctx *Globals) error {
 	return nil
 }
 
-func (cmd *DeleteQueueCommand) Run(ctx *Globals) error {
+func (cmd *DeleteQueueCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("DeleteQueueCommand")
+	defer func() { endSpan(err) }()
+
 	// Delete queue
-	queue, err := client.DeleteQueue(ctx.ctx, cmd.Name)
+	queue, err := client.DeleteQueue(parent, cmd.Name)
 	if err != nil {
 		return err
 	}
@@ -123,14 +139,18 @@ func (cmd *DeleteQueueCommand) Run(ctx *Globals) error {
 	return nil
 }
 
-func (cmd *UpdateQueueCommand) Run(ctx *Globals) error {
+func (cmd *UpdateQueueCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("UpdateQueueCommand")
+	defer func() { endSpan(err) }()
+
 	// Update queue
-	queue, err := client.UpdateQueue(ctx.ctx, cmd.Name, schema.QueueMeta{
+	queue, err := client.UpdateQueue(parent, cmd.Name, schema.QueueMeta{
 		TTL:        cmd.TTL,
 		Retries:    cmd.Retries,
 		RetryDelay: cmd.RetryDelay,

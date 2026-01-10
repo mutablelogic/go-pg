@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	// Packages
+	"github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	manager "github.com/mutablelogic/go-pg/pkg/queue"
 	httphandler "github.com/mutablelogic/go-pg/pkg/queue/httphandler"
@@ -26,7 +27,6 @@ type ServerCommands struct {
 type RunServer struct {
 	URL       string `arg:"" name:"url" help:"Database URL" default:""`
 	Namespace string `name:"namespace" help:"Queue namespace" default:"default"`
-	Trace     bool   `name:"trace" help:"Enable query tracing" default:"false"`
 
 	// Postgres options
 	PG struct {
@@ -57,12 +57,16 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	if cmd.PG.Schema != "" {
 		opts = append(opts, pg.WithSchemaSearchPath(cmd.PG.Schema))
 	}
-	if ctx.Debug || cmd.Trace {
+
+	// Tracing
+	if ctx.tracer != nil {
+		opts = append(opts, pg.WithTracer(ctx.tracer))
+	} else if ctx.Debug {
 		opts = append(opts, pg.WithTrace(func(parent context.Context, query string, args any, err error) {
 			if err != nil {
 				ctx.logger.With("query", query, "args", args).Print(parent, "pg error: ", err)
-			} else if cmd.Trace {
-				ctx.logger.With("query", query, "args", args).Print(parent, "pg trace")
+			} else {
+				ctx.logger.With("query", query, "args", args).Debug(parent, "pg trace")
 			}
 		}))
 	}
@@ -85,9 +89,14 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 		return err
 	}
 
-	// Set middleware
+	// Set logging middleware
 	middleware := httphandler.HTTPMiddlewareFuncs{
 		ctx.logger.HandleFunc,
+	}
+
+	// If we have an OTEL tracer, add tracing middleware
+	if ctx.tracer != nil {
+		middleware = append(middleware, otel.HTTPHandlerFunc(ctx.tracer))
 	}
 
 	// Register HTTP handlers

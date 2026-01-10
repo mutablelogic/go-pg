@@ -294,6 +294,7 @@ func (bind *Bind) queuerow(batch *pgx.Batch, query string, reader Reader) {
 //   - $1 => $1
 //   - $$ => $$
 func (bind *Bind) Replace(query string) string {
+	// Perform the replacement
 	return replace(query, bind.vars)
 }
 

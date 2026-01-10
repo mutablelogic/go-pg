@@ -16,14 +16,18 @@ type ListNamespaceCommand struct{}
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *ListNamespaceCommand) Run(ctx *Globals) error {
+func (cmd *ListNamespaceCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("ListNamespaceCommand")
+	defer func() { endSpan(err) }()
+
 	// List namespaces
-	namespaces, err := client.ListNamespaces(ctx.ctx)
+	namespaces, err := client.ListNamespaces(parent)
 	if err != nil {
 		return err
 	}

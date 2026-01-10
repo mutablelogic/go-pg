@@ -31,13 +31,13 @@ func New(ctx context.Context, conn pg.PoolConn, namespace string) (*Manager, err
 	self := new(Manager)
 
 	// Check namespace - if empty, use default schema name
-	namespace = strings.TrimSpace(namespace)
-	if namespace == "" {
-		namespace = schema.SchemaName
-	} else if namespace == schema.SchemaName {
+	self.ns = strings.TrimSpace(namespace)
+	switch self.ns {
+	case "":
+		self.ns = schema.SchemaName
+	case schema.SchemaName:
 		return nil, pg.ErrBadParameter.Withf("namespace %q is reserved for system use", schema.SchemaName)
 	}
-	self.ns = namespace
 
 	// Parse query SQL
 	queries, err := pg.NewQueries(strings.NewReader(sql.Queries))

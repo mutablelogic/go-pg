@@ -52,14 +52,18 @@ type UpdateTickerCommand struct {
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *ListTickerCommand) Run(ctx *Globals) error {
+func (cmd *ListTickerCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("ListTickerCommand")
+	defer func() { endSpan(err) }()
+
 	// List tickers
-	tickers, err := client.ListTickers(ctx.ctx, httpclient.WithOffsetLimit(cmd.Offset, cmd.Limit))
+	tickers, err := client.ListTickers(parent, httpclient.WithOffsetLimit(cmd.Offset, cmd.Limit))
 	if err != nil {
 		return err
 	}
@@ -69,14 +73,18 @@ func (cmd *ListTickerCommand) Run(ctx *Globals) error {
 	return nil
 }
 
-func (cmd *GetTickerCommand) Run(ctx *Globals) error {
+func (cmd *GetTickerCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("GetTickerCommand")
+	defer func() { endSpan(err) }()
+
 	// Get one ticker
-	ticker, err := client.GetTicker(ctx.ctx, cmd.Name)
+	ticker, err := client.GetTicker(parent, cmd.Name)
 	if err != nil {
 		return err
 	}
@@ -86,11 +94,15 @@ func (cmd *GetTickerCommand) Run(ctx *Globals) error {
 	return nil
 }
 
-func (cmd *CreateTickerCommand) Run(ctx *Globals) error {
+func (cmd *CreateTickerCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
+
+	// OTEL
+	parent, endSpan := ctx.StartSpan("CreateTickerCommand")
+	defer func() { endSpan(err) }()
 
 	// Parse payload
 	var payload json.RawMessage
@@ -102,7 +114,7 @@ func (cmd *CreateTickerCommand) Run(ctx *Globals) error {
 	}
 
 	// Create ticker
-	ticker, err := client.CreateTicker(ctx.ctx, schema.TickerMeta{
+	ticker, err := client.CreateTicker(parent, schema.TickerMeta{
 		Ticker:   cmd.Name,
 		Interval: cmd.Interval,
 		Payload:  payload,
@@ -116,14 +128,18 @@ func (cmd *CreateTickerCommand) Run(ctx *Globals) error {
 	return nil
 }
 
-func (cmd *DeleteTickerCommand) Run(ctx *Globals) error {
+func (cmd *DeleteTickerCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("DeleteTickerCommand")
+	defer func() { endSpan(err) }()
+
 	// Delete ticker
-	ticker, err := client.DeleteTicker(ctx.ctx, cmd.Name)
+	ticker, err := client.DeleteTicker(parent, cmd.Name)
 	if err != nil {
 		return err
 	}
@@ -133,11 +149,15 @@ func (cmd *DeleteTickerCommand) Run(ctx *Globals) error {
 	return nil
 }
 
-func (cmd *UpdateTickerCommand) Run(ctx *Globals) error {
+func (cmd *UpdateTickerCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
+
+	// OTEL
+	parent, endSpan := ctx.StartSpan("UpdateTickerCommand")
+	defer func() { endSpan(err) }()
 
 	// Parse payload
 	var payload json.RawMessage
@@ -149,7 +169,7 @@ func (cmd *UpdateTickerCommand) Run(ctx *Globals) error {
 	}
 
 	// Update ticker
-	ticker, err := client.UpdateTicker(ctx.ctx, cmd.Name, schema.TickerMeta{
+	ticker, err := client.UpdateTicker(parent, cmd.Name, schema.TickerMeta{
 		Interval: cmd.Interval,
 		Payload:  payload,
 	})
@@ -164,21 +184,25 @@ func (cmd *UpdateTickerCommand) Run(ctx *Globals) error {
 
 type NextTickerCommand struct{}
 
-func (cmd *NextTickerCommand) Run(ctx *Globals) error {
+func (cmd *NextTickerCommand) Run(ctx *Globals) (err error) {
 	c, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("NextTickerCommand")
+	defer func() { endSpan(err) }()
+
 	// Stream matured tickers via SSE, reconnecting on EOF/timeout
 	for {
-		err := c.NextTicker(ctx.ctx, func(event client.TextStreamEvent) error {
+		err := c.NextTicker(parent, func(event client.TextStreamEvent) error {
 			fmt.Printf("[%s] %s\n", event.Event, event.Data)
 			return nil
 		})
 
 		// Check if context was cancelled (Ctrl+C)
-		if ctx.ctx.Err() != nil {
+		if parent.Err() != nil {
 			return nil
 		}
 

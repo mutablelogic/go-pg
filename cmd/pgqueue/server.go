@@ -9,12 +9,13 @@ import (
 	"sync"
 
 	// Packages
-	"github.com/mutablelogic/go-client/pkg/otel"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	manager "github.com/mutablelogic/go-pg/pkg/queue"
 	httphandler "github.com/mutablelogic/go-pg/pkg/queue/httphandler"
 	version "github.com/mutablelogic/go-pg/pkg/version"
 	httpserver "github.com/mutablelogic/go-server/pkg/httpserver"
+	"github.com/mutablelogic/go-server/pkg/ref"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -26,7 +27,7 @@ type ServerCommands struct {
 
 type RunServer struct {
 	URL       string `arg:"" name:"url" help:"Database URL" default:""`
-	Namespace string `name:"namespace" help:"Queue namespace" default:"default"`
+	Namespace string `name:"namespace" help:"Queue namespace" default:""`
 
 	// Postgres options
 	PG struct {
@@ -84,7 +85,7 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	}
 
 	// Create the manager
-	manager, err := manager.New(ctx.ctx, conn, cmd.Namespace)
+	manager, err := manager.New(ctx.ctx, conn, manager.WithNamespace(cmd.Namespace), manager.WithTracer(ctx.tracer))
 	if err != nil {
 		return err
 	}
@@ -129,8 +130,7 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-
-		if err := manager.Run(ctx.ctx); err != nil {
+		if err := manager.Run(ref.WithLogger(ctx.ctx, ctx.logger)); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				result = errors.Join(result, fmt.Errorf("queue error: %w", err))
 			}

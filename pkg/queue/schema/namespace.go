@@ -45,7 +45,7 @@ func (l *NamespaceList) ScanCount(row pg.Row) error {
 func (l NamespaceListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	switch op {
 	case pg.List:
-		return bind.Replace("${pgqueue.namespace_list}"), nil
+		return bind.Query("pgqueue.namespace_list"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("Unsupported NamespaceListRequest operation %q", op)
 	}

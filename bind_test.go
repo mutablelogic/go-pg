@@ -90,3 +90,12 @@ func Test_Bind_003(t *testing.T) {
 	)
 	assert.Equal("IN ('a','b','c')", bind.Replace("IN (${'list'})"))
 }
+
+func Test_Query_001(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test Bind.Query method - sets span name and returns resolved SQL
+	bind := pg.NewBind("user.select", "SELECT * FROM users WHERE id = @id")
+	sql := bind.Query("user.select")
+	assert.Equal("SELECT * FROM users WHERE id = @id", sql)
+}

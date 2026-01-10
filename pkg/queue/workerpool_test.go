@@ -21,7 +21,7 @@ func Test_WorkerPool_New(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_wp")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_wp"))
 	assert.NoError(err)
 
 	t.Run("DefaultOptions", func(t *testing.T) {
@@ -61,7 +61,7 @@ func Test_WorkerPool_RegisterQueue(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_wp_queue")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_wp_queue"))
 	assert.NoError(err)
 
 	pool, err := queue.NewWorkerPool(mgr)
@@ -87,7 +87,7 @@ func Test_WorkerPool_RegisterTicker(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_wp_ticker")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_wp_ticker"))
 	assert.NoError(err)
 
 	pool, err := queue.NewWorkerPool(mgr)
@@ -115,7 +115,7 @@ func Test_WorkerPool_Run(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_wp_run")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_wp_run"))
 	assert.NoError(err)
 
 	t.Run("RunWithNoHandlers", func(t *testing.T) {

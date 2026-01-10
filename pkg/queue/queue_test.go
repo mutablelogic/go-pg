@@ -22,7 +22,7 @@ func Test_Queue_RegisterQueue(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_register")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_register"))
 	assert.NoError(err)
 	assert.NotNil(mgr)
 
@@ -96,7 +96,7 @@ func Test_Queue_ListQueues(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_list")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_list"))
 	assert.NoError(err)
 
 	// Create some queues
@@ -133,7 +133,7 @@ func Test_Queue_GetQueue(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_get")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_get"))
 	assert.NoError(err)
 
 	// Create a queue
@@ -165,7 +165,7 @@ func Test_Queue_DeleteQueue(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_delete")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_delete"))
 	assert.NoError(err)
 
 	// Create a queue
@@ -197,7 +197,7 @@ func Test_Queue_UpdateQueue(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_update")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_update"))
 	assert.NoError(err)
 
 	// Create a queue
@@ -249,7 +249,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_clean")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_clean"))
 	assert.NoError(err)
 
 	// Create a queue with short TTL for testing
@@ -423,7 +423,7 @@ func Test_Queue_ListQueueStatuses(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_list_status")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_list_status"))
 	assert.NoError(err)
 
 	// Create multiple queues with unique names for this test

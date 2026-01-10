@@ -11,10 +11,10 @@ import (
 
 	// Packages
 	kong "github.com/alecthomas/kong"
-	version "github.com/djthorpe/go-pg/pkg/version"
 	client "github.com/mutablelogic/go-client"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	httpclient "github.com/mutablelogic/go-pg/pkg/queue/httpclient"
+	version "github.com/mutablelogic/go-pg/pkg/version"
 	server "github.com/mutablelogic/go-server"
 	logger "github.com/mutablelogic/go-server/pkg/logger"
 	trace "go.opentelemetry.io/otel/trace"
@@ -82,16 +82,18 @@ func main() {
 }
 
 func run(ctx *kong.Context, globals *Globals) int {
-	// Create the context and cancel function
-	globals.ctx, globals.cancel = signal.NotifyContext(context.Background(), os.Interrupt)
-	defer globals.cancel()
+	parent := context.Background()
 
-	// Logger
+	// Create Logger
 	if isTerminal(os.Stderr) {
 		globals.logger = logger.New(os.Stderr, logger.Term, globals.Debug)
 	} else {
 		globals.logger = logger.New(os.Stderr, logger.JSON, globals.Debug)
 	}
+
+	// Create the context and cancel function
+	globals.ctx, globals.cancel = signal.NotifyContext(parent, os.Interrupt)
+	defer globals.cancel()
 
 	// Open Telemetry
 	if globals.OTel.Endpoint != "" {

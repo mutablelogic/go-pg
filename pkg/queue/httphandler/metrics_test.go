@@ -27,7 +27,7 @@ func Test_Metrics_Handler(t *testing.T) {
 	defer container.Close(ctx)
 
 	// Create manager
-	mgr, err := queue.New(ctx, pool, "test_metrics")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_metrics"))
 	assert.NoError(err)
 
 	// Create some queues
@@ -102,7 +102,7 @@ func Test_Metrics_WithMultipleQueues(t *testing.T) {
 	defer container.Close(ctx)
 
 	// Create manager
-	mgr, err := queue.New(ctx, pool, "test_multi_metrics")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_multi_metrics"))
 	assert.NoError(err)
 
 	// Create multiple queues

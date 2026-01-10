@@ -40,8 +40,7 @@ type TraceFn func(context.Context, string, any, error)
 // GLOBALS
 
 const (
-	TraceSpanNameArg     = "otelspan"
-	TraceSpanNameDefault = "pg.Query"
+	TraceSpanNameArg = "otelspan"
 )
 
 //////////////////////////////////////////////////////////////////////////////
@@ -79,7 +78,7 @@ func (t *tracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.Trac
 				}
 			}
 		}
-		return TraceSpanNameDefault
+		return "pg.query"
 	}
 
 	// Start OTEL span if tracer is configured

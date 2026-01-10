@@ -43,7 +43,7 @@ The core component that provides direct access to queue operations. It wraps a c
 import "github.com/mutablelogic/go-pg/pkg/queue"
 
 // Create a manager with namespace isolation
-mgr, err := queue.New(ctx, pool, "myapp")
+mgr, err := queue.New(ctx, pool, queue.WithNamespace("myapp"))
 ```
 
 ### Schema (`schema/`)
@@ -167,8 +167,8 @@ mgr.RunTickerLoop(ctx, func(ticker *schema.Ticker) error {
 Each manager operates within a namespace for multi-tenant isolation:
 
 ```go
-appMgr, _ := queue.New(ctx, pool, "app")
-adminMgr, _ := queue.New(ctx, pool, "admin")
+appMgr, _ := queue.New(ctx, pool, queue.WithNamespace("app"))
+adminMgr, _ := queue.New(ctx, pool, queue.WithNamespace("admin"))
 // Queues and tasks are completely independent
 ```
 

@@ -147,7 +147,7 @@ func (p *poolconn) Bulk(ctx context.Context, fn func(conn Conn) error) error {
 
 // Execute a query
 func (p *poolconn) Exec(ctx context.Context, query string) error {
-	return p.bind.Exec(ctx, p.conn, query)
+	return p.bind.exec(ctx, p.conn, query)
 }
 
 // Perform an insert

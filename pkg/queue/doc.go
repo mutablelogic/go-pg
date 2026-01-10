@@ -6,7 +6,7 @@ tasks, retries with exponential backoff, and periodic tickers.
 
 Create a manager with namespace isolation:
 
-	mgr, err := queue.New(ctx, pool, "myapp")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("myapp"))
 	if err != nil {
 		panic(err)
 	}

@@ -3,40 +3,39 @@ package queue
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"sync"
 
 	// Packages
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
 	sql "github.com/mutablelogic/go-pg/pkg/queue/sql"
-	logger "github.com/mutablelogic/go-server/pkg/logger"
 	ref "github.com/mutablelogic/go-server/pkg/ref"
+	attribute "go.opentelemetry.io/otel/attribute"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
 type Manager struct {
-	ns   string
+	opts
 	conn pg.PoolConn
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-// New creates a new queue manager. The namespace parameter is used to scope all queue operations.
-func New(ctx context.Context, conn pg.PoolConn, namespace string) (*Manager, error) {
+// New creates a new queue manager. Use WithNamespace to set the namespace for all queue operations.
+func New(ctx context.Context, conn pg.PoolConn, opts ...Opt) (*Manager, error) {
+	var result error
 	self := new(Manager)
 
-	// Check namespace - if empty, use default schema name
-	self.ns = strings.TrimSpace(namespace)
-	switch self.ns {
-	case "":
-		self.ns = schema.SchemaName
-	case schema.SchemaName:
-		return nil, pg.ErrBadParameter.Withf("namespace %q is reserved for system use", schema.SchemaName)
+	// Apply options (includes namespace validation)
+	if opt, err := applyOpts(opts); err != nil {
+		return nil, err
+	} else {
+		self.opts = opt
 	}
 
 	// Parse query SQL
@@ -55,14 +54,18 @@ func New(ctx context.Context, conn pg.PoolConn, namespace string) (*Manager, err
 	if conn == nil {
 		return nil, pg.ErrBadParameter.With("connection is nil")
 	} else {
-		self.conn = conn.WithQueries(queries).With("ns", namespace).(pg.PoolConn)
+		self.conn = conn.WithQueries(queries).With("ns", self.ns).(pg.PoolConn)
 	}
 
-	// Execute object SQL
+	// Execute object SQL to create necessary tables, indexes, etc.
+	ctx, endspan := otel.StartSpan(self.tracer, ctx, spanManagerName("new"))
+	defer func() { endspan(result) }()
+
+	// Iterate through object creation queries
 	for _, key := range objects.Keys() {
-		sql := objects.Get(key)
-		if err := self.conn.Exec(ctx, sql); err != nil {
-			return nil, err
+		sql := objects.Query(key)
+		if result = self.conn.With(pg.TraceSpanNameArg, key).Exec(ctx, sql); result != nil {
+			return nil, result
 		}
 	}
 
@@ -71,18 +74,18 @@ func New(ctx context.Context, conn pg.PoolConn, namespace string) (*Manager, err
 	if err := self.conn.With("ns", schema.SchemaName).Get(ctx, &ticker, schema.TickerName(schema.CleanupTickerName)); errors.Is(err, pg.ErrNotFound) {
 		// Ticker doesn't exist, create it
 		cleanupInterval := schema.CleanupInterval
-		if _, err := self.RegisterTickerNs(ctx, schema.SchemaName, schema.TickerMeta{
+		if _, result := self.RegisterTickerNs(ctx, schema.SchemaName, schema.TickerMeta{
 			Ticker:   schema.CleanupTickerName,
 			Interval: &cleanupInterval,
-		}); err != nil {
-			return nil, err
+		}); result != nil {
+			return nil, result
 		}
 	} else if err != nil {
-		return nil, err
+		result = err
 	}
 
 	// Return success
-	return self, nil
+	return self, result
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -96,25 +99,16 @@ func (manager *Manager) Conn() pg.PoolConn {
 	return manager.conn
 }
 
-// ListNamespaces returns all distinct namespaces from the queue table
-func (manager *Manager) ListNamespaces(ctx context.Context, req schema.NamespaceListRequest) (*schema.NamespaceList, error) {
-	var list schema.NamespaceList
-	if err := manager.conn.List(ctx, &list, req); err != nil {
-		return nil, err
-	}
-	return &list, nil
-}
-
 // Run starts the background ticker loop for cleanup tasks in the system namespace.
 // It runs until the context is cancelled. This should be called as a goroutine.
 func (manager *Manager) Run(ctx context.Context) error {
 	ch := make(chan *schema.Ticker, 1)
 	defer close(ch)
 
-	// Get the logger from the context
+	// Get the logger from the context, or create one
 	log := ref.Log(ctx)
 	if log == nil {
-		log = logger.New(os.Stdout, logger.Text, false)
+		return errors.New("no logger in context")
 	}
 
 	// Start ticker loop in a goroutine
@@ -141,34 +135,33 @@ func (manager *Manager) Run(ctx context.Context) error {
 			return err
 		case ticker := <-ch:
 			if ticker.Ticker == schema.CleanupTickerName {
+				var result error
+
+				// Start the span
+				ctx, endspan := otel.StartSpan(manager.tracer, ctx, spanManagerName("cleanup"),
+					attribute.String("ticker", ticker.String()),
+				)
+
 				// Run cleanup for all queues in this manager's namespace
-				log.With("ticker", ticker.Ticker).Debug(ctx, "running cleanup")
-				if err := manager.runCleanup(ctx); err != nil {
-					log.Print(ctx, "cleanup error ", err)
+				log.With("ticker", ticker.Ticker).Print(ctx, "running cleanup")
+				if result = manager.cleanNamespace(ctx, manager.ns); result != nil {
+					log.Print(ctx, "cleanup error ", result)
 				}
+
+				// End the span
+				endspan(result)
 			}
 		}
 	}
 }
 
-// runCleanup cleans all queues across all namespaces
-func (manager *Manager) runCleanup(ctx context.Context) error {
-	// Get all distinct namespaces
-	namespaces, err := manager.listNamespaces(ctx)
-	if err != nil {
-		return err
-	}
+////////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
 
-	// Clean all queues in each namespace
-	for _, ns := range namespaces {
-		if err := manager.cleanNamespace(ctx, ns); err != nil {
-			// Continue cleaning other namespaces even if one fails
-			// TODO: Add proper logging
-			_ = err
-		}
-	}
+var SpanNameManager = "pgqueue.manager"
 
-	return nil
+func spanManagerName(op string) string {
+	return SpanNameManager + "." + op
 }
 
 // cleanNamespace cleans all queues in a specific namespace
@@ -192,13 +185,4 @@ func (manager *Manager) cleanNamespace(ctx context.Context, namespace string) er
 
 	// Return any errors
 	return result
-}
-
-// listNamespaces returns all distinct namespaces from the queue table
-func (manager *Manager) listNamespaces(ctx context.Context) ([]string, error) {
-	list, err := manager.ListNamespaces(ctx, schema.NamespaceListRequest{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Body, nil
 }

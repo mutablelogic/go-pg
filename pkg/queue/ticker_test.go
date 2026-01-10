@@ -22,7 +22,7 @@ func Test_Ticker_RegisterTicker(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_ticker_register")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_ticker_register"))
 	assert.NoError(err)
 	assert.NotNil(mgr)
 
@@ -91,7 +91,7 @@ func Test_Ticker_ListTickers(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_ticker_list")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_ticker_list"))
 	assert.NoError(err)
 
 	// Create some tickers
@@ -130,7 +130,7 @@ func Test_Ticker_GetTicker(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_ticker_get")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_ticker_get"))
 	assert.NoError(err)
 
 	// Create a ticker
@@ -165,7 +165,7 @@ func Test_Ticker_DeleteTicker(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_ticker_delete")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_ticker_delete"))
 	assert.NoError(err)
 
 	// Create a ticker
@@ -197,7 +197,7 @@ func Test_Ticker_UpdateTicker(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_ticker_update")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_ticker_update"))
 	assert.NoError(err)
 
 	// Create a ticker
@@ -244,7 +244,7 @@ func Test_Ticker_NextTicker(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_ticker_next")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_ticker_next"))
 	assert.NoError(err)
 
 	t.Run("GetMaturedTicker", func(t *testing.T) {
@@ -279,7 +279,7 @@ func Test_Ticker_NextTickerNs(t *testing.T) {
 	ctx := context.TODO()
 
 	// Create manager with default namespace
-	mgr, err := queue.New(ctx, conn, "default_ns")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("default_ns"))
 	assert.NoError(err)
 
 	// Register ticker in specific namespace
@@ -312,7 +312,7 @@ func Test_Ticker_RunTickerLoop(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "ticker_ns")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("ticker_ns"))
 	assert.NoError(err)
 
 	t.Run("TickerFiresCorrectly", func(t *testing.T) {

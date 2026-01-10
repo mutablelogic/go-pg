@@ -21,7 +21,7 @@ func Test_Task_CreateTask(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_task_create")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_task_create"))
 	assert.NoError(err)
 	assert.NotNil(mgr)
 
@@ -107,7 +107,7 @@ func Test_Task_NextTask(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_task_next")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_task_next"))
 	assert.NoError(err)
 
 	// Create queue
@@ -187,7 +187,7 @@ func Test_Task_ReleaseTask(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_task_release")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_task_release"))
 	assert.NoError(err)
 
 	// Create queue
@@ -288,7 +288,7 @@ func Test_Task_RunTaskLoop(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_task_loop")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_task_loop"))
 	assert.NoError(err)
 
 	// Create queue

@@ -68,11 +68,11 @@ func (q TickerName) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 	switch op {
 	case pg.Get:
-		return bind.Replace("${pgqueue.ticker_get}"), nil
+		return bind.Query("pgqueue.ticker_get"), nil
 	case pg.Update:
-		return bind.Replace("${pgqueue.ticker_patch}"), nil
+		return bind.Query("pgqueue.ticker_patch"), nil
 	case pg.Delete:
-		return bind.Replace("${pgqueue.ticker_delete}"), nil
+		return bind.Query("pgqueue.ticker_delete"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("Unsupported TickerName operation %q", op)
 	}
@@ -83,7 +83,7 @@ func (t TickerListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 	switch op {
 	case pg.List:
-		return bind.Replace("${pgqueue.ticker_list}"), nil
+		return bind.Query("pgqueue.ticker_list"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("Unsupported TickerListRequest operation %q", op)
 	}
@@ -92,7 +92,7 @@ func (t TickerListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 func (t TickerNext) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	switch op {
 	case pg.Get:
-		return bind.Replace("${pgqueue.ticker_next}"), nil
+		return bind.Query("pgqueue.ticker_next"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("Unsupported TickerNext operation %q", op)
 	}
@@ -132,7 +132,7 @@ func (w TickerMeta) Insert(bind *pg.Bind) (string, error) {
 	}
 
 	// Return the query
-	return bind.Replace("${pgqueue.ticker_insert}"), nil
+	return bind.Query("pgqueue.ticker_insert"), nil
 }
 
 func (w TickerMeta) Update(bind *pg.Bind) error {

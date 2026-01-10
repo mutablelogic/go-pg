@@ -25,10 +25,10 @@ func Test_HTTPClient_ListNamespaces(t *testing.T) {
 	defer container.Close(ctx)
 
 	// Create multiple managers with different namespaces
-	mgr1, err := queue.New(ctx, pool, "ns1")
+	mgr1, err := queue.New(ctx, pool, queue.WithNamespace("ns1"))
 	assert.NoError(err)
 
-	mgr2, err := queue.New(ctx, pool, "ns2")
+	mgr2, err := queue.New(ctx, pool, queue.WithNamespace("ns2"))
 	assert.NoError(err)
 
 	// Create a queue in each namespace

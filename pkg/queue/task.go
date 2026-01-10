@@ -148,7 +148,9 @@ func (manager *Manager) RunTaskLoop(ctx context.Context, ch chan<- *schema.Task,
 		listenForTaskNotifications(ctx, listener, notifyCh, errCh)
 	}()
 
-	// Do an initial poll immediately to pick up any existing tasks
+	// Do an initial poll immediately to pick up any existing tasks.
+	// We return on error here (fail-fast) because poll failures indicate
+	// database issues that would likely affect the listener too.
 	if err := manager.pollForTasks(ctx, queues, worker, ch, &delta); err != nil {
 		return err
 	}

@@ -33,6 +33,9 @@ func RegisterBackendHandlers(router *http.ServeMux, prefix string, manager *queu
 // PRIVATE METHODS
 
 func (w HTTPMiddlewareFuncs) Wrap(handler http.HandlerFunc) http.HandlerFunc {
+	if len(w) == 0 {
+		return handler
+	}
 	for i := len(w) - 1; i >= 0; i-- {
 		handler = w[i](handler)
 	}

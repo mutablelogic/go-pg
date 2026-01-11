@@ -96,14 +96,13 @@ func tickerNext(w http.ResponseWriter, r *http.Request, manager *queue.Manager) 
 
 	// Create a channel to receive tickers
 	ch := make(chan *schema.Ticker)
-	defer close(ch)
 
 	// Run the ticker loop in the background
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		manager.RunTickerLoopNs(r.Context(), manager.Namespace(), ch, schema.TickerPeriod)
+		manager.RunTickerLoopNsChan(r.Context(), manager.Namespace(), ch, schema.TickerPeriod)
 	}()
 
 	// Receive tickers from the channel and write them to the response
@@ -113,6 +112,9 @@ FOR_LOOP:
 		case <-r.Context().Done():
 			break FOR_LOOP
 		case ticker := <-ch:
+			if ticker == nil {
+				break FOR_LOOP
+			}
 			textStream.Write("ticker", ticker)
 		}
 	}

@@ -127,7 +127,7 @@ func (t TaskMeta) Insert(bind *pg.Bind) (string, error) {
 		bind.Set("queue", bind.Get("id"))
 	}
 	if t.Payload == nil {
-		return "", httpresponse.ErrBadRequest.With("missing payload")
+		bind.Set("payload", "null")
 	} else if data, err := json.Marshal(t.Payload); err != nil {
 		return "", err
 	} else {

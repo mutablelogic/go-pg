@@ -17,6 +17,7 @@ const (
 	TaskPeriod        = 15 * time.Second
 	CleanupTickerName = "cleanup"
 	CleanupInterval   = 1 * time.Hour
+	TopicQueueInsert  = "_queue_insert" // pg_notify topic suffix for task inserts
 )
 
 ////////////////////////////////////////////////////////////////////////////////

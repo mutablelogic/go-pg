@@ -3,10 +3,13 @@ package queue
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"sync"
 	"time"
 
 	// Packages
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
 )
@@ -108,14 +111,35 @@ func (manager *Manager) ReleaseTask(ctx context.Context, task uint64, success bo
 	return &taskObj.Task, nil
 }
 
-// RunTaskLoop runs a loop to process tasks, until the context is cancelled
-// or an error occurs. It uses both polling and LISTEN/NOTIFY to pick up tasks
-// immediately when they're created.
-// If queues is empty, tasks from any queue are considered.
-func (manager *Manager) RunTaskLoop(ctx context.Context, ch chan<- *schema.Task, worker string, queues ...string) error {
-	delta := schema.TaskPeriod
-	timer := time.NewTimer(100 * time.Millisecond)
-	defer timer.Stop()
+// RunTaskLoop runs a task loop with N concurrent workers.
+// Each worker calls the handler function when a task is received.
+// The handler should return nil on success, or an error to indicate failure.
+// Blocks until context is cancelled. If queues is empty, tasks from any queue are considered.
+// The worker name (from WithWorkerName) will have @N appended for each concurrent worker (e.g., "hostname@1").
+// The number of workers is set via WithWorkers option.
+func (manager *Manager) RunTaskLoop(ctx context.Context, handler TaskHandler, queues ...string) error {
+	workers := manager.workers
+	if workers < 1 {
+		workers = 1
+	}
+
+	// Semaphore to limit concurrent workers
+	sem := make(chan int, workers)
+	for i := 1; i <= workers; i++ {
+		sem <- i
+	}
+
+	// Run the task loop - blocks until ctx cancelled or error
+	return manager.runTaskLoop(ctx, sem, handler, queues)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS - TASK
+
+// runTaskLoop is the internal loop that fetches tasks and dispatches to workers.
+func (manager *Manager) runTaskLoop(ctx context.Context, sem chan int, handler TaskHandler, queues []string) error {
+	var wg sync.WaitGroup
+	defer wg.Wait()
 
 	// Create listener for task notifications
 	listener := manager.conn.Listener()
@@ -125,135 +149,143 @@ func (manager *Manager) RunTaskLoop(ctx context.Context, ch chan<- *schema.Task,
 	defer listener.Close(context.Background())
 
 	// Subscribe to queue insert notifications for this namespace
-	topic := manager.ns + "_queue_insert"
+	topic := manager.ns + schema.TopicQueueInsert
 	if err := listener.Listen(ctx, topic); err != nil {
-		// If context is canceled, return nil (not an error)
 		if errors.Is(err, context.Canceled) {
 			return nil
-		} else {
-			return err
 		}
-	}
-
-	// Create channels for notifications and errors
-	notifyCh := make(chan *pg.Notification, 10)
-	errCh := make(chan error, 1)
-
-	// Start goroutine to listen for notifications
-	var wg sync.WaitGroup
-	wg.Add(1)
-	defer wg.Wait()
-	go func() {
-		defer wg.Done()
-		listenForTaskNotifications(ctx, listener, notifyCh, errCh)
-	}()
-
-	// Do an initial poll immediately to pick up any existing tasks.
-	// We return on error here (fail-fast) because poll failures indicate
-	// database issues that would likely affect the listener too.
-	if err := manager.pollForTasks(ctx, queues, worker, ch, &delta); err != nil {
 		return err
 	}
-	timer.Reset(delta)
 
-	// Loop until context is cancelled
+	// Notification and error channels
+	notifyCh := make(chan *pg.Notification)
+	listenerErr := make(chan error, 1)
+
+	// Start notification listener
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := listenForNotifications(ctx, listener, notifyCh); err != nil {
+			listenerErr <- err
+		}
+	}()
+
+	// Polling timer
+	timer := time.NewTimer(100 * time.Millisecond)
+	defer timer.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case err := <-errCh:
+		case err := <-listenerErr:
 			return err
-		case notification := <-notifyCh:
-			if err := manager.handleTaskNotification(ctx, notification, queues, worker, ch, timer, &delta); err != nil {
+		case n := <-notifyCh:
+			if err := manager.drainTasks(ctx, n, queues, sem, handler, &wg, timer); err != nil {
 				return err
 			}
 		case <-timer.C:
-			if err := manager.pollForTasks(ctx, queues, worker, ch, &delta); err != nil {
+			if err := manager.pollForTasks(ctx, queues, sem, handler, &wg, timer); err != nil {
 				return err
 			}
-			timer.Reset(delta)
+			timer.Reset(schema.TaskPeriod)
 		}
 	}
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// PRIVATE METHODS
+// drainTasks processes a notification and drains all available tasks.
+func (manager *Manager) drainTasks(ctx context.Context, n *pg.Notification, queues []string, sem chan int, handler TaskHandler, wg *sync.WaitGroup, timer *time.Timer) error {
+	// Check if notification is for our queues (empty means accept any)
+	if len(queues) > 0 && !slices.Contains(queues, string(n.Payload)) {
+		return nil
+	}
 
-// listenForTaskNotifications listens for PostgreSQL notifications about new tasks
-// and forwards them to the notification channel. Errors (except context cancellation)
-// are sent to the error channel.
-func listenForTaskNotifications(ctx context.Context, listener pg.Listener, notifyCh chan<- *pg.Notification, errCh chan<- error) {
+	// Create a span for the task retention operation to nest NextTask database calls
+	ctx, endspan := otel.StartSpan(manager.tracer, ctx, spanManagerName("task.retain"))
+	defer endspan(nil)
+
 	for {
-		notification, err := listener.WaitForNotification(ctx)
-		if err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				errCh <- err
-			}
-			return
-		}
-		notifyCh <- notification
-	}
-}
-
-// handleTaskNotification processes a notification by checking if it's for our queues
-// and attempting to get and send the task.
-func (manager *Manager) handleTaskNotification(ctx context.Context, notification *pg.Notification, queues []string, worker string, ch chan<- *schema.Task, timer *time.Timer, delta *time.Duration) error {
-	// Check if notification is for our queues (empty queues means accept any)
-	if len(queues) > 0 {
-		match := false
-		for _, q := range queues {
-			if string(notification.Payload) == q {
-				match = true
-				break
-			}
-		}
-		if !match {
+		// Wait for available worker slot
+		select {
+		case <-ctx.Done():
 			return nil
-		}
-	}
-
-	// Try to get all available tasks
-	for {
-		task, err := manager.NextTask(ctx, worker, queues...)
-		if err != nil {
-			// Context errors are not errors - just stop handling
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		case workerNum := <-sem:
+			workerName := fmt.Sprintf("%s@%d", manager.name, workerNum)
+			task, err := manager.NextTask(ctx, workerName, queues...)
+			if err != nil {
+				sem <- workerNum // Return slot
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return nil
+				}
+				return err
+			}
+			if task == nil {
+				sem <- workerNum // Return slot
 				return nil
 			}
-			return err
-		}
-
-		if task != nil {
-			ch <- task
-			*delta = 100 * time.Millisecond
-			timer.Reset(*delta)
-			// Continue to get next task immediately
-		} else {
-			return nil
+			// Dispatch to worker goroutine
+			wg.Add(1)
+			go func(num int, t *schema.Task) {
+				defer wg.Done()
+				defer func() { sem <- num }()
+				handler(ctx, t)
+			}(workerNum, task)
+			timer.Reset(100 * time.Millisecond)
 		}
 	}
 }
 
 // pollForTasks periodically checks for available tasks (polling fallback)
-func (manager *Manager) pollForTasks(ctx context.Context, queues []string, worker string, ch chan<- *schema.Task, delta *time.Duration) error {
-	// Try to get all available tasks in a loop
+func (manager *Manager) pollForTasks(ctx context.Context, queues []string, sem chan int, handler TaskHandler, wg *sync.WaitGroup, timer *time.Timer) error {
+	// Create a span for the task retention operation to nest NextTask database calls
+	ctx, endspan := otel.StartSpan(manager.tracer, ctx, spanManagerName("task.retain"))
+	defer endspan(nil)
+
 	for {
-		task, err := manager.NextTask(ctx, worker, queues...)
+		// Wait for available worker slot
+		select {
+		case <-ctx.Done():
+			return nil
+		case workerNum := <-sem:
+			workerName := fmt.Sprintf("%s@%d", manager.name, workerNum)
+			task, err := manager.NextTask(ctx, workerName, queues...)
+			if err != nil {
+				sem <- workerNum // Return slot
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return nil
+				}
+				return err
+			}
+			if task == nil {
+				sem <- workerNum // Return slot
+				return nil
+			}
+			// Dispatch to worker goroutine
+			wg.Add(1)
+			go func(num int, t *schema.Task) {
+				defer wg.Done()
+				defer func() { sem <- num }()
+				handler(ctx, t)
+			}(workerNum, task)
+			timer.Reset(100 * time.Millisecond)
+		}
+	}
+}
+
+// listenForNotifications forwards PostgreSQL notifications to a channel.
+// Returns nil on context cancellation, or the error on failure.
+func listenForNotifications(ctx context.Context, listener pg.Listener, ch chan<- *pg.Notification) error {
+	for {
+		n, err := listener.WaitForNotification(ctx)
 		if err != nil {
-			// Context errors are not errors - just stop polling
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return nil
 			}
 			return err
 		}
-
-		if task != nil {
-			ch <- task
-			*delta = 100 * time.Millisecond
-			// Continue to get next task immediately
-		} else {
-			// No more tasks available, slow down polling
-			*delta = schema.TaskPeriod
+		select {
+		case ch <- n:
+		case <-ctx.Done():
 			return nil
 		}
 	}

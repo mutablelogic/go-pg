@@ -3,6 +3,8 @@ package queue_test
 import (
 	"context"
 	"encoding/json"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -288,7 +290,7 @@ func Test_Task_RunTaskLoop(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_task_loop"))
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_task_loop"), queue.WithWorkerName("worker-loop"), queue.WithWorkers(2))
 	assert.NoError(err)
 
 	// Create queue
@@ -296,7 +298,6 @@ func Test_Task_RunTaskLoop(t *testing.T) {
 	assert.NoError(err)
 
 	t.Run("TaskLoopProcessesTasks", func(t *testing.T) {
-		ch := make(chan *schema.Task, 10)
 		loopCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 
@@ -307,17 +308,33 @@ func Test_Task_RunTaskLoop(t *testing.T) {
 		})
 		assert.NoError(err)
 
+		// Track received tasks
+		var receivedTask *schema.Task
+		var mu sync.Mutex
+		taskReceived := make(chan struct{}, 1)
+
 		// Run loop in background
 		errCh := make(chan error, 1)
 		go func() {
-			errCh <- mgr.RunTaskLoop(loopCtx, ch, "worker-loop", "loop-queue")
+			errCh <- mgr.RunTaskLoop(loopCtx, func(ctx context.Context, task *schema.Task) error {
+				mu.Lock()
+				receivedTask = task
+				mu.Unlock()
+				select {
+				case taskReceived <- struct{}{}:
+				default:
+				}
+				return nil
+			}, "loop-queue")
 		}()
 
 		// Wait for task to be received
 		select {
-		case task := <-ch:
-			assert.NotNil(task)
-			assert.Equal(createdTask.Id, task.Id)
+		case <-taskReceived:
+			mu.Lock()
+			assert.NotNil(receivedTask)
+			assert.Equal(createdTask.Id, receivedTask.Id)
+			mu.Unlock()
 		case <-time.After(1 * time.Second):
 			t.Fatal("Timeout waiting for task")
 		}
@@ -329,18 +346,18 @@ func Test_Task_RunTaskLoop(t *testing.T) {
 	})
 
 	t.Run("ContextCancellation", func(t *testing.T) {
-		ch := make(chan *schema.Task, 10)
 		loopCtx, cancel := context.WithCancel(ctx)
 
 		// Cancel immediately
 		cancel()
 
-		err := mgr.RunTaskLoop(loopCtx, ch, "worker-cancel", "loop-queue")
+		err := mgr.RunTaskLoop(loopCtx, func(ctx context.Context, task *schema.Task) error {
+			return nil
+		}, "loop-queue")
 		assert.NoError(err)
 	})
 
 	t.Run("MultipleTasksFire", func(t *testing.T) {
-		ch := make(chan *schema.Task, 10)
 		loopCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 
@@ -353,33 +370,28 @@ func Test_Task_RunTaskLoop(t *testing.T) {
 			assert.NoError(err)
 		}
 
-		// Run loop
+		// Track task count
+		var taskCount int32
+
+		// Run loop in background
 		errCh := make(chan error, 1)
 		go func() {
-			errCh <- mgr.RunTaskLoop(loopCtx, ch, "worker-multi", "loop-queue")
+			errCh <- mgr.RunTaskLoop(loopCtx, func(ctx context.Context, task *schema.Task) error {
+				atomic.AddInt32(&taskCount, 1)
+				// Release task so loop continues
+				_, _ = mgr.ReleaseTask(ctx, task.Id, true, nil, nil)
+				return nil
+			}, "loop-queue")
 		}()
 
-		// Collect tasks
-		taskCount := 0
-		timeout := time.After(1500 * time.Millisecond)
-	collectLoop:
-		for {
-			select {
-			case task := <-ch:
-				if task != nil {
-					taskCount++
-					// Release task immediately so loop continues
-					_, _ = mgr.ReleaseTask(ctx, task.Id, true, nil, nil)
-				}
-			case <-timeout:
-				break collectLoop
-			}
-		}
+		// Wait a bit for tasks to be processed
+		time.Sleep(1500 * time.Millisecond)
 
 		cancel()
 		<-errCh
 
-		assert.GreaterOrEqual(taskCount, 3, "Should have processed at least 3 tasks")
-		t.Logf("Processed %d tasks", taskCount)
+		count := atomic.LoadInt32(&taskCount)
+		assert.GreaterOrEqual(int(count), 3, "Should have processed at least 3 tasks")
+		t.Logf("Processed %d tasks", count)
 	})
 }

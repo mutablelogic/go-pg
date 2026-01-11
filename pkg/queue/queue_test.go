@@ -2,6 +2,7 @@ package queue_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -273,7 +274,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 	t.Run("CleanReleasedTasks", func(t *testing.T) {
 		// Create a task
 		task, err := mgr.CreateTask(ctx, "clean-queue", schema.TaskMeta{
-			Payload: map[string]string{"test": "data"},
+			Payload: mustMarshal(map[string]string{"test": "data"}),
 		})
 		assert.NoError(err)
 		assert.NotNil(task)
@@ -319,7 +320,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 
 		// Create a task with only 2 retries
 		task, err := mgr.CreateTask(ctx, queueName, schema.TaskMeta{
-			Payload: map[string]string{"test": "fail"},
+			Payload: mustMarshal(map[string]string{"test": "fail"}),
 		})
 		assert.NoError(err)
 		assert.NotNil(task.Retries)
@@ -364,7 +365,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 	t.Run("DoesNotCleanActiveTasks", func(t *testing.T) {
 		// Create a new task
 		task, err := mgr.CreateTask(ctx, "clean-queue", schema.TaskMeta{
-			Payload: map[string]string{"test": "active"},
+			Payload: mustMarshal(map[string]string{"test": "active"}),
 		})
 		assert.NoError(err)
 		assert.NotNil(task)
@@ -389,7 +390,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 	t.Run("DoesNotCleanRetainedTasks", func(t *testing.T) {
 		// Create and retain a task
 		task, err := mgr.CreateTask(ctx, "clean-queue", schema.TaskMeta{
-			Payload: map[string]string{"test": "retained"},
+			Payload: mustMarshal(map[string]string{"test": "retained"}),
 		})
 		assert.NoError(err)
 
@@ -457,7 +458,7 @@ func Test_Queue_ListQueueStatuses(t *testing.T) {
 	t.Run("ListStatusesWithTasks", func(t *testing.T) {
 		// Add a task to list-status-queue-1
 		_, err := mgr.CreateTask(ctx, "list-status-queue-1", schema.TaskMeta{
-			Payload: map[string]string{"test": "data"},
+			Payload: mustMarshal(map[string]string{"test": "data"}),
 		})
 		assert.NoError(err)
 
@@ -482,4 +483,12 @@ func Test_Queue_ListQueueStatuses(t *testing.T) {
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+func mustMarshal(v any) json.RawMessage {
+	data, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

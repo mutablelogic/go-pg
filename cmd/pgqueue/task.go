@@ -86,11 +86,9 @@ func (cmd *CreateTaskCommand) Run(ctx *Globals) (err error) {
 	defer func() { endSpan(err) }()
 
 	// Parse payload
-	var payload any
+	var payload json.RawMessage
 	if cmd.Payload != "" {
-		if err := json.Unmarshal([]byte(cmd.Payload), &payload); err != nil {
-			return fmt.Errorf("invalid payload JSON: %w", err)
-		}
+		payload = json.RawMessage(cmd.Payload)
 	}
 
 	// Create task

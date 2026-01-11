@@ -2,6 +2,7 @@ package httphandler_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -40,7 +41,7 @@ func Test_Metrics_Handler(t *testing.T) {
 
 	// Create some tasks
 	_, err = mgr.CreateTask(ctx, "test-queue", schema.TaskMeta{
-		Payload: map[string]string{"test": "data"},
+		Payload: mustMarshal(map[string]string{"test": "data"}),
 	})
 	assert.NoError(err)
 
@@ -115,12 +116,12 @@ func Test_Metrics_WithMultipleQueues(t *testing.T) {
 
 	// Create tasks in different queues
 	_, err = mgr.CreateTask(ctx, "queue-1", schema.TaskMeta{
-		Payload: map[string]string{"queue": "1"},
+		Payload: mustMarshal(map[string]string{"queue": "1"}),
 	})
 	assert.NoError(err)
 
 	_, err = mgr.CreateTask(ctx, "queue-2", schema.TaskMeta{
-		Payload: map[string]string{"queue": "2"},
+		Payload: mustMarshal(map[string]string{"queue": "2"}),
 	})
 	assert.NoError(err)
 
@@ -154,4 +155,15 @@ func Test_Metrics_WithMultipleQueues(t *testing.T) {
 		assert.Contains(bodyStr, `status="retained"`)
 		assert.Contains(bodyStr, `status="released"`)
 	})
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// HELPER FUNCTIONS
+
+func mustMarshal(v any) json.RawMessage {
+	data, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

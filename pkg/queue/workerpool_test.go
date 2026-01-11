@@ -146,7 +146,7 @@ func Test_WorkerPool_Run(t *testing.T) {
 
 		// Create a task with payload
 		_, err = mgr.CreateTask(ctx, "process-queue", schema.TaskMeta{
-			Payload: map[string]any{"test": true},
+			Payload: mustMarshal(map[string]any{"test": true}),
 		})
 		assert.NoError(err)
 
@@ -211,7 +211,7 @@ func Test_WorkerPool_Run(t *testing.T) {
 		// Create multiple tasks
 		for i := 0; i < numTasks; i++ {
 			_, err = mgr.CreateTask(ctx, "parallel-queue", schema.TaskMeta{
-				Payload: map[string]any{"i": i},
+				Payload: mustMarshal(map[string]any{"i": i}),
 			})
 			assert.NoError(err)
 		}

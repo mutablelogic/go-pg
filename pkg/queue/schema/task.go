@@ -28,8 +28,8 @@ type TaskRelease struct {
 }
 
 type TaskMeta struct {
-	Payload   any        `json:"payload,omitempty"`
-	DelayedAt *time.Time `json:"delayed_at,omitempty"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
+	DelayedAt *time.Time      `json:"delayed_at,omitempty"`
 }
 
 type Task struct {

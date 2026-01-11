@@ -101,7 +101,7 @@ func run(ctx *kong.Context, globals *Globals) int {
 		provider, err := otel.NewProvider(globals.OTel.Endpoint, globals.OTel.Header, globals.OTel.Name)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
-			return -2
+			return 2
 		}
 		defer provider.Shutdown(context.Background())
 
@@ -112,7 +112,7 @@ func run(ctx *kong.Context, globals *Globals) int {
 	// Call the Run() method of the selected parsed command.
 	if err := ctx.Run(globals); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
-		return -1
+		return 1
 	}
 
 	return 0

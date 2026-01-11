@@ -117,8 +117,17 @@ func (manager *Manager) ReleaseTask(ctx context.Context, task uint64, success bo
 }
 
 // RunTaskLoop runs a task loop with N concurrent workers.
+// This is a low-level API - most users should use RegisterQueueWorker + Run() instead.
+//
 // Each worker calls the handler function when a task is received.
-// The handler should return nil on success, or an error to indicate failure.
+// The handler is responsible for:
+//   - Processing the task
+//   - Calling ReleaseTask to mark the task as completed or failed
+//   - Returning an error if the task processing failed
+//
+// Note: The handler runs in a background goroutine, so any error returned is already
+// tracked in OpenTelemetry spans but won't propagate to the caller.
+//
 // Blocks until context is cancelled. If queues is empty, tasks from any queue are considered.
 // The worker name (from WithWorkerName) will have @N appended for each concurrent worker (e.g., "hostname@1").
 // The number of workers is set via WithWorkers option.

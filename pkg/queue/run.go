@@ -23,6 +23,7 @@ import (
 // workerPool manages registered workers for processing tasks and tickers.
 // It is embedded in Manager and should not be created directly.
 type workerPool struct {
+	mu      sync.RWMutex
 	wg      sync.WaitGroup
 	tasks   map[string]Worker
 	tickers map[string]Worker
@@ -47,7 +48,9 @@ func (manager *Manager) RegisterQueueWorker(ctx context.Context, meta schema.Que
 	if err != nil {
 		return nil, err
 	}
+	manager.pool.mu.Lock()
 	manager.pool.tasks[meta.Queue] = worker
+	manager.pool.mu.Unlock()
 	return queue, nil
 }
 
@@ -57,7 +60,9 @@ func (manager *Manager) RegisterTickerWorker(ctx context.Context, meta schema.Ti
 	if err != nil {
 		return nil, err
 	}
+	manager.pool.mu.Lock()
 	manager.pool.tickers[meta.Ticker] = worker
+	manager.pool.mu.Unlock()
 	return ticker, nil
 }
 
@@ -75,10 +80,13 @@ func (manager *Manager) Run(ctx context.Context) error {
 	}()
 
 	// Collect registered queue names
+	manager.pool.mu.RLock()
 	queues := make([]string, 0, len(manager.pool.tasks))
 	for q := range manager.pool.tasks {
 		queues = append(queues, q)
 	}
+	hasTickerWorkers := len(manager.pool.tickers) > 0
+	manager.pool.mu.RUnlock()
 
 	// Run cleanup ticker in system namespace
 	manager.pool.wg.Add(1)
@@ -116,7 +124,7 @@ func (manager *Manager) Run(ctx context.Context) error {
 	}()
 
 	// Run ticker loop with handler (if any tickers registered)
-	if len(manager.pool.tickers) > 0 {
+	if hasTickerWorkers {
 		manager.pool.wg.Add(1)
 		go func() {
 			defer manager.pool.wg.Done()
@@ -160,7 +168,9 @@ func (pool *workerPool) Wait() {
 // PRIVATE METHODS
 
 func (manager *Manager) runTickerWorker(ctx context.Context, ticker *schema.Ticker, tracer trace.Tracer) error {
+	manager.pool.mu.RLock()
 	worker, ok := manager.pool.tickers[ticker.Ticker]
+	manager.pool.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("no worker registered for ticker %q", ticker.Ticker)
 	}
@@ -189,7 +199,9 @@ func (manager *Manager) runTickerWorker(ctx context.Context, ticker *schema.Tick
 }
 
 func (manager *Manager) runTaskWorker(ctx context.Context, task *schema.Task, tracer trace.Tracer) error {
+	manager.pool.mu.RLock()
 	worker, ok := manager.pool.tasks[task.Queue]
+	manager.pool.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("no worker registered for queue %q", task.Queue)
 	}

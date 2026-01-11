@@ -127,12 +127,10 @@ func (t TaskMeta) Insert(bind *pg.Bind) (string, error) {
 		bind.Set("queue", bind.Get("id"))
 	}
 	if t.Payload == nil {
-		// Payload is required, but be defensive here in case validation is bypassed
-		bind.Set("payload", nil)
-	} else {
-		// json.RawMessage is already JSON bytes, don't marshal it again
-		bind.Set("payload", string(t.Payload))
+		return "", httpresponse.ErrBadRequest.With("missing payload")
 	}
+	// json.RawMessage is already JSON bytes, don't marshal it again
+	bind.Set("payload", string(t.Payload))
 	if t.DelayedAt != nil {
 		if t.DelayedAt.Before(time.Now()) {
 			return "", httpresponse.ErrBadRequest.With("delayed_at is in the past")

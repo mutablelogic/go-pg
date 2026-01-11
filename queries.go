@@ -100,9 +100,9 @@ func (s *Queries) Keys() []string {
 	return s.keys
 }
 
-// Get retrieves the SQL statement associated with the given key.
+// Query retrieves the SQL statement associated with the given key.
 // Returns an empty string if the key does not exist.
-func (s *Queries) Get(key string) string {
+func (s *Queries) Query(key string) string {
 	if sql, ok := s.queries[key]; ok {
 		return sql
 	}

@@ -27,7 +27,7 @@ func Test_Ticker_List(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_list")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_list"))
 	assert.NoError(err)
 
 	// Create test tickers
@@ -141,7 +141,7 @@ func Test_Ticker_Create(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_create")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_create"))
 	assert.NoError(err)
 
 	router := http.NewServeMux()
@@ -195,7 +195,7 @@ func Test_Ticker_Get(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_get")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_get"))
 	assert.NoError(err)
 
 	router := http.NewServeMux()
@@ -244,7 +244,7 @@ func Test_Ticker_Update(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_update")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_update"))
 	assert.NoError(err)
 
 	router := http.NewServeMux()
@@ -300,7 +300,7 @@ func Test_Ticker_Delete(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_delete")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_delete"))
 	assert.NoError(err)
 
 	router := http.NewServeMux()

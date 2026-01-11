@@ -152,7 +152,7 @@ func (p *conn) Bulk(ctx context.Context, fn func(Conn) error) error {
 
 // Execute a query
 func (p *conn) Exec(ctx context.Context, query string) error {
-	return p.bind.Exec(ctx, p.conn, query)
+	return p.bind.exec(ctx, p.conn, query)
 }
 
 // Perform an insert, binding parameters from
@@ -264,16 +264,16 @@ func list(ctx context.Context, conn pgx.Tx, bind *Bind, reader Reader, sel Selec
 
 func count(ctx context.Context, conn pgx.Tx, query string, bind *Bind, reader ListReader) error {
 	// Make a subquery
-	return pgerror(reader.ScanCount(bind.Copy("as", "t (count BIGINT)").QueryRow(ctx, conn, `WITH sq AS (`+query+`) SELECT COUNT(*) AS "count" FROM sq`)))
+	return pgerror(reader.ScanCount(bind.Copy("as", "t (count BIGINT)").queryRow(ctx, conn, `WITH sq AS (`+query+`) SELECT COUNT(*) AS "count" FROM sq`)))
 }
 
 func exec(ctx context.Context, conn pgx.Tx, bind *Bind, query string, reader Reader) error {
 	// Without a reader, just execute the query
 	if reader == nil {
-		return pgerror(bind.Exec(ctx, conn, query))
+		return pgerror(bind.exec(ctx, conn, query))
 	}
 	// Execute the query
-	rows, err := bind.Query(ctx, conn, query)
+	rows, err := bind.query(ctx, conn, query)
 	if err != nil {
 		return pgerror(err)
 	}

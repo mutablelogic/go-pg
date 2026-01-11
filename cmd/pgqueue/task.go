@@ -46,11 +46,15 @@ type CompleteTaskCommand struct {
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *ListTasksCommand) Run(ctx *Globals) error {
+func (cmd *ListTasksCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
+
+	// OTEL
+	parent, endSpan := ctx.StartSpan("ListTasksCommand")
+	defer func() { endSpan(err) }()
 
 	// Build options
 	opts := []httpclient.Opt{
@@ -61,7 +65,7 @@ func (cmd *ListTasksCommand) Run(ctx *Globals) error {
 	}
 
 	// List tasks
-	tasks, err := client.ListTasks(ctx.ctx, opts...)
+	tasks, err := client.ListTasks(parent, opts...)
 	if err != nil {
 		return err
 	}
@@ -71,22 +75,24 @@ func (cmd *ListTasksCommand) Run(ctx *Globals) error {
 	return nil
 }
 
-func (cmd *CreateTaskCommand) Run(ctx *Globals) error {
+func (cmd *CreateTaskCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("CreateTaskCommand")
+	defer func() { endSpan(err) }()
+
 	// Parse payload
-	var payload any
+	var payload json.RawMessage
 	if cmd.Payload != "" {
-		if err := json.Unmarshal([]byte(cmd.Payload), &payload); err != nil {
-			return fmt.Errorf("invalid payload JSON: %w", err)
-		}
+		payload = json.RawMessage(cmd.Payload)
 	}
 
 	// Create task
-	task, err := client.CreateTask(ctx.ctx, cmd.Queue, schema.TaskMeta{
+	task, err := client.CreateTask(parent, cmd.Queue, schema.TaskMeta{
 		Payload:   payload,
 		DelayedAt: cmd.DelayedAt,
 	})
@@ -99,14 +105,18 @@ func (cmd *CreateTaskCommand) Run(ctx *Globals) error {
 	return nil
 }
 
-func (cmd *RetainTaskCommand) Run(ctx *Globals) error {
+func (cmd *RetainTaskCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
 
+	// OTEL
+	parent, endSpan := ctx.StartSpan("RetainTaskCommand")
+	defer func() { endSpan(err) }()
+
 	// Retain task
-	task, err := client.RetainTask(ctx.ctx, cmd.Worker, cmd.Queues...)
+	task, err := client.RetainTask(parent, cmd.Worker, cmd.Queues...)
 	if err != nil {
 		return err
 	}
@@ -116,11 +126,15 @@ func (cmd *RetainTaskCommand) Run(ctx *Globals) error {
 	return nil
 }
 
-func (cmd *CompleteTaskCommand) Run(ctx *Globals) error {
+func (cmd *CompleteTaskCommand) Run(ctx *Globals) (err error) {
 	client, err := ctx.Client()
 	if err != nil {
 		return err
 	}
+
+	// OTEL
+	parent, endSpan := ctx.StartSpan("CompleteTaskCommand")
+	defer func() { endSpan(err) }()
 
 	// Parse error JSON if provided
 	var errPayload any
@@ -131,7 +145,7 @@ func (cmd *CompleteTaskCommand) Run(ctx *Globals) error {
 	}
 
 	// Complete/fail task
-	task, err := client.ReleaseTask(ctx.ctx, cmd.Id, errPayload)
+	task, err := client.ReleaseTask(parent, cmd.Id, errPayload)
 	if err != nil {
 		return err
 	}

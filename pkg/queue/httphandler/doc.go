@@ -49,7 +49,7 @@ To register all handlers:
 	)
 
 	func main() {
-		manager, _ := queue.New(ctx, conn, "myapp")
+		manager, _ := queue.New(ctx, conn, queue.WithNamespace("myapp"))
 		router := http.NewServeMux()
 
 		httphandler.RegisterBackendHandlers(router, "/api", manager)

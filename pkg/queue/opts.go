@@ -4,10 +4,12 @@ import (
 	"errors"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	// Packages
 	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
+	trace "go.opentelemetry.io/otel/trace"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -17,21 +19,49 @@ import (
 type Opt func(*opts) error
 
 type opts struct {
+	ns      string
 	name    string
 	workers int
 	period  time.Duration
+	tracer  trace.Tracer
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // ERRORS
 
 var (
-	ErrInvalidWorkers = errors.New("workers must be >= 1")
-	ErrInvalidPeriod  = errors.New("period must be >= 1ms")
+	ErrInvalidNamespace  = errors.New("namespace must not be empty")
+	ErrReservedNamespace = errors.New("namespace is reserved for system use")
+	ErrInvalidWorkers    = errors.New("workers must be >= 1")
+	ErrInvalidPeriod     = errors.New("period must be >= 1ms")
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 // OPTIONS
+
+// WithNamespace sets the namespace used to scope all queue operations.
+// The namespace cannot be empty or use the reserved system namespace.
+func WithNamespace(name string) Opt {
+	return func(o *opts) error {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return ErrInvalidNamespace
+		}
+		if name == schema.SchemaName {
+			return ErrReservedNamespace
+		}
+		o.ns = name
+		return nil
+	}
+}
+
+// WithTracer sets the tracer used for tracing operations.
+func WithTracer(tracer trace.Tracer) Opt {
+	return func(o *opts) error {
+		o.tracer = tracer
+		return nil
+	}
+}
 
 // WithWorkerName sets the worker name used to identify this worker instance.
 // Defaults to the hostname if not specified.
@@ -79,6 +109,7 @@ func applyOpts(opt []Opt) (opts, error) {
 
 	// Set defaults
 	o := opts{
+		ns:      schema.DefaultNamespace,
 		name:    hostname,
 		workers: runtime.NumCPU(),
 		period:  schema.TickerPeriod,

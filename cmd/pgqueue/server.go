@@ -9,11 +9,13 @@ import (
 	"sync"
 
 	// Packages
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	manager "github.com/mutablelogic/go-pg/pkg/queue"
 	httphandler "github.com/mutablelogic/go-pg/pkg/queue/httphandler"
 	version "github.com/mutablelogic/go-pg/pkg/version"
 	httpserver "github.com/mutablelogic/go-server/pkg/httpserver"
+	"github.com/mutablelogic/go-server/pkg/ref"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -25,8 +27,7 @@ type ServerCommands struct {
 
 type RunServer struct {
 	URL       string `arg:"" name:"url" help:"Database URL" default:""`
-	Namespace string `name:"namespace" help:"Queue namespace" default:"default"`
-	Trace     bool   `name:"trace" help:"Enable query tracing" default:"false"`
+	Namespace string `name:"namespace" help:"Queue namespace" default:""`
 
 	// Postgres options
 	PG struct {
@@ -57,12 +58,16 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	if cmd.PG.Schema != "" {
 		opts = append(opts, pg.WithSchemaSearchPath(cmd.PG.Schema))
 	}
-	if ctx.Debug || cmd.Trace {
+
+	// Tracing
+	if ctx.tracer != nil {
+		opts = append(opts, pg.WithTracer(ctx.tracer))
+	} else if ctx.Debug {
 		opts = append(opts, pg.WithTrace(func(parent context.Context, query string, args any, err error) {
 			if err != nil {
 				ctx.logger.With("query", query, "args", args).Print(parent, "pg error: ", err)
-			} else if cmd.Trace {
-				ctx.logger.With("query", query, "args", args).Print(parent, "pg trace")
+			} else {
+				ctx.logger.With("query", query, "args", args).Debug(parent, "pg trace")
 			}
 		}))
 	}
@@ -80,14 +85,19 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	}
 
 	// Create the manager
-	manager, err := manager.New(ctx.ctx, conn, cmd.Namespace)
+	manager, err := manager.New(ctx.ctx, conn, manager.WithNamespace(cmd.Namespace), manager.WithTracer(ctx.tracer))
 	if err != nil {
 		return err
 	}
 
-	// Set middleware
+	// Set logging middleware
 	middleware := httphandler.HTTPMiddlewareFuncs{
 		ctx.logger.HandleFunc,
+	}
+
+	// If we have an OTEL tracer, add tracing middleware
+	if ctx.tracer != nil {
+		middleware = append(middleware, otel.HTTPHandlerFunc(ctx.tracer))
 	}
 
 	// Register HTTP handlers
@@ -120,8 +130,7 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-
-		if err := manager.Run(ctx.ctx); err != nil {
+		if err := manager.Run(ref.WithLogger(ctx.ctx, ctx.logger)); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				result = errors.Join(result, fmt.Errorf("queue error: %w", err))
 			}

@@ -141,11 +141,11 @@ func (q QueueName) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 	switch op {
 	case pg.Get:
-		return bind.Replace("${pgqueue.get}"), nil
+		return bind.Query("pgqueue.get"), nil
 	case pg.Update:
-		return bind.Replace("${pgqueue.patch}"), nil
+		return bind.Query("pgqueue.patch"), nil
 	case pg.Delete:
-		return bind.Replace("${pgqueue.delete}"), nil
+		return bind.Query("pgqueue.delete"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("Unsupported QueueName operation %q", op)
 	}
@@ -161,7 +161,7 @@ func (q QueueCleanRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 	switch op {
 	case pg.List:
-		return bind.Replace("${pgqueue.clean}"), nil
+		return bind.Query("pgqueue.clean"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("Unsupported QueueCleanRequest operation %q", op)
 	}
@@ -173,7 +173,7 @@ func (l QueueListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 	switch op {
 	case pg.List:
-		return bind.Replace("${pgqueue.list}"), nil
+		return bind.Query("pgqueue.list"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("Unsupported QueueListRequest operation %q", op)
 	}
@@ -196,7 +196,7 @@ func (l QueueStatusRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 	switch op {
 	case pg.List:
-		return bind.Replace("${pgqueue.stats}"), nil
+		return bind.Query("pgqueue.stats"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("Unsupported QueueStatusRequest operation %q", op)
 	}
@@ -219,7 +219,7 @@ func (q QueueMeta) Insert(bind *pg.Bind) (string, error) {
 	// A subsequent update is required to set these values
 
 	// Return the insert query
-	return bind.Replace("${pgqueue.insert}"), nil
+	return bind.Query("pgqueue.insert"), nil
 }
 
 // Patch

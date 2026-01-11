@@ -6,6 +6,7 @@ import (
 	"time"
 
 	// Packages
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -132,10 +133,9 @@ func (manager *Manager) NextTicker(ctx context.Context) (*schema.Ticker, error) 
 	return &ticker, nil
 }
 
-// RunTickerLoop runs a loop to process matured tickers, until the context is cancelled,
-// or an error occurs. The period parameter controls the sleep duration between checks when no ticker is found.
-// When a ticker is found, it immediately polls again to drain all matured tickers.
-func (manager *Manager) RunTickerLoop(ctx context.Context, ch chan<- *schema.Ticker, period time.Duration) error {
+// runTickerLoopChan runs a loop to process matured tickers, sending them to a channel.
+// This is the internal implementation used by RunTickerLoop.
+func (manager *Manager) runTickerLoopChan(ctx context.Context, ch chan<- *schema.Ticker, period time.Duration) error {
 	timer := time.NewTimer(time.Millisecond)
 	defer timer.Stop()
 
@@ -144,7 +144,10 @@ func (manager *Manager) RunTickerLoop(ctx context.Context, ch chan<- *schema.Tic
 		case <-ctx.Done():
 			return nil
 		case <-timer.C:
-			ticker, err := manager.NextTicker(ctx)
+			// Create a span for the ticker polling operation to nest NextTicker database calls
+			pollCtx, endspan := otel.StartSpan(manager.tracer, ctx, spanManagerName("ticker.poll"))
+			ticker, err := manager.NextTicker(pollCtx)
+			endspan(err)
 			if err != nil {
 				return err
 			}
@@ -158,10 +161,9 @@ func (manager *Manager) RunTickerLoop(ctx context.Context, ch chan<- *schema.Tic
 	}
 }
 
-// RunTickerLoopNs runs a loop to process matured tickers in a namespace, until the context is cancelled,
-// or an error occurs. The period parameter controls the sleep duration between checks when no ticker is found.
-// When a ticker is found, it immediately polls again to drain all matured tickers.
-func (manager *Manager) RunTickerLoopNs(ctx context.Context, namespace string, ch chan<- *schema.Ticker, period time.Duration) error {
+// runTickerLoopNsChan runs a loop to process matured tickers in a namespace, sending them to a channel.
+// This is the internal implementation used by RunTickerLoopNs.
+func (manager *Manager) runTickerLoopNsChan(ctx context.Context, namespace string, ch chan<- *schema.Ticker, period time.Duration) error {
 	timer := time.NewTimer(100 * time.Millisecond)
 	defer timer.Stop()
 
@@ -171,8 +173,11 @@ func (manager *Manager) RunTickerLoopNs(ctx context.Context, namespace string, c
 		case <-ctx.Done():
 			return nil
 		case <-timer.C:
+			// Create a span for the ticker polling operation to nest NextTickerNs database calls
+			pollCtx, endspan := otel.StartSpan(manager.tracer, ctx, spanManagerName("ticker.poll"))
 			// Check for matured tickers
-			ticker, err := manager.NextTickerNs(ctx, namespace)
+			ticker, err := manager.NextTickerNs(pollCtx, namespace)
+			endspan(err)
 			if err != nil {
 				return err
 			}
@@ -184,6 +189,104 @@ func (manager *Manager) RunTickerLoopNs(ctx context.Context, namespace string, c
 			} else {
 				// No ticker found - wait for the full period
 				timer.Reset(period)
+			}
+		}
+	}
+}
+
+// RunTickerLoopChan runs a loop to process matured tickers, sending them to a channel.
+// Use this for streaming scenarios where you need direct channel access.
+// The caller owns the channel and must close it when done.
+// Blocks until context is cancelled or an error occurs.
+func (manager *Manager) RunTickerLoopChan(ctx context.Context, ch chan<- *schema.Ticker, period time.Duration) error {
+	return manager.runTickerLoopChan(ctx, ch, period)
+}
+
+// RunTickerLoopNsChan runs a loop to process matured tickers in a namespace, sending them to a channel.
+// Use this for streaming scenarios where you need direct channel access.
+// The caller owns the channel and must close it when done.
+// Blocks until context is cancelled or an error occurs.
+func (manager *Manager) RunTickerLoopNsChan(ctx context.Context, namespace string, ch chan<- *schema.Ticker, period time.Duration) error {
+	return manager.runTickerLoopNsChan(ctx, namespace, ch, period)
+}
+
+// RunTickerLoop runs a loop to process matured tickers with a single worker.
+// The handler is called for each matured ticker.
+// Blocks until context is cancelled or an error occurs.
+func (manager *Manager) RunTickerLoop(ctx context.Context, period time.Duration, handler TickerHandler) error {
+	// Unbuffered channel - blocks send until handler is ready
+	tickers := make(chan *schema.Ticker)
+
+	// Error channel for fatal errors
+	errCh := make(chan error, 1)
+
+	// Run the ticker loop in a goroutine
+	go func() {
+		defer close(tickers)
+		if err := manager.runTickerLoopChan(ctx, tickers, period); err != nil {
+			select {
+			case errCh <- err:
+			default:
+			}
+		}
+	}()
+
+	// Process tickers
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-errCh:
+			return err
+		case ticker, ok := <-tickers:
+			if !ok {
+				return nil
+			}
+			if err := handler(ctx, ticker); err != nil {
+				// Handler errors don't stop the loop (errors are recorded in spans)
+				// Example: no worker registered for ticker, worker execution failures
+				_ = err
+			}
+		}
+	}
+}
+
+// RunTickerLoopNs runs a loop to process matured tickers in a specific namespace with a single worker.
+// The handler is called for each matured ticker.
+// Blocks until context is cancelled or an error occurs.
+func (manager *Manager) RunTickerLoopNs(ctx context.Context, namespace string, period time.Duration, handler TickerHandler) error {
+	// Unbuffered channel - blocks send until handler is ready
+	tickers := make(chan *schema.Ticker)
+
+	// Error channel for fatal errors
+	errCh := make(chan error, 1)
+
+	// Run the ticker loop in a goroutine
+	go func() {
+		defer close(tickers)
+		if err := manager.runTickerLoopNsChan(ctx, namespace, tickers, period); err != nil {
+			select {
+			case errCh <- err:
+			default:
+			}
+		}
+	}()
+
+	// Process tickers
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-errCh:
+			return err
+		case ticker, ok := <-tickers:
+			if !ok {
+				return nil
+			}
+			if err := handler(ctx, ticker); err != nil {
+				// Handler errors don't stop the loop (errors are recorded in spans)
+				// Example: no worker registered for ticker, worker execution failures
+				_ = err
 			}
 		}
 	}

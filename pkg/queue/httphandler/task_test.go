@@ -26,7 +26,7 @@ func Test_Task_RetainWithoutAcceptHeader(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_task")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_task"))
 	assert.NoError(err)
 
 	// Create a queue and task
@@ -88,7 +88,7 @@ func Test_Task_Create(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_task_create")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_task_create"))
 	assert.NoError(err)
 
 	// Create a queue
@@ -139,7 +139,7 @@ func Test_Task_Release(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_task_release")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_task_release"))
 	assert.NoError(err)
 
 	// Create a queue

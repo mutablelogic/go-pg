@@ -2,6 +2,7 @@ package queue_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func Test_Queue_RegisterQueue(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_register")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_register"))
 	assert.NoError(err)
 	assert.NotNil(mgr)
 
@@ -96,7 +97,7 @@ func Test_Queue_ListQueues(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_list")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_list"))
 	assert.NoError(err)
 
 	// Create some queues
@@ -133,7 +134,7 @@ func Test_Queue_GetQueue(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_get")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_get"))
 	assert.NoError(err)
 
 	// Create a queue
@@ -165,7 +166,7 @@ func Test_Queue_DeleteQueue(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_delete")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_delete"))
 	assert.NoError(err)
 
 	// Create a queue
@@ -197,7 +198,7 @@ func Test_Queue_UpdateQueue(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_update")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_update"))
 	assert.NoError(err)
 
 	// Create a queue
@@ -249,7 +250,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_clean")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_clean"))
 	assert.NoError(err)
 
 	// Create a queue with short TTL for testing
@@ -273,7 +274,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 	t.Run("CleanReleasedTasks", func(t *testing.T) {
 		// Create a task
 		task, err := mgr.CreateTask(ctx, "clean-queue", schema.TaskMeta{
-			Payload: map[string]string{"test": "data"},
+			Payload: mustMarshal(map[string]string{"test": "data"}),
 		})
 		assert.NoError(err)
 		assert.NotNil(task)
@@ -319,7 +320,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 
 		// Create a task with only 2 retries
 		task, err := mgr.CreateTask(ctx, queueName, schema.TaskMeta{
-			Payload: map[string]string{"test": "fail"},
+			Payload: mustMarshal(map[string]string{"test": "fail"}),
 		})
 		assert.NoError(err)
 		assert.NotNil(task.Retries)
@@ -364,7 +365,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 	t.Run("DoesNotCleanActiveTasks", func(t *testing.T) {
 		// Create a new task
 		task, err := mgr.CreateTask(ctx, "clean-queue", schema.TaskMeta{
-			Payload: map[string]string{"test": "active"},
+			Payload: mustMarshal(map[string]string{"test": "active"}),
 		})
 		assert.NoError(err)
 		assert.NotNil(task)
@@ -389,7 +390,7 @@ func Test_Queue_CleanQueue(t *testing.T) {
 	t.Run("DoesNotCleanRetainedTasks", func(t *testing.T) {
 		// Create and retain a task
 		task, err := mgr.CreateTask(ctx, "clean-queue", schema.TaskMeta{
-			Payload: map[string]string{"test": "retained"},
+			Payload: mustMarshal(map[string]string{"test": "retained"}),
 		})
 		assert.NoError(err)
 
@@ -423,7 +424,7 @@ func Test_Queue_ListQueueStatuses(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_list_status")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_list_status"))
 	assert.NoError(err)
 
 	// Create multiple queues with unique names for this test
@@ -457,7 +458,7 @@ func Test_Queue_ListQueueStatuses(t *testing.T) {
 	t.Run("ListStatusesWithTasks", func(t *testing.T) {
 		// Add a task to list-status-queue-1
 		_, err := mgr.CreateTask(ctx, "list-status-queue-1", schema.TaskMeta{
-			Payload: map[string]string{"test": "data"},
+			Payload: mustMarshal(map[string]string{"test": "data"}),
 		})
 		assert.NoError(err)
 
@@ -482,4 +483,12 @@ func Test_Queue_ListQueueStatuses(t *testing.T) {
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+func mustMarshal(v any) json.RawMessage {
+	data, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

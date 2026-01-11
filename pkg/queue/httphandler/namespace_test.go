@@ -26,13 +26,13 @@ func Test_Namespace_Handler(t *testing.T) {
 	defer container.Close(ctx)
 
 	// Create multiple managers with different namespaces
-	mgr1, err := queue.New(ctx, pool, "namespace1")
+	mgr1, err := queue.New(ctx, pool, queue.WithNamespace("namespace1"))
 	assert.NoError(err)
 
-	mgr2, err := queue.New(ctx, pool, "namespace2")
+	mgr2, err := queue.New(ctx, pool, queue.WithNamespace("namespace2"))
 	assert.NoError(err)
 
-	mgr3, err := queue.New(ctx, pool, "namespace3")
+	mgr3, err := queue.New(ctx, pool, queue.WithNamespace("namespace3"))
 	assert.NoError(err)
 
 	// Create a queue in each namespace to ensure they appear in the database

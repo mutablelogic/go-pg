@@ -31,7 +31,7 @@ func Test_Client_RetainTask(t *testing.T) {
 					Queue:     "test-queue",
 					Namespace: "default",
 					TaskMeta: schema.TaskMeta{
-						Payload: map[string]interface{}{"key": "value"},
+						Payload: mustMarshal(map[string]interface{}{"key": "value"}),
 					},
 					CreatedAt: &now,
 					StartedAt: &now,
@@ -125,10 +125,10 @@ func Test_Client_CreateTask(t *testing.T) {
 		assert.NoError(err)
 
 		meta := schema.TaskMeta{
-			Payload: map[string]interface{}{
+			Payload: mustMarshal(map[string]interface{}{
 				"operation": "process",
 				"data":      "important data",
-			},
+			}),
 		}
 
 		task, err := client.CreateTask(context.Background(), "test-queue", meta)
@@ -170,7 +170,7 @@ func Test_Client_CreateTask(t *testing.T) {
 
 		delayedAt := time.Now().Add(5 * time.Minute)
 		meta := schema.TaskMeta{
-			Payload:   map[string]interface{}{"key": "value"},
+			Payload:   mustMarshal(map[string]interface{}{"key": "value"}),
 			DelayedAt: &delayedAt,
 		}
 
@@ -303,4 +303,15 @@ func Test_Client_ReleaseTask(t *testing.T) {
 		assert.Error(err)
 		assert.Nil(task)
 	})
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// HELPER FUNCTIONS
+
+func mustMarshal(v any) json.RawMessage {
+	data, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

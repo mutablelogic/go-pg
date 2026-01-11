@@ -99,7 +99,7 @@ func (bind *Bind) withQueries(queries ...*Queries) *Bind {
 	// Iterate through queries
 	for _, q := range queries {
 		for _, key := range q.Keys() {
-			varsCopy[key] = q.Get(key)
+			varsCopy[key] = q.Query(key)
 		}
 	}
 
@@ -207,8 +207,28 @@ func (bind *Bind) Append(key string, value any) bool {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - QUERY
 
-// QueryRow queries a single row and returns the result.
-func (bind *Bind) QueryRow(ctx context.Context, conn pgx.Tx, query string) pgx.Row {
+// Query looks up a named query, sets the span name for OpenTelemetry tracing,
+// and returns the resolved SQL string. The name should match a query key
+// that was loaded via withQueries (e.g., "pgqueue.get").
+func (bind *Bind) Query(name string) string {
+	bind.Set(TraceSpanNameArg, name)
+	return bind.Replace("${" + name + "}")
+}
+
+// Queue a query - for bulk operations
+func (bind *Bind) queuerow(batch *pgx.Batch, query string, reader Reader) {
+	bind.RLock()
+	defer bind.RUnlock()
+	queuedquery := batch.Queue(bind.Replace(query), bind.vars)
+	queuedquery.QueryRow(func(row pgx.Row) error {
+		return reader.Scan(row)
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS - QUERY EXECUTION
+
+func (bind *Bind) queryRow(ctx context.Context, conn pgx.Tx, query string) pgx.Row {
 	bind.RLock()
 	defer bind.RUnlock()
 
@@ -231,8 +251,7 @@ func (bind *Bind) QueryRow(ctx context.Context, conn pgx.Tx, query string) pgx.R
 	return conn.QueryRow(ctx, bind.Replace(query), bind.vars)
 }
 
-// Query a set of rows and return the result
-func (bind *Bind) Query(ctx context.Context, conn pgx.Tx, query string) (pgx.Rows, error) {
+func (bind *Bind) query(ctx context.Context, conn pgx.Tx, query string) (pgx.Rows, error) {
 	bind.RLock()
 	defer bind.RUnlock()
 
@@ -254,8 +273,7 @@ func (bind *Bind) Query(ctx context.Context, conn pgx.Tx, query string) (pgx.Row
 	return conn.Query(ctx, bind.Replace(query), bind.vars)
 }
 
-// Exec executes a query.
-func (bind *Bind) Exec(ctx context.Context, conn pgx.Tx, query string) error {
+func (bind *Bind) exec(ctx context.Context, conn pgx.Tx, query string) error {
 	bind.RLock()
 	defer bind.RUnlock()
 
@@ -274,16 +292,6 @@ func (bind *Bind) Exec(ctx context.Context, conn pgx.Tx, query string) error {
 	return err
 }
 
-// Queue a query - for bulk operations
-func (bind *Bind) queuerow(batch *pgx.Batch, query string, reader Reader) {
-	bind.RLock()
-	defer bind.RUnlock()
-	queuedquery := batch.Queue(bind.Replace(query), bind.vars)
-	queuedquery.QueryRow(func(row pgx.Row) error {
-		return reader.Scan(row)
-	})
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
@@ -294,6 +302,7 @@ func (bind *Bind) queuerow(batch *pgx.Batch, query string, reader Reader) {
 //   - $1 => $1
 //   - $$ => $$
 func (bind *Bind) Replace(query string) string {
+	// Perform the replacement
 	return replace(query, bind.vars)
 }
 

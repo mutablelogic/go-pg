@@ -7,13 +7,15 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	trace "go.opentelemetry.io/otel/trace"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
 type opt struct {
-	TraceFn
+	*tracer
 	Verbose bool
 	url.Values
 	bind *Bind
@@ -191,7 +193,15 @@ func WithApplicationName(name string) Opt {
 // WithTrace sets the trace function for the connection pool.
 func WithTrace(fn TraceFn) Opt {
 	return func(o *opt) error {
-		o.TraceFn = fn
+		o.tracer = NewTracer(fn)
+		return nil
+	}
+}
+
+// WithTracer sets the OTEL tracer for the connection pool.
+func WithTracer(tracer trace.Tracer) Opt {
+	return func(o *opt) error {
+		o.tracer = NewOTELTracer(tracer)
 		return nil
 	}
 }

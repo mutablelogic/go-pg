@@ -28,8 +28,8 @@ type TaskRelease struct {
 }
 
 type TaskMeta struct {
-	Payload   any        `json:"payload,omitempty"`
-	DelayedAt *time.Time `json:"delayed_at,omitempty"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
+	DelayedAt *time.Time      `json:"delayed_at,omitempty"`
 }
 
 type Task struct {
@@ -128,11 +128,9 @@ func (t TaskMeta) Insert(bind *pg.Bind) (string, error) {
 	}
 	if t.Payload == nil {
 		return "", httpresponse.ErrBadRequest.With("missing payload")
-	} else if data, err := json.Marshal(t.Payload); err != nil {
-		return "", err
-	} else {
-		bind.Set("payload", string(data))
 	}
+	// json.RawMessage is already JSON bytes, don't marshal it again
+	bind.Set("payload", string(t.Payload))
 	if t.DelayedAt != nil {
 		if t.DelayedAt.Before(time.Now()) {
 			return "", httpresponse.ErrBadRequest.With("delayed_at is in the past")
@@ -141,7 +139,7 @@ func (t TaskMeta) Insert(bind *pg.Bind) (string, error) {
 	} else {
 		bind.Set("delayed_at", nil)
 	}
-	return bind.Replace("${pgqueue.task_insert}"), nil
+	return bind.Query("pgqueue.task_insert"), nil
 }
 
 func (t TaskMeta) Update(bind *pg.Bind) error {
@@ -182,7 +180,7 @@ func (t TaskId) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	bind.Set("tid", t)
 	switch op {
 	case pg.Get:
-		return bind.Replace("${pgqueue.task_get}"), nil
+		return bind.Query("pgqueue.task_get"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("unsupported TaskId operation %q", op)
 	}
@@ -203,7 +201,7 @@ func (l TaskListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 	switch op {
 	case pg.List:
-		return bind.Replace("${pgqueue.task_list}"), nil
+		return bind.Query("pgqueue.task_list"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("unsupported TaskListRequest operation %q", op)
 	}
@@ -223,7 +221,7 @@ func (t TaskRetain) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Retain
 	switch op {
 	case pg.Get:
-		return bind.Replace("${pgqueue.retain}"), nil
+		return bind.Query("pgqueue.retain"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("unsupported TaskRetain operation %q", op)
 	}
@@ -248,9 +246,9 @@ func (t TaskRelease) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	switch op {
 	case pg.Get:
 		if t.Fail {
-			return bind.Replace("${pgqueue.fail}"), nil
+			return bind.Query("pgqueue.fail"), nil
 		} else {
-			return bind.Replace("${pgqueue.release}"), nil
+			return bind.Query("pgqueue.release"), nil
 		}
 	default:
 		return "", httpresponse.ErrInternalError.Withf("unsupported TaskRelease operation %q", op)

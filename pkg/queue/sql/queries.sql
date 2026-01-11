@@ -62,7 +62,7 @@ SELECT DISTINCT "ns" FROM (
 -- pgqueue.retain
 -- Returns the id of the task which has been retained
 -- @queues is a TEXT[] array, empty array means any queue
-SELECT queue_lock(@ns, @queues, @worker)
+SELECT queue_lock(@ns, @queues::text[], @worker)
 
 -- pgqueue.release
 -- Returns the id of the task which has been released

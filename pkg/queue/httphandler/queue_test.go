@@ -26,7 +26,7 @@ func Test_Queue_List(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_list")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_list"))
 	assert.NoError(err)
 
 	// Create test queues
@@ -116,7 +116,7 @@ func Test_Queue_Create(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_create")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_create"))
 	assert.NoError(err)
 
 	router := http.NewServeMux()
@@ -170,7 +170,7 @@ func Test_Queue_Get(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_get")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_get"))
 	assert.NoError(err)
 
 	router := http.NewServeMux()
@@ -219,7 +219,7 @@ func Test_Queue_Update(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_update")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_update"))
 	assert.NoError(err)
 
 	router := http.NewServeMux()
@@ -273,7 +273,7 @@ func Test_Queue_Delete(t *testing.T) {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	mgr, err := queue.New(ctx, pool, "test_delete")
+	mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_delete"))
 	assert.NoError(err)
 
 	router := http.NewServeMux()

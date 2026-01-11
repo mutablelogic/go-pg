@@ -30,29 +30,29 @@ func Test_Manager_New(t *testing.T) {
 	defer conn.Close()
 
 	t.Run("ValidConnection", func(t *testing.T) {
-		mgr, err := queue.New(context.TODO(), conn, "test")
+		mgr, err := queue.New(context.TODO(), conn, queue.WithNamespace("test"))
 		assert.NoError(err)
 		assert.NotNil(mgr)
 	})
 
 	t.Run("NilConnection", func(t *testing.T) {
-		_, err := queue.New(context.TODO(), nil, "test")
+		_, err := queue.New(context.TODO(), nil, queue.WithNamespace("test"))
 		assert.Error(err)
 		assert.ErrorIs(err, pg.ErrBadParameter)
 	})
 
 	t.Run("EmptyNamespace", func(t *testing.T) {
-		mgr, err := queue.New(context.TODO(), conn, "")
-		assert.NoError(err)
-		assert.NotNil(mgr)
+		_, err := queue.New(context.TODO(), conn, queue.WithNamespace(""))
+		assert.Error(err)
+		assert.ErrorIs(err, queue.ErrInvalidNamespace)
 	})
 
 	t.Run("DifferentNamespaces", func(t *testing.T) {
-		mgr1, err := queue.New(context.TODO(), conn, "namespace1")
+		mgr1, err := queue.New(context.TODO(), conn, queue.WithNamespace("namespace1"))
 		assert.NoError(err)
 		assert.NotNil(mgr1)
 
-		mgr2, err := queue.New(context.TODO(), conn, "namespace2")
+		mgr2, err := queue.New(context.TODO(), conn, queue.WithNamespace("namespace2"))
 		assert.NoError(err)
 		assert.NotNil(mgr2)
 
@@ -61,10 +61,9 @@ func Test_Manager_New(t *testing.T) {
 	})
 
 	t.Run("ReservedNamespace", func(t *testing.T) {
-		_, err := queue.New(context.TODO(), conn, "pgqueue")
+		_, err := queue.New(context.TODO(), conn, queue.WithNamespace("pgqueue"))
 		assert.Error(err)
-		assert.ErrorIs(err, pg.ErrBadParameter)
-		assert.Contains(err.Error(), "reserved for system use")
+		assert.ErrorIs(err, queue.ErrReservedNamespace)
 	})
 }
 
@@ -74,7 +73,7 @@ func Test_Manager_Run(t *testing.T) {
 	defer conn.Close()
 	ctx := context.TODO()
 
-	mgr, err := queue.New(ctx, conn, "test_run")
+	mgr, err := queue.New(ctx, conn, queue.WithNamespace("test_run"))
 	assert.NoError(err)
 	assert.NotNil(mgr)
 
@@ -125,17 +124,17 @@ func Test_Manager_WithSchemaSearchPath(t *testing.T) {
 	defer container.Close(ctx)
 
 	t.Run("WithSearchPath", func(t *testing.T) {
-		mgr, err := queue.New(ctx, pool, "test_with_search_path")
+		mgr, err := queue.New(ctx, pool, queue.WithNamespace("test_with_search_path"))
 		assert.NoError(err)
 		assert.NotNil(mgr)
 	})
 
 	t.Run("MultipleNamespaces", func(t *testing.T) {
-		mgr1, err := queue.New(ctx, pool, "ns1")
+		mgr1, err := queue.New(ctx, pool, queue.WithNamespace("ns1"))
 		assert.NoError(err)
 		assert.NotNil(mgr1)
 
-		mgr2, err := queue.New(ctx, pool, "ns2")
+		mgr2, err := queue.New(ctx, pool, queue.WithNamespace("ns2"))
 		assert.NoError(err)
 		assert.NotNil(mgr2)
 

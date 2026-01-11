@@ -213,7 +213,7 @@ func (manager *Manager) runTaskWorker(ctx context.Context, task *schema.Task, tr
 	defer cancel()
 
 	// Create the span
-	child2, endfunc := otel.StartSpan(tracer, child, spanManagerName("task."+fmt.Sprint(task.Queue, ".", task.Id)),
+	child2, endfunc := otel.StartSpan(tracer, child, spanManagerName("task."+task.Queue),
 		attribute.String("task", task.String()),
 	)
 	defer func() { endfunc(result) }()

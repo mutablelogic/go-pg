@@ -233,7 +233,11 @@ func (manager *Manager) drainTasks(ctx context.Context, n *pg.Notification, queu
 			go func(num int, t *schema.Task) {
 				defer wg.Done()
 				defer func() { sem <- num }()
-				handler(ctx, t)
+				if err := handler(ctx, t); err != nil {
+					// Error is already recorded in the span and task is already released by handler
+					// Nothing more to do here as we're in a background goroutine
+					_ = err
+				}
 			}(workerNum, task)
 			timer.Reset(100 * time.Millisecond)
 		}
@@ -270,7 +274,11 @@ func (manager *Manager) pollForTasks(ctx context.Context, queues []string, sem c
 			go func(num int, t *schema.Task) {
 				defer wg.Done()
 				defer func() { sem <- num }()
-				handler(ctx, t)
+				if err := handler(ctx, t); err != nil {
+					// Error is already recorded in the span and task is already released by handler
+					// Nothing more to do here as we're in a background goroutine
+					_ = err
+				}
 			}(workerNum, task)
 			timer.Reset(100 * time.Millisecond)
 		}

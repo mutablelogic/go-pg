@@ -77,8 +77,9 @@ func main() {
 		}),
 	)
 
-	// Run the command
-	os.Exit(run(ctx, &cli.Globals))
+	// Run the command and exit with the returned code
+	exitCode := run(ctx, &cli.Globals)
+	os.Exit(exitCode)
 }
 
 func run(ctx *kong.Context, globals *Globals) int {

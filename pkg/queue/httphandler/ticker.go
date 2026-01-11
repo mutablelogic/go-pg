@@ -102,6 +102,7 @@ func tickerNext(w http.ResponseWriter, r *http.Request, manager *queue.Manager) 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer close(ch) // Caller owns the channel and must close it
 		manager.RunTickerLoopNsChan(r.Context(), manager.Namespace(), ch, schema.TickerPeriod)
 	}()
 

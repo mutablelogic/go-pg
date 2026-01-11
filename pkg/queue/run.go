@@ -121,7 +121,7 @@ func (manager *Manager) Run(ctx context.Context) error {
 		go func() {
 			defer manager.pool.wg.Done()
 			if err := manager.RunTickerLoop(ctx, schema.TickerPeriod, func(ctx context.Context, ticker *schema.Ticker) error {
-				return manager.pool.runTickerWorker(ctx, ticker, manager.tracer)
+				return manager.runTickerWorker(ctx, ticker, manager.tracer)
 			}); err != nil {
 				if !errors.Is(err, context.Canceled) {
 					mu.Lock()
@@ -159,17 +159,17 @@ func (pool *workerPool) Wait() {
 ////////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (pool *workerPool) runTickerWorker(ctx context.Context, ticker *schema.Ticker, tracer trace.Tracer) error {
-	worker, ok := pool.tickers[ticker.Ticker]
+func (manager *Manager) runTickerWorker(ctx context.Context, ticker *schema.Ticker, tracer trace.Tracer) error {
+	worker, ok := manager.pool.tickers[ticker.Ticker]
 	if !ok {
 		return fmt.Errorf("no worker registered for ticker %q", ticker.Ticker)
 	}
 
 	// Run the worker in the background (tickers are fire-and-forget)
-	pool.wg.Add(1)
+	manager.pool.wg.Add(1)
 	go func() {
 		var result error
-		defer pool.wg.Done()
+		defer manager.pool.wg.Done()
 
 		// Create a timeout context based on ticker interval
 		child, cancel := withTimeout(ctx, types.PtrDuration(ticker.Interval))
@@ -225,9 +225,10 @@ func withTimeout(parent context.Context, d time.Duration) (context.Context, cont
 	return parent, func() {}
 }
 
-// withDeadline returns a context with deadline if time > now, else returns the parent context.
+// withDeadline returns a context with deadline if time is in the future.
+// Returns the parent context unchanged if time is zero or in the past.
 func withDeadline(parent context.Context, t time.Time) (context.Context, context.CancelFunc) {
-	if t.After(time.Now()) {
+	if !t.IsZero() && t.After(time.Now()) {
 		return context.WithDeadline(parent, t)
 	}
 	return parent, func() {}

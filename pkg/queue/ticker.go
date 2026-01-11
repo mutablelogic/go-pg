@@ -243,7 +243,9 @@ func (manager *Manager) RunTickerLoop(ctx context.Context, period time.Duration,
 				return nil
 			}
 			if err := handler(ctx, ticker); err != nil {
-				// Handler errors don't stop the loop
+				// Handler errors don't stop the loop (errors are recorded in spans)
+				// Example: no worker registered for ticker, worker execution failures
+				_ = err
 			}
 		}
 	}
@@ -282,7 +284,9 @@ func (manager *Manager) RunTickerLoopNs(ctx context.Context, namespace string, p
 				return nil
 			}
 			if err := handler(ctx, ticker); err != nil {
-				// Handler errors don't stop the loop
+				// Handler errors don't stop the loop (errors are recorded in spans)
+				// Example: no worker registered for ticker, worker execution failures
+				_ = err
 			}
 		}
 	}

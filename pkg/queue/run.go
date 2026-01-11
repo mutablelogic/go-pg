@@ -10,7 +10,8 @@ import (
 	// Packages
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
-	ref "github.com/mutablelogic/go-server/pkg/ref"
+	"github.com/mutablelogic/go-server"
+	"github.com/mutablelogic/go-server/pkg/ref"
 	"github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
 	trace "go.opentelemetry.io/otel/trace"
@@ -66,8 +67,12 @@ func (manager *Manager) Run(ctx context.Context) error {
 	var result error
 	var mu sync.Mutex
 
-	// Get the logger from the context
-	log := ref.Log(ctx)
+	// Get the logger from the context (may be nil in tests)
+	var log server.Logger
+	func() {
+		defer func() { recover() }()
+		log = ref.Log(ctx)
+	}()
 
 	// Collect registered queue names
 	queues := make([]string, 0, len(manager.pool.tasks))

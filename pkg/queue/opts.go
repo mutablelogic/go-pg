@@ -43,12 +43,14 @@ var (
 // The namespace cannot be empty or use the reserved system namespace.
 func WithNamespace(name string) Opt {
 	return func(o *opts) error {
+		name = strings.TrimSpace(name)
 		if name == "" {
-			name = schema.DefaultNamespace
+			return ErrInvalidNamespace
 		}
-		if o.ns = strings.TrimSpace(name); o.ns == schema.SchemaName {
+		if name == schema.SchemaName {
 			return ErrReservedNamespace
 		}
+		o.ns = name
 		return nil
 	}
 }

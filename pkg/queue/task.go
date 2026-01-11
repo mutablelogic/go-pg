@@ -22,6 +22,11 @@ func (manager *Manager) CreateTask(ctx context.Context, queue string, meta schem
 	var taskId schema.TaskId
 	var task schema.TaskWithStatus
 
+	// Validate payload is not nil
+	if meta.Payload == nil {
+		return nil, errors.New("missing payload")
+	}
+
 	// Insert the task, and return it
 	if err := manager.conn.Tx(ctx, func(conn pg.Conn) error {
 		if err := conn.With("id", queue).Insert(ctx, &taskId, meta); err != nil {

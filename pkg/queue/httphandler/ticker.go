@@ -112,8 +112,8 @@ FOR_LOOP:
 		select {
 		case <-r.Context().Done():
 			break FOR_LOOP
-		case ticker := <-ch:
-			if ticker == nil {
+		case ticker, ok := <-ch:
+			if !ok {
 				break FOR_LOOP
 			}
 			textStream.Write("ticker", ticker)

@@ -143,7 +143,11 @@ func (manager *Manager) Run(ctx context.Context) error {
 	// Run task loop with handler (if any queues registered)
 	if len(queues) > 0 {
 		if err := manager.RunTaskLoop(ctx, func(ctx context.Context, task *schema.Task) error {
-			return manager.runTaskWorker(ctx, task, manager.tracer)
+			err := manager.runTaskWorker(ctx, task, manager.tracer)
+			if err != nil {
+				log.With("task", task).Print(ctx, err)
+			}
+			return err
 		}, queues...); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				mu.Lock()
@@ -206,13 +210,12 @@ func (manager *Manager) runTaskWorker(ctx context.Context, task *schema.Task, tr
 		return fmt.Errorf("no worker registered for queue %q", task.Queue)
 	}
 
-	var result error
-
 	// Set deadline based on task dies_at
 	child, cancel := withDeadline(ctx, types.PtrTime(task.DiesAt))
 	defer cancel()
 
 	// Create the span
+	var result error
 	child2, endfunc := otel.StartSpan(tracer, child, spanManagerName("task."+task.Queue),
 		attribute.String("task", task.String()),
 	)
@@ -222,10 +225,17 @@ func (manager *Manager) runTaskWorker(ctx context.Context, task *schema.Task, tr
 	result = worker.Run(child2, task.Payload)
 
 	// Release the task back to the queue as success/failure (use child2 to nest the span)
-	if _, releaseErr := manager.ReleaseTask(child2, task.Id, result == nil, result, nil); releaseErr != nil {
+	var status string
+	if _, releaseErr := manager.ReleaseTask(child2, task.Id, result == nil, result, &status); releaseErr != nil {
 		result = errors.Join(result, releaseErr)
 	}
 
+	// If the status is not 'released', log a warning
+	if status != "released" {
+		result = errors.Join(result, fmt.Errorf("task status: %s", status))
+	}
+
+	// Return any errors
 	return result
 }
 

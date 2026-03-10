@@ -15,7 +15,7 @@ import (
 // TYPES
 
 type opt struct {
-	*tracer
+	tracer
 	Verbose bool
 	url.Values
 	bind *Bind
@@ -50,6 +50,7 @@ func apply(opts ...Opt) (*opt, error) {
 	o.Set("host", "localhost")
 	o.Set("port", DefaultPort)
 	o.Set("pool_max_conns", defaultMaxConns)
+	o.tracer = tracer{}
 	o.bind = NewBind()
 
 	// Apply options
@@ -108,6 +109,16 @@ func WithCredentials(user, password string) Opt {
 		}
 
 		// Return success
+		return nil
+	}
+}
+
+// WithPassword sets the connection password without affecting the username or database name.
+func WithPassword(password string) Opt {
+	return func(o *opt) error {
+		if password != "" {
+			o.Set("password", password)
+		}
 		return nil
 	}
 }
@@ -193,15 +204,15 @@ func WithApplicationName(name string) Opt {
 // WithTrace sets the trace function for the connection pool.
 func WithTrace(fn TraceFn) Opt {
 	return func(o *opt) error {
-		o.tracer = NewTracer(fn)
+		o.tracer.TraceFn = fn
 		return nil
 	}
 }
 
 // WithTracer sets the OTEL tracer for the connection pool.
-func WithTracer(tracer trace.Tracer) Opt {
+func WithTracer(t trace.Tracer) Opt {
 	return func(o *opt) error {
-		o.tracer = NewOTELTracer(tracer)
+		o.tracer.otel = t
 		return nil
 	}
 }

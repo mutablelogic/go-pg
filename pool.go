@@ -57,18 +57,18 @@ func NewPool(ctx context.Context, opts ...Opt) (PoolConn, error) {
 		return nil, err
 	}
 
-	// If there is a trace function, then set it
-	if o.tracer != nil {
-		poolconfig.ConnConfig.Tracer = o.tracer
+	// If there is a trace function or OTEL tracer, wire it up
+	if o.tracer.TraceFn != nil || o.tracer.otel != nil {
+		poolconfig.ConnConfig.Tracer = &o.tracer
 
-		if o.TraceFn != nil {
+		if o.tracer.TraceFn != nil {
 			// Output the connection parameters
 			parts := map[string]string{}
 			for _, part := range o.encode("password") {
 				kv := strings.SplitN(part, "=", 2)
 				parts[kv[0]] = kv[1]
 			}
-			o.TraceFn(ctx, "CONNECT", parts, nil)
+			o.tracer.TraceFn(ctx, "CONNECT", parts, nil)
 		}
 	}
 

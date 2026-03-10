@@ -8,7 +8,7 @@ require (
 	github.com/docker/go-connections v0.6.0
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/mutablelogic/go-client v1.4.3
-	github.com/mutablelogic/go-server v1.6.15
+	github.com/mutablelogic/go-server v1.6.16
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.40.0

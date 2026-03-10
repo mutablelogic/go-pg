@@ -109,8 +109,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/mutablelogic/go-client v1.4.3 h1:bXBHc9CJrZVUnBX1roiRzx7ctIZjh85SAP4RofDsfso=
 github.com/mutablelogic/go-client v1.4.3/go.mod h1:cKgq1PfpeUlVirp/kL9mRvZtjVBlDjYuh9atwsLREuk=
-github.com/mutablelogic/go-server v1.6.15 h1:ZV1JMK+XiGo2fNySOW1dTrFLu0QlIZeeMNDKxBhI6OY=
-github.com/mutablelogic/go-server v1.6.15/go.mod h1:MiavGu9hapGKdc7VhZCv0mWn03wPyUN00ip77ZX7B0s=
+github.com/mutablelogic/go-server v1.6.16 h1:ZyKWVwXwXZvvOxgNfpk+Ls6jp0W/c2y+Z+D4YPiVaPE=
+github.com/mutablelogic/go-server v1.6.16/go.mod h1:P07SxfvwfbLbDqkHo87RPZG7Qz1jDWIp0OOxdhEZlvk=
 github.com/mutablelogic/go-tokenizer v0.0.1 h1:3gSF+zoMq4tLpH+XYawkVUb7qmWuYNCez1CTs/iX3mU=
 github.com/mutablelogic/go-tokenizer v0.0.1/go.mod h1:zdAyIhfqUKxFXb8MwChbXNwMOZt/5NlUylmx6Qjr4v8=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=

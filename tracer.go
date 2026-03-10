@@ -44,24 +44,6 @@ const (
 )
 
 //////////////////////////////////////////////////////////////////////////////
-// LIFECYCLE
-
-// NewTracer creates a new query tracer with an optional callback function.
-func NewTracer(fn TraceFn) *tracer {
-	return &tracer{
-		TraceFn: fn,
-	}
-}
-
-// NewOTELTracer creates a new query tracer that emits OpenTelemetry spans.
-// Each query will create a new span. If fn is non-nil, it will also be called on query end.
-func NewOTELTracer(t trace.Tracer) *tracer {
-	return &tracer{
-		otel: t,
-	}
-}
-
-//////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
 func (t *tracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {

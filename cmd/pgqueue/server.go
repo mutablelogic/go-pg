@@ -6,16 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 
 	// Packages
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
+	"github.com/mutablelogic/go-pg/pkg/queue"
 	manager "github.com/mutablelogic/go-pg/pkg/queue"
 	httphandler "github.com/mutablelogic/go-pg/pkg/queue/httphandler"
 	version "github.com/mutablelogic/go-pg/pkg/version"
 	httpserver "github.com/mutablelogic/go-server/pkg/httpserver"
-	"github.com/mutablelogic/go-server/pkg/ref"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -65,9 +66,9 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	} else if ctx.Debug {
 		opts = append(opts, pg.WithTrace(func(parent context.Context, query string, args any, err error) {
 			if err != nil {
-				ctx.logger.With("query", query, "args", args).Print(parent, "pg error: ", err)
+				ctx.logger.ErrorContext(parent, "pg error", "query", query, "args", args, "err", err)
 			} else {
-				ctx.logger.With("query", query, "args", args).Debug(parent, "pg trace")
+				ctx.logger.DebugContext(parent, "pg trace", "query", query, "args", args)
 			}
 		}))
 	}
@@ -91,9 +92,7 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	}
 
 	// Set logging middleware
-	middleware := httphandler.HTTPMiddlewareFuncs{
-		ctx.logger.HandleFunc,
-	}
+	middleware := httphandler.HTTPMiddlewareFuncs{}
 
 	// If we have an OTEL tracer, add tracing middleware
 	if ctx.tracer != nil {
@@ -108,7 +107,15 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	// Create a TLS config
 	var tlsconfig *tls.Config
 	if cmd.TLS.CertFile != "" || cmd.TLS.KeyFile != "" {
-		tlsconfig, err = httpserver.TLSConfig(cmd.TLS.ServerName, true, cmd.TLS.CertFile, cmd.TLS.KeyFile)
+		cert, err := os.ReadFile(cmd.TLS.CertFile)
+		if err != nil {
+			return err
+		}
+		key, err := os.ReadFile(cmd.TLS.KeyFile)
+		if err != nil {
+			return err
+		}
+		tlsconfig, err = httpserver.TLSConfig(cmd.TLS.ServerName, true, cert, key)
 		if err != nil {
 			return err
 		}
@@ -125,12 +132,12 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	var result error
 
 	// Output the version
-	ctx.logger.Printf(ctx.ctx, "%s@%s", version.ExecName(), version.Version())
+	ctx.logger.InfoContext(ctx.ctx, fmt.Sprintf("%s@%s", version.ExecName(), version.Version()))
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := manager.Run(ref.WithLogger(ctx.ctx, ctx.logger)); err != nil {
+		if err := manager.Run(queue.WithLogger(ctx.ctx, ctx.logger)); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				result = errors.Join(result, fmt.Errorf("queue error: %w", err))
 			}
@@ -143,7 +150,7 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 		defer wg.Done()
 
 		// Output listening information
-		ctx.logger.With("addr", ctx.HTTP.Addr, "prefix", ctx.HTTP.Prefix).Print(ctx.ctx, "http server starting")
+		ctx.logger.InfoContext(ctx.ctx, "http server starting", "addr", ctx.HTTP.Addr, "prefix", ctx.HTTP.Prefix)
 
 		// Run the server
 		if err := server.Run(ctx.ctx); err != nil {
@@ -159,9 +166,9 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 
 	// Terminated message
 	if result == nil {
-		ctx.logger.With("addr", ctx.HTTP.Addr, "prefix", ctx.HTTP.Prefix).Print(ctx.ctx, "http server terminated")
+		ctx.logger.InfoContext(ctx.ctx, "http server terminated", "addr", ctx.HTTP.Addr, "prefix", ctx.HTTP.Prefix)
 	} else {
-		ctx.logger.With("addr", ctx.HTTP.Addr, "prefix", ctx.HTTP.Prefix).Print(ctx.ctx, result)
+		ctx.logger.ErrorContext(ctx.ctx, "http server terminated", "addr", ctx.HTTP.Addr, "prefix", ctx.HTTP.Prefix, "err", result)
 	}
 
 	// Return any error

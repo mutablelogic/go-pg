@@ -4,18 +4,33 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	// Packages
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
-	"github.com/mutablelogic/go-server"
-	"github.com/mutablelogic/go-server/pkg/ref"
 	"github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
 	trace "go.opentelemetry.io/otel/trace"
 )
+
+// ctxLogKey is the context key for the slog.Logger.
+type ctxLogKey struct{}
+
+// WithLogger stores a *slog.Logger in the context for use by Run.
+func WithLogger(ctx context.Context, log *slog.Logger) context.Context {
+	return context.WithValue(ctx, ctxLogKey{}, log)
+}
+
+// logFromCtx retrieves the *slog.Logger from the context, returning nil if not set.
+func logFromCtx(ctx context.Context) *slog.Logger {
+	if v, ok := ctx.Value(ctxLogKey{}).(*slog.Logger); ok {
+		return v
+	}
+	return nil
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // TYPES
@@ -73,11 +88,7 @@ func (manager *Manager) Run(ctx context.Context) error {
 	var mu sync.Mutex
 
 	// Get the logger from the context (may be nil in tests)
-	var log server.Logger
-	func() {
-		defer func() { recover() }()
-		log = ref.Log(ctx)
-	}()
+	log := logFromCtx(ctx)
 
 	// Collect registered queue names
 	manager.pool.mu.RLock()
@@ -104,11 +115,11 @@ func (manager *Manager) Run(ctx context.Context) error {
 
 			// Run cleanup for all queues in this manager's namespace
 			if log != nil {
-				log.With("ticker", ticker.Ticker).Print(ctx, "running cleanup")
+				log.InfoContext(ctx, "running cleanup", "ticker", ticker.Ticker)
 			}
 			cleanupErr := manager.cleanNamespace(ctx, manager.ns)
 			if cleanupErr != nil && log != nil {
-				log.Print(ctx, "cleanup error ", cleanupErr)
+				log.ErrorContext(ctx, "cleanup error", "err", cleanupErr)
 			}
 
 			// End the span
@@ -145,7 +156,9 @@ func (manager *Manager) Run(ctx context.Context) error {
 		if err := manager.RunTaskLoop(ctx, func(ctx context.Context, task *schema.Task) error {
 			err := manager.runTaskWorker(ctx, task, manager.tracer)
 			if err != nil {
-				log.With("task", task).Print(ctx, err)
+				if log != nil {
+					log.ErrorContext(ctx, "task error", "task", task, "err", err)
+				}
 			}
 			return err
 		}, queues...); err != nil {

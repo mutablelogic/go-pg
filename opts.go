@@ -35,7 +35,7 @@ const (
 )
 
 var (
-	defaultScheme = []string{"postgres", "postgresql"}
+	defaultScheme = []string{"postgres", "postgresql", "pg"}
 )
 
 ////////////////////////////////////////////////////////////////////////////////

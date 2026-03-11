@@ -12,8 +12,8 @@ import (
 	// Packages
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
-	"github.com/mutablelogic/go-pg/pkg/queue"
 	manager "github.com/mutablelogic/go-pg/pkg/queue"
+	queue "github.com/mutablelogic/go-pg/pkg/queue"
 	httphandler "github.com/mutablelogic/go-pg/pkg/queue/httphandler"
 	version "github.com/mutablelogic/go-pg/pkg/version"
 	httpserver "github.com/mutablelogic/go-server/pkg/httpserver"

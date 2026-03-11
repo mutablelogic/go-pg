@@ -11,7 +11,7 @@ import (
 	// Packages
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
-	"github.com/mutablelogic/go-server/pkg/types"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
 	trace "go.opentelemetry.io/otel/trace"
 )

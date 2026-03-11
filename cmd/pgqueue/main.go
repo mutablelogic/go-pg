@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -15,8 +16,7 @@ import (
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	httpclient "github.com/mutablelogic/go-pg/pkg/queue/httpclient"
 	version "github.com/mutablelogic/go-pg/pkg/version"
-	server "github.com/mutablelogic/go-server"
-	logger "github.com/mutablelogic/go-server/pkg/logger"
+	goserverlogger "github.com/mutablelogic/go-server/pkg/logger"
 	trace "go.opentelemetry.io/otel/trace"
 	terminal "golang.org/x/term"
 )
@@ -45,7 +45,7 @@ type Globals struct {
 	// Private fields
 	ctx    context.Context
 	cancel context.CancelFunc
-	logger server.Logger
+	logger *slog.Logger
 	tracer trace.Tracer
 }
 
@@ -86,10 +86,14 @@ func run(ctx *kong.Context, globals *Globals) int {
 	parent := context.Background()
 
 	// Create Logger
+	var level slog.LevelVar
+	if globals.Debug {
+		level.Set(goserverlogger.LevelDebug)
+	}
 	if isTerminal(os.Stderr) {
-		globals.logger = logger.New(os.Stderr, logger.Term, globals.Debug)
+		globals.logger = slog.New(goserverlogger.NewTermHandler(os.Stderr, &level))
 	} else {
-		globals.logger = logger.New(os.Stderr, logger.JSON, globals.Debug)
+		globals.logger = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: &level}))
 	}
 
 	// Create the context and cancel function

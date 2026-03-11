@@ -4,18 +4,33 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	// Packages
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	schema "github.com/mutablelogic/go-pg/pkg/queue/schema"
-	"github.com/mutablelogic/go-server"
-	"github.com/mutablelogic/go-server/pkg/ref"
-	"github.com/mutablelogic/go-server/pkg/types"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
 	trace "go.opentelemetry.io/otel/trace"
 )
+
+// ctxLogKey is the context key for the slog.Logger.
+type ctxLogKey struct{}
+
+// WithLogger stores a *slog.Logger in the context for use by Run.
+func WithLogger(ctx context.Context, log *slog.Logger) context.Context {
+	return context.WithValue(ctx, ctxLogKey{}, log)
+}
+
+// logFromCtx retrieves the *slog.Logger from the context, returning nil if not set.
+func logFromCtx(ctx context.Context) *slog.Logger {
+	if v, ok := ctx.Value(ctxLogKey{}).(*slog.Logger); ok {
+		return v
+	}
+	return nil
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // TYPES
@@ -73,11 +88,7 @@ func (manager *Manager) Run(ctx context.Context) error {
 	var mu sync.Mutex
 
 	// Get the logger from the context (may be nil in tests)
-	var log server.Logger
-	func() {
-		defer func() { recover() }()
-		log = ref.Log(ctx)
-	}()
+	log := logFromCtx(ctx)
 
 	// Collect registered queue names
 	manager.pool.mu.RLock()
@@ -104,11 +115,11 @@ func (manager *Manager) Run(ctx context.Context) error {
 
 			// Run cleanup for all queues in this manager's namespace
 			if log != nil {
-				log.With("ticker", ticker.Ticker).Print(ctx, "running cleanup")
+				log.InfoContext(ctx, "running cleanup", "ticker", ticker.Ticker)
 			}
 			cleanupErr := manager.cleanNamespace(ctx, manager.ns)
 			if cleanupErr != nil && log != nil {
-				log.Print(ctx, "cleanup error ", cleanupErr)
+				log.ErrorContext(ctx, "cleanup error", "err", cleanupErr)
 			}
 
 			// End the span
@@ -143,7 +154,13 @@ func (manager *Manager) Run(ctx context.Context) error {
 	// Run task loop with handler (if any queues registered)
 	if len(queues) > 0 {
 		if err := manager.RunTaskLoop(ctx, func(ctx context.Context, task *schema.Task) error {
-			return manager.runTaskWorker(ctx, task, manager.tracer)
+			err := manager.runTaskWorker(ctx, task, manager.tracer)
+			if err != nil {
+				if log != nil {
+					log.ErrorContext(ctx, "task error", "task", task, "err", err)
+				}
+			}
+			return err
 		}, queues...); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				mu.Lock()
@@ -206,13 +223,12 @@ func (manager *Manager) runTaskWorker(ctx context.Context, task *schema.Task, tr
 		return fmt.Errorf("no worker registered for queue %q", task.Queue)
 	}
 
-	var result error
-
 	// Set deadline based on task dies_at
 	child, cancel := withDeadline(ctx, types.PtrTime(task.DiesAt))
 	defer cancel()
 
 	// Create the span
+	var result error
 	child2, endfunc := otel.StartSpan(tracer, child, spanManagerName("task."+task.Queue),
 		attribute.String("task", task.String()),
 	)
@@ -222,10 +238,17 @@ func (manager *Manager) runTaskWorker(ctx context.Context, task *schema.Task, tr
 	result = worker.Run(child2, task.Payload)
 
 	// Release the task back to the queue as success/failure (use child2 to nest the span)
-	if _, releaseErr := manager.ReleaseTask(child2, task.Id, result == nil, result, nil); releaseErr != nil {
+	var status string
+	if _, releaseErr := manager.ReleaseTask(child2, task.Id, result == nil, result, &status); releaseErr != nil {
 		result = errors.Join(result, releaseErr)
 	}
 
+	// If the status is not 'released', log a warning
+	if status != "released" {
+		result = errors.Join(result, fmt.Errorf("task status: %s", status))
+	}
+
+	// Return any errors
 	return result
 }
 

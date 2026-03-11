@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"os"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
@@ -82,7 +83,15 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	// Create a TLS config
 	var tlsconfig *tls.Config
 	if cmd.TLS.CertFile != "" || cmd.TLS.KeyFile != "" {
-		tlsconfig, err = httpserver.TLSConfig(cmd.TLS.ServerName, true, cmd.TLS.CertFile, cmd.TLS.KeyFile)
+		cert, err := os.ReadFile(cmd.TLS.CertFile)
+		if err != nil {
+			return err
+		}
+		key, err := os.ReadFile(cmd.TLS.KeyFile)
+		if err != nil {
+			return err
+		}
+		tlsconfig, err = httpserver.TLSConfig(cmd.TLS.ServerName, true, cert, key)
 		if err != nil {
 			return err
 		}

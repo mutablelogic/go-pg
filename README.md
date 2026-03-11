@@ -122,7 +122,11 @@ The options that can be passed to `pg.NewPool` are:
 * `pg.WithSchemaSearchPath(string...)` - Set the schema search path for the connection.
 * `pg.WithTrace(pg.TraceFn)` - Set the trace function for the connection pool.
   The signature is `func(ctx context.Context, sql string, args any, err error)`.
+* `pg.WithTracer(trace.Tracer)` - Set an OpenTelemetry tracer for the connection pool.
+  Spans are created for every query executed through the pool.
 * `pg.WithBind(string, any)` - Set a bind variable for the lifetime of the connection.
+* `pg.WithPassword(string)` - Override the connection password without affecting the username
+  or database name. Useful when the password is supplied separately from the URL.
 
 ## Executing Statements
 
@@ -330,7 +334,7 @@ func (obj *MyObject) Scan(row pg.Row) error {
 func main() {
   // ...
   obj := MyObject{Id: 1, Name: "updated"}
-  if err := conn.Update(ctx, &obj, obj); err != nil {
+  if err := conn.Update(ctx, &obj, obj, obj); err != nil {
     panic(err)
   }
 }
@@ -379,7 +383,7 @@ The `RETURNING` clause is optional but useful for confirming what was deleted.
 Transactions are executed within a function called `Tx`. For example,
 
 ```go
-  if err := pool.Tx(ctx, func(tx pg.Tx) error {
+  if err := pool.Tx(ctx, func(tx pg.Conn) error {
     if err := tx.Exec(ctx, `CREATE TABLE test (id SERIAL PRIMARY KEY, name TEXT)`); err != nil {
       return err
     }
@@ -397,26 +401,27 @@ the transaction will be committed. Transactions can be nested.
 
 ## Notify and Listen
 
-PostgreSQL supports asynchronous notifications via `NOTIFY` and `LISTEN`. Use `pg.NewListener` to subscribe to channels:
+PostgreSQL supports asynchronous notifications via `NOTIFY` and `LISTEN`. Obtain a `Listener` from the pool and call `Listen` to subscribe:
 
 ```go
 import pg "github.com/mutablelogic/go-pg"
 
 // Create a listener
-listener, err := pg.NewListener(ctx, pool, "my_channel")
-if err != nil {
+listener := pool.Listener()
+defer listener.Close(ctx)
+
+// Subscribe to a channel
+if err := listener.Listen(ctx, "my_channel"); err != nil {
   panic(err)
 }
-defer listener.Close()
 
-// Listen for notifications
+// Wait for notifications
 for {
-  select {
-  case notification := <-listener.C():
-    fmt.Printf("Channel: %s, Payload: %s\n", notification.Channel, notification.Payload)
-  case <-ctx.Done():
+  notification, err := listener.WaitForNotification(ctx)
+  if err != nil {
     return
   }
+  fmt.Printf("Channel: %s, Payload: %s\n", notification.Channel, notification.Payload)
 }
 ```
 
@@ -455,8 +460,6 @@ import pg "github.com/mutablelogic/go-pg"
 if err := conn.Get(ctx, &obj, req); err != nil {
   if errors.Is(err, pg.ErrNotFound) {
     // Row not found
-  } else if errors.Is(err, pg.ErrDuplicate) {
-    // Unique constraint violation
   } else if errors.Is(err, pg.ErrBadParameter) {
     // Invalid parameter
   } else {

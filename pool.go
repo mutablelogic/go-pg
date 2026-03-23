@@ -35,6 +35,9 @@ type pool struct {
 	*pgxpool.Pool
 	mu            sync.Mutex
 	subscriptions *subscriptionGroup
+	closingGroup  *subscriptionGroup
+	closeOnce     sync.Once
+	closeDone     chan struct{}
 }
 
 type poolconn struct {
@@ -85,7 +88,7 @@ func NewPool(ctx context.Context, opts ...Opt) (PoolConn, error) {
 	}
 
 	// Wrap the connection pool as if it's a transaction
-	return &poolconn{&pool{Pool: p, subscriptions: newSubscriptionGroup()}, o.bind}, nil
+	return &poolconn{&pool{Pool: p, subscriptions: newSubscriptionGroup(), closeDone: make(chan struct{})}, o.bind}, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -119,13 +122,11 @@ func (p *poolconn) Ping(ctx context.Context) error {
 }
 
 func (p *poolconn) Close() {
-	p.conn.resetSubscriptions()
-	p.conn.Pool.Close()
+	p.conn.close()
 }
 
 func (p *poolconn) Reset() {
-	p.conn.resetSubscriptions()
-	p.conn.Pool.Reset()
+	p.conn.reset()
 }
 
 // Return a new connection with new bound parameters
@@ -196,7 +197,7 @@ func (p *pool) subscriptionGroup() *subscriptionGroup {
 	return p.subscriptions
 }
 
-func (p *pool) resetSubscriptions() {
+func (p *pool) resetSubscriptions() *subscriptionGroup {
 	p.mu.Lock()
 	group := p.subscriptions
 	p.subscriptions = newSubscriptionGroup()
@@ -204,4 +205,66 @@ func (p *pool) resetSubscriptions() {
 	if group != nil {
 		group.Close()
 	}
+	return group
+}
+
+func (p *pool) close() {
+	shouldWait := true
+
+	p.closeOnce.Do(func() {
+		group := p.resetSubscriptions()
+		p.setClosingGroup(group)
+
+		finish := func() {
+			p.afterSubscriptions(group, p.Pool.Close)
+			p.setClosingGroup(nil)
+			close(p.closeDone)
+		}
+
+		if group != nil && group.containsCurrentGoroutine() {
+			shouldWait = false
+			go finish()
+			return
+		}
+
+		finish()
+	})
+
+	if shouldWait && !p.calledFromClosingGroup() {
+		<-p.closeDone
+	}
+}
+
+func (p *pool) reset() {
+	group := p.resetSubscriptions()
+	if group != nil && group.containsCurrentGoroutine() {
+		go func() {
+			p.afterSubscriptions(group, p.Pool.Reset)
+		}()
+		return
+	}
+	p.afterSubscriptions(group, p.Pool.Reset)
+}
+
+func (p *pool) calledFromClosingGroup() bool {
+	p.mu.Lock()
+	group := p.closingGroup
+	p.mu.Unlock()
+	if group == nil {
+		return false
+	}
+	return group.containsCurrentGoroutine()
+}
+
+func (p *pool) setClosingGroup(group *subscriptionGroup) {
+	p.mu.Lock()
+	p.closingGroup = group
+	p.mu.Unlock()
+}
+
+func (p *pool) afterSubscriptions(group *subscriptionGroup, fn func()) {
+	if group != nil {
+		group.Wait()
+	}
+	fn()
 }

@@ -127,11 +127,14 @@ func (g *subscriptionGroup) Close() {
 		g.closed = true
 		g.mu.Unlock()
 		g.cancel()
-		if g.containsCurrentGoroutine() {
-			return
-		}
-		g.wg.Wait()
 	})
+}
+
+func (g *subscriptionGroup) Wait() {
+	if g == nil {
+		return
+	}
+	g.wg.Wait()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

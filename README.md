@@ -406,6 +406,7 @@ PostgreSQL supports asynchronous notifications via `NOTIFY` and `LISTEN`. The pr
 ```go
 import (
   "context"
+  "fmt"
 
   pg "github.com/mutablelogic/go-pg"
 )

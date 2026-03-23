@@ -30,12 +30,10 @@ type Conn interface {
 
 	// Subscribe to a PostgreSQL notification channel. Subscribe returns setup
 	// errors only; after successful registration the subscription runs in the
-	// background. The callback is invoked serially for each payload with a
-	// context that is cancelled when the subscription stops. The subscription
-	// runs until the context is cancelled, the pool is closed, the callback
-	// returns an error, or the listener stops because WaitForNotification
-	// returns a non-context error such as a dropped connection.
-	Subscribe(context.Context, string, func(context.Context, Notification) error) error
+	// background and delivers notifications on the returned channel. The channel
+	// is closed when the context is cancelled, the pool is closed, or the
+	// listener stops because WaitForNotification returns an error.
+	Subscribe(context.Context, string) (<-chan Notification, error)
 
 	// Execute a query
 	Exec(context.Context, string) error
@@ -161,8 +159,8 @@ func (p *conn) Bulk(ctx context.Context, fn func(Conn) error) error {
 
 // Subscribe requires a pool-backed connection so the listener lifecycle can be
 // managed independently of transactions.
-func (p *conn) Subscribe(context.Context, string, func(context.Context, Notification) error) error {
-	return ErrNotAvailable.With("subscribe requires pool-backed connection")
+func (p *conn) Subscribe(context.Context, string) (<-chan Notification, error) {
+	return nil, ErrNotAvailable.With("subscribe requires pool-backed connection")
 }
 
 // Execute a query

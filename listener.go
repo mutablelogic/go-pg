@@ -83,31 +83,30 @@ func (l *listener) Close(ctx context.Context) error {
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func subscribe(ctx context.Context, pg *poolconn, channel string, fn func(context.Context, Notification) error) error {
+func subscribe(ctx context.Context, pg *poolconn, channel string) (<-chan Notification, error) {
 	channel = strings.TrimSpace(channel)
 	if channel == "" {
-		return ErrBadParameter.With("channel is required")
-	}
-	if fn == nil {
-		return ErrBadParameter.With("callback is required")
+		return nil, ErrBadParameter.With("channel is required")
 	}
 
 	listener := pg.Listener()
 	if listener == nil {
-		return ErrNotAvailable.With("subscriptions are unavailable")
+		return nil, ErrNotAvailable.With("subscriptions are unavailable")
 	}
 	if err := listener.Listen(ctx, channel); err != nil {
-		return err
+		return nil, errors.Join(err, closeListener(listener))
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	sub, err := pg.conn.addSubscription(cancel)
 	if err != nil {
 		cancel()
-		return errors.Join(err, cleanupListener(listener, channel))
+		return nil, errors.Join(err, cleanupListener(listener, channel))
 	}
+	notifyCh := make(chan Notification)
 
 	go func() {
+		defer close(notifyCh)
 		defer sub.Done()
 		defer pg.conn.removeSubscription(sub)
 		defer cancel()
@@ -123,13 +122,15 @@ func subscribe(ctx context.Context, pg *poolconn, channel string, fn func(contex
 				}
 				return
 			}
-			if err := fn(runCtx, *n); err != nil {
+			select {
+			case notifyCh <- *n:
+			case <-runCtx.Done():
 				return
 			}
 		}
 	}()
 
-	return nil
+	return notifyCh, nil
 }
 
 func cleanupListener(listener Listener, channel string) error {
@@ -138,6 +139,13 @@ func cleanupListener(listener Listener, channel string) error {
 
 	err := listener.Unlisten(ctx, channel)
 	return errors.Join(err, listener.Close(ctx))
+}
+
+func closeListener(listener Listener) error {
+	ctx, cancel := context.WithTimeout(context.Background(), subscriptionCleanupTimeout)
+	defer cancel()
+
+	return listener.Close(ctx)
 }
 
 // Connect to the database, and listen to a topic

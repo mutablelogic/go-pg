@@ -45,6 +45,11 @@ func (conn *bulkconn) Bulk(context.Context, func(Conn) error) error {
 	return ErrNotImplemented
 }
 
+// Subscribe is not supported for bulk connections.
+func (conn *bulkconn) Subscribe(context.Context, string, func(Notification) error) error {
+	return ErrNotAvailable.With("subscribe requires pool-backed connection")
+}
+
 // Execute a query
 func (conn *bulkconn) Exec(context.Context, string) error {
 	return ErrNotImplemented

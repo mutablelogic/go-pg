@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	// Packages
 	pgx "github.com/jackc/pgx/v5"
@@ -32,6 +33,8 @@ type PoolConn interface {
 
 type pool struct {
 	*pgxpool.Pool
+	mu            sync.Mutex
+	subscriptions *subscriptionGroup
 }
 
 type poolconn struct {
@@ -82,7 +85,7 @@ func NewPool(ctx context.Context, opts ...Opt) (PoolConn, error) {
 	}
 
 	// Wrap the connection pool as if it's a transaction
-	return &poolconn{&pool{p}, o.bind}, nil
+	return &poolconn{&pool{Pool: p, subscriptions: newSubscriptionGroup()}, o.bind}, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -116,10 +119,12 @@ func (p *poolconn) Ping(ctx context.Context) error {
 }
 
 func (p *poolconn) Close() {
+	p.conn.resetSubscriptions()
 	p.conn.Pool.Close()
 }
 
 func (p *poolconn) Reset() {
+	p.conn.resetSubscriptions()
 	p.conn.Pool.Reset()
 }
 
@@ -146,6 +151,11 @@ func (p *poolconn) Tx(ctx context.Context, fn func(conn Conn) error) error {
 // Perform a bulk operation
 func (p *poolconn) Bulk(ctx context.Context, fn func(conn Conn) error) error {
 	return bulk(ctx, p.conn, p.bind, fn)
+}
+
+// Subscribe to a PostgreSQL notification channel using a dedicated connection.
+func (p *poolconn) Subscribe(ctx context.Context, channel string, fn func(Notification) error) error {
+	return subscribe(ctx, p, channel, fn)
 }
 
 // Execute a query
@@ -176,4 +186,20 @@ func (p *poolconn) Get(ctx context.Context, reader Reader, sel Selector) error {
 // Perform a list
 func (p *poolconn) List(ctx context.Context, reader Reader, sel Selector) error {
 	return list(ctx, p.conn, p.bind, reader, sel)
+}
+
+func (p *pool) subscriptionGroup() *subscriptionGroup {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.subscriptions
+}
+
+func (p *pool) resetSubscriptions() {
+	p.mu.Lock()
+	group := p.subscriptions
+	p.subscriptions = newSubscriptionGroup()
+	p.mu.Unlock()
+	if group != nil {
+		group.Close()
+	}
 }

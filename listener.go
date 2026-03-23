@@ -2,12 +2,14 @@ package pg
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	// Packages
-	types "github.com/mutablelogic/go-pg/pkg/types"
 	pgxpool "github.com/jackc/pgx/v5/pgxpool"
+	types "github.com/mutablelogic/go-pg/pkg/types"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -41,6 +43,15 @@ type Notification struct {
 	Payload []byte
 }
 
+type subscriptionGroup struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+	mu     sync.Mutex
+	closed bool
+	once   sync.Once
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
@@ -50,6 +61,11 @@ func (pg *poolconn) Listener() Listener {
 	l := new(listener)
 	l.pool = pg.conn.Pool
 	return l
+}
+
+func newSubscriptionGroup() *subscriptionGroup {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &subscriptionGroup{ctx: ctx, cancel: cancel}
 }
 
 // Close the connection to the database
@@ -75,8 +91,85 @@ func (l *listener) Close(ctx context.Context) error {
 	return err
 }
 
+func (g *subscriptionGroup) Go(ctx context.Context, fn func(context.Context)) error {
+	g.mu.Lock()
+	if g.closed {
+		g.mu.Unlock()
+		return ErrNotAvailable.With("subscriptions are closed")
+	}
+	g.wg.Add(1)
+	parent := g.ctx
+	g.mu.Unlock()
+
+	go func() {
+		defer g.wg.Done()
+		runCtx, cancel := context.WithCancel(parent)
+		stop := context.AfterFunc(ctx, cancel)
+		defer stop()
+		defer cancel()
+		fn(runCtx)
+	}()
+
+	return nil
+}
+
+func (g *subscriptionGroup) Close() {
+	g.once.Do(func() {
+		g.mu.Lock()
+		g.closed = true
+		g.mu.Unlock()
+		g.cancel()
+		g.wg.Wait()
+	})
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
+
+func subscribe(ctx context.Context, pg *poolconn, channel string, fn func(Notification) error) error {
+	channel = strings.TrimSpace(channel)
+	if channel == "" {
+		return ErrBadParameter.With("channel is required")
+	}
+	if fn == nil {
+		return ErrBadParameter.With("callback is required")
+	}
+
+	group := pg.conn.subscriptionGroup()
+	if group == nil {
+		return ErrNotAvailable.With("subscriptions are unavailable")
+	}
+
+	listener := pg.Listener()
+	if listener == nil {
+		return ErrNotAvailable.With("listener is nil")
+	}
+	if err := listener.Listen(ctx, channel); err != nil {
+		return err
+	}
+	if err := group.Go(ctx, func(runCtx context.Context) {
+		defer listener.Unlisten(context.Background(), channel)
+		defer listener.Close(context.Background())
+
+		for {
+			n, err := listener.WaitForNotification(runCtx)
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return
+				}
+				return
+			}
+			if err := fn(*n); err != nil {
+				return
+			}
+		}
+	}); err != nil {
+		err = errors.Join(err, listener.Unlisten(context.Background(), channel))
+		return errors.Join(err, listener.Close(context.Background()))
+	}
+
+	return nil
+}
 
 // Connect to the database, and listen to a topic
 func (l *listener) Listen(ctx context.Context, topic string) error {

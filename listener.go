@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	// Packages
 	pgxpool "github.com/jackc/pgx/v5/pgxpool"
@@ -38,6 +41,8 @@ type listener struct {
 
 var _ Listener = (*listener)(nil)
 
+const subscriptionCleanupTimeout = 5 * time.Second
+
 type Notification struct {
 	Channel string
 	Payload []byte
@@ -50,6 +55,7 @@ type subscriptionGroup struct {
 	mu     sync.Mutex
 	closed bool
 	once   sync.Once
+	active map[uint64]struct{}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,7 +71,7 @@ func (pg *poolconn) Listener() Listener {
 
 func newSubscriptionGroup() *subscriptionGroup {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &subscriptionGroup{ctx: ctx, cancel: cancel}
+	return &subscriptionGroup{ctx: ctx, cancel: cancel, active: make(map[uint64]struct{})}
 }
 
 // Close the connection to the database
@@ -103,6 +109,8 @@ func (g *subscriptionGroup) Go(ctx context.Context, fn func(context.Context)) er
 
 	go func() {
 		defer g.wg.Done()
+		g.enter()
+		defer g.leave()
 		runCtx, cancel := context.WithCancel(parent)
 		stop := context.AfterFunc(ctx, cancel)
 		defer stop()
@@ -119,6 +127,9 @@ func (g *subscriptionGroup) Close() {
 		g.closed = true
 		g.mu.Unlock()
 		g.cancel()
+		if g.containsCurrentGoroutine() {
+			return
+		}
 		g.wg.Wait()
 	})
 }
@@ -148,8 +159,9 @@ func subscribe(ctx context.Context, pg *poolconn, channel string, fn func(Notifi
 		return err
 	}
 	if err := group.Go(ctx, func(runCtx context.Context) {
-		defer listener.Unlisten(context.Background(), channel)
-		defer listener.Close(context.Background())
+		defer func() {
+			cleanupListener(listener, channel)
+		}()
 
 		for {
 			n, err := listener.WaitForNotification(runCtx)
@@ -164,11 +176,63 @@ func subscribe(ctx context.Context, pg *poolconn, channel string, fn func(Notifi
 			}
 		}
 	}); err != nil {
-		err = errors.Join(err, listener.Unlisten(context.Background(), channel))
-		return errors.Join(err, listener.Close(context.Background()))
+		return errors.Join(err, cleanupListener(listener, channel))
 	}
 
 	return nil
+}
+
+func cleanupListener(listener Listener, channel string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), subscriptionCleanupTimeout)
+	defer cancel()
+
+	err := listener.Unlisten(ctx, channel)
+	return errors.Join(err, listener.Close(ctx))
+}
+
+func (g *subscriptionGroup) enter() {
+	id, ok := currentGoroutineID()
+	if !ok {
+		return
+	}
+	g.mu.Lock()
+	g.active[id] = struct{}{}
+	g.mu.Unlock()
+}
+
+func (g *subscriptionGroup) leave() {
+	id, ok := currentGoroutineID()
+	if !ok {
+		return
+	}
+	g.mu.Lock()
+	delete(g.active, id)
+	g.mu.Unlock()
+}
+
+func (g *subscriptionGroup) containsCurrentGoroutine() bool {
+	id, ok := currentGoroutineID()
+	if !ok {
+		return false
+	}
+	g.mu.Lock()
+	_, exists := g.active[id]
+	g.mu.Unlock()
+	return exists
+}
+
+func currentGoroutineID() (uint64, bool) {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	fields := strings.Fields(string(buf[:n]))
+	if len(fields) < 2 || fields[0] != "goroutine" {
+		return 0, false
+	}
+	id, err := strconv.ParseUint(fields[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return id, true
 }
 
 // Connect to the database, and listen to a topic

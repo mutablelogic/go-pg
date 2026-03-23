@@ -181,6 +181,7 @@ func Test_Pool_005(t *testing.T) {
 
 	channel := fmt.Sprintf("test_pool_close_%d", time.Now().UnixNano())
 	started := make(chan struct{})
+	closingStarted := make(chan struct{})
 	release := make(chan struct{})
 	closed := make(chan struct{})
 
@@ -200,9 +201,16 @@ func Test_Pool_005(t *testing.T) {
 	}
 
 	go func() {
+		close(closingStarted)
 		pool.Close()
 		close(closed)
 	}()
+
+	select {
+	case <-closingStarted:
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for pool close to start")
+	}
 
 	select {
 	case <-closed:
@@ -216,6 +224,37 @@ func Test_Pool_005(t *testing.T) {
 	case <-closed:
 	case <-ctx.Done():
 		t.Fatal("timeout waiting for pool close")
+	}
+}
+
+func Test_Pool_006(t *testing.T) {
+	require := require.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	verbose := slices.Contains(os.Args, "-test.v=true")
+	container, pool, err := test.NewPgxContainer(ctx, t.Name(), verbose, nil)
+	require.NoError(err)
+	defer container.Close(context.Background())
+
+	channel := fmt.Sprintf("test_pool_close_from_callback_%d", time.Now().UnixNano())
+	callbackReturned := make(chan struct{})
+
+	require.NoError(pool.Subscribe(context.Background(), channel, func(n pg.Notification) error {
+		require.Equal(channel, n.Channel)
+		require.Equal([]byte("hello"), n.Payload)
+
+		pool.Close()
+		close(callbackReturned)
+		return nil
+	}))
+	require.NoError(pool.Exec(context.Background(), fmt.Sprintf("SELECT pg_notify('%s', 'hello')", channel)))
+
+	select {
+	case <-callbackReturned:
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for callback to return after pool.Close")
 	}
 }
 

@@ -28,9 +28,12 @@ type Conn interface {
 	// should be in a transaction)
 	Bulk(context.Context, func(Conn) error) error
 
-	// Subscribe to a PostgreSQL notification channel. The callback is invoked
-	// serially for each payload until the context is cancelled, the pool is
-	// closed, or the callback returns an error.
+	// Subscribe to a PostgreSQL notification channel. Subscribe returns setup
+	// errors only; after successful registration the subscription runs in the
+	// background. The callback is invoked serially for each payload until the
+	// context is cancelled, the pool is closed, the callback returns an error,
+	// or the listener stops because WaitForNotification returns a non-context
+	// error such as a dropped connection.
 	Subscribe(context.Context, string, func(Notification) error) error
 
 	// Execute a query

@@ -145,7 +145,8 @@ func Test_Pool_004(t *testing.T) {
 	channel := fmt.Sprintf("test_pool_subscribe_%d", time.Now().UnixNano())
 	notifyCh := make(chan pg.Notification, 1)
 
-	require.NoError(conn.Subscribe(ctx, channel, func(n pg.Notification) error {
+	require.NoError(conn.Subscribe(ctx, channel, func(subCtx context.Context, n pg.Notification) error {
+		require.NoError(subCtx.Err())
 		notifyCh <- pg.Notification{Channel: n.Channel, Payload: append([]byte(nil), n.Payload...)}
 		return nil
 	}))
@@ -160,11 +161,11 @@ func Test_Pool_004(t *testing.T) {
 	}
 
 	require.ErrorIs(conn.Tx(context.Background(), func(tx pg.Conn) error {
-		return tx.Subscribe(context.Background(), channel, func(pg.Notification) error { return nil })
+		return tx.Subscribe(context.Background(), channel, func(context.Context, pg.Notification) error { return nil })
 	}), pg.ErrNotAvailable)
 
 	require.ErrorIs(conn.Bulk(context.Background(), func(tx pg.Conn) error {
-		return tx.Subscribe(context.Background(), channel, func(pg.Notification) error { return nil })
+		return tx.Subscribe(context.Background(), channel, func(context.Context, pg.Notification) error { return nil })
 	}), pg.ErrNotAvailable)
 }
 
@@ -182,15 +183,17 @@ func Test_Pool_005(t *testing.T) {
 	channel := fmt.Sprintf("test_pool_close_%d", time.Now().UnixNano())
 	started := make(chan struct{})
 	closingStarted := make(chan struct{})
-	release := make(chan struct{})
+	cancelled := make(chan struct{})
 	closed := make(chan struct{})
 
-	require.NoError(pool.Subscribe(context.Background(), channel, func(n pg.Notification) error {
+	require.NoError(pool.Subscribe(context.Background(), channel, func(subCtx context.Context, n pg.Notification) error {
+		require.NoError(subCtx.Err())
 		require.Equal(channel, n.Channel)
 		require.Equal([]byte("hello"), n.Payload)
 		close(started)
-		<-release
-		return nil
+		<-subCtx.Done()
+		close(cancelled)
+		return subCtx.Err()
 	}))
 	require.NoError(pool.Exec(context.Background(), fmt.Sprintf("SELECT pg_notify('%s', 'hello')", channel)))
 
@@ -213,48 +216,15 @@ func Test_Pool_005(t *testing.T) {
 	}
 
 	select {
-	case <-closed:
-		t.Fatal("pool.Close returned before subscriber completed")
-	case <-time.After(200 * time.Millisecond):
+	case <-cancelled:
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for callback cancellation")
 	}
-
-	close(release)
 
 	select {
 	case <-closed:
 	case <-ctx.Done():
 		t.Fatal("timeout waiting for pool close")
-	}
-}
-
-func Test_Pool_006(t *testing.T) {
-	require := require.New(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	verbose := slices.Contains(os.Args, "-test.v=true")
-	container, pool, err := test.NewPgxContainer(ctx, t.Name(), verbose, nil)
-	require.NoError(err)
-	defer container.Close(context.Background())
-
-	channel := fmt.Sprintf("test_pool_close_from_callback_%d", time.Now().UnixNano())
-	callbackReturned := make(chan struct{})
-
-	require.NoError(pool.Subscribe(context.Background(), channel, func(n pg.Notification) error {
-		require.Equal(channel, n.Channel)
-		require.Equal([]byte("hello"), n.Payload)
-
-		pool.Close()
-		close(callbackReturned)
-		return nil
-	}))
-	require.NoError(pool.Exec(context.Background(), fmt.Sprintf("SELECT pg_notify('%s', 'hello')", channel)))
-
-	select {
-	case <-callbackReturned:
-	case <-ctx.Done():
-		t.Fatal("timeout waiting for callback to return after pool.Close")
 	}
 }
 

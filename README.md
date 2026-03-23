@@ -404,10 +404,14 @@ the transaction will be committed. Transactions can be nested.
 PostgreSQL supports asynchronous notifications via `NOTIFY` and `LISTEN`. The preferred API is `Subscribe`, which acquires a dedicated listener connection from the pool, invokes a callback for each notification, and automatically unsubscribes when the context is cancelled or the pool is closed.
 
 ```go
-import pg "github.com/mutablelogic/go-pg"
+import (
+  "context"
+
+  pg "github.com/mutablelogic/go-pg"
+)
 
 // Subscribe to a channel using a pool-backed connection.
-if err := pool.Subscribe(ctx, "my_channel", func(n pg.Notification) error {
+if err := pool.Subscribe(ctx, "my_channel", func(_ context.Context, n pg.Notification) error {
   fmt.Printf("Channel: %s, Payload: %s\n", n.Channel, n.Payload)
   return nil
 }); err != nil {
@@ -420,7 +424,7 @@ if err := pool.Subscribe(ctx, "my_channel", func(n pg.Notification) error {
 
 Subscriptions are long-lived and tied to a dedicated PostgreSQL session, so they are only supported on pool-backed connections. Calling `Subscribe` from a transactional or bulk connection returns `pg.ErrNotAvailable`.
 
-`Subscribe` returns setup errors only. After registration, the subscription runs in the background and stops if the callback returns an error or if the listener encounters a non-context error such as a dropped connection.
+`Subscribe` returns setup errors only. After registration, the subscription runs in the background and stops if the callback returns an error or if the listener encounters a non-context error such as a dropped connection. The callback receives a context that is cancelled when the subscription is shutting down.
 
 When `pool.Close()` is called, all active subscriptions are cancelled and the pool waits for their callbacks to exit before returning.
 

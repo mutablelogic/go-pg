@@ -34,8 +34,7 @@ type PoolConn interface {
 type pool struct {
 	*pgxpool.Pool
 	mu            sync.Mutex
-	subscriptions *subscriptionGroup
-	closingGroup  *subscriptionGroup
+	subscriptions *subscriptionArray
 	closeOnce     sync.Once
 	closeDone     chan struct{}
 }
@@ -88,7 +87,7 @@ func NewPool(ctx context.Context, opts ...Opt) (PoolConn, error) {
 	}
 
 	// Wrap the connection pool as if it's a transaction
-	return &poolconn{&pool{Pool: p, subscriptions: newSubscriptionGroup(), closeDone: make(chan struct{})}, o.bind}, nil
+	return &poolconn{&pool{Pool: p, subscriptions: newSubscriptionArray(), closeDone: make(chan struct{})}, o.bind}, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -157,7 +156,7 @@ func (p *poolconn) Bulk(ctx context.Context, fn func(conn Conn) error) error {
 // Subscribe to a PostgreSQL notification channel using a dedicated connection.
 // Subscribe returns only initial registration errors; runtime listener errors
 // terminate the background subscription.
-func (p *poolconn) Subscribe(ctx context.Context, channel string, fn func(Notification) error) error {
+func (p *poolconn) Subscribe(ctx context.Context, channel string, fn func(context.Context, Notification) error) error {
 	return subscribe(ctx, p, channel, fn)
 }
 
@@ -191,80 +190,52 @@ func (p *poolconn) List(ctx context.Context, reader Reader, sel Selector) error 
 	return list(ctx, p.conn, p.bind, reader, sel)
 }
 
-func (p *pool) subscriptionGroup() *subscriptionGroup {
+func (p *pool) addSubscription(cancel context.CancelFunc) (*subscription, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.subscriptions
+
+	if p.subscriptions == nil {
+		return nil, ErrNotAvailable.With("subscriptions are unavailable")
+	}
+
+	return p.subscriptions.Add(cancel)
 }
 
-func (p *pool) resetSubscriptions() *subscriptionGroup {
+func (p *pool) removeSubscription(sub *subscription) {
 	p.mu.Lock()
-	group := p.subscriptions
-	p.subscriptions = newSubscriptionGroup()
-	p.mu.Unlock()
-	if group != nil {
-		group.Close()
+	defer p.mu.Unlock()
+
+	if p.subscriptions != nil {
+		p.subscriptions.Remove(sub)
 	}
-	return group
+}
+
+func (p *pool) swapSubscriptions(next *subscriptionArray) *subscriptionArray {
+	p.mu.Lock()
+	current := p.subscriptions
+	p.subscriptions = next
+	p.mu.Unlock()
+	return current
 }
 
 func (p *pool) close() {
-	shouldWait := true
-
 	p.closeOnce.Do(func() {
-		group := p.resetSubscriptions()
-		p.setClosingGroup(group)
-
-		finish := func() {
-			p.afterSubscriptions(group, p.Pool.Close)
-			p.setClosingGroup(nil)
-			close(p.closeDone)
-		}
-
-		if group != nil && group.containsCurrentGoroutine() {
-			shouldWait = false
-			go finish()
-			return
-		}
-
-		finish()
+		p.closeSubscriptions(p.swapSubscriptions(nil))
+		p.Pool.Close()
+		close(p.closeDone)
 	})
-
-	if shouldWait && !p.calledFromClosingGroup() {
-		<-p.closeDone
-	}
+	<-p.closeDone
 }
 
 func (p *pool) reset() {
-	group := p.resetSubscriptions()
-	if group != nil && group.containsCurrentGoroutine() {
-		go func() {
-			p.afterSubscriptions(group, p.Pool.Reset)
-		}()
-		return
-	}
-	p.afterSubscriptions(group, p.Pool.Reset)
+	p.closeSubscriptions(p.swapSubscriptions(newSubscriptionArray()))
+	p.Pool.Reset()
 }
 
-func (p *pool) calledFromClosingGroup() bool {
-	p.mu.Lock()
-	group := p.closingGroup
-	p.mu.Unlock()
-	if group == nil {
-		return false
-	}
-	return group.containsCurrentGoroutine()
-}
-
-func (p *pool) setClosingGroup(group *subscriptionGroup) {
-	p.mu.Lock()
-	p.closingGroup = group
-	p.mu.Unlock()
-}
-
-func (p *pool) afterSubscriptions(group *subscriptionGroup, fn func()) {
+func (p *pool) closeSubscriptions(group *subscriptionArray) {
 	if group != nil {
-		group.Wait()
+		for _, sub := range group.Close() {
+			sub.Wait()
+		}
 	}
-	fn()
 }

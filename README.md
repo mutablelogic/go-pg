@@ -468,6 +468,7 @@ Common checks are:
 ```go
 import (
   "errors"
+  "log"
 
   pg "github.com/mutablelogic/go-pg"
 )

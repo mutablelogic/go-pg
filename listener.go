@@ -2,12 +2,15 @@ package pg
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
+	"time"
 
 	// Packages
-	types "github.com/mutablelogic/go-pg/pkg/types"
 	pgxpool "github.com/jackc/pgx/v5/pgxpool"
+	types "github.com/mutablelogic/go-pg/pkg/types"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -35,6 +38,8 @@ type listener struct {
 }
 
 var _ Listener = (*listener)(nil)
+
+const subscriptionCleanupTimeout = 5 * time.Second
 
 type Notification struct {
 	Channel string
@@ -77,6 +82,63 @@ func (l *listener) Close(ctx context.Context) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
+
+func subscribe(ctx context.Context, pg *poolconn, channel string, fn func(context.Context, Notification) error) error {
+	channel = strings.TrimSpace(channel)
+	if channel == "" {
+		return ErrBadParameter.With("channel is required")
+	}
+	if fn == nil {
+		return ErrBadParameter.With("callback is required")
+	}
+
+	listener := pg.Listener()
+	if listener == nil {
+		return ErrNotAvailable.With("subscriptions are unavailable")
+	}
+	if err := listener.Listen(ctx, channel); err != nil {
+		return err
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	sub, err := pg.conn.addSubscription(cancel)
+	if err != nil {
+		cancel()
+		return errors.Join(err, cleanupListener(listener, channel))
+	}
+
+	go func() {
+		defer sub.Done()
+		defer pg.conn.removeSubscription(sub)
+		defer cancel()
+		defer func() {
+			cleanupListener(listener, channel)
+		}()
+
+		for {
+			n, err := listener.WaitForNotification(runCtx)
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return
+				}
+				return
+			}
+			if err := fn(runCtx, *n); err != nil {
+				return
+			}
+		}
+	}()
+
+	return nil
+}
+
+func cleanupListener(listener Listener, channel string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), subscriptionCleanupTimeout)
+	defer cancel()
+
+	err := listener.Unlisten(ctx, channel)
+	return errors.Join(err, listener.Close(ctx))
+}
 
 // Connect to the database, and listen to a topic
 func (l *listener) Listen(ctx context.Context, topic string) error {

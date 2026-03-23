@@ -401,29 +401,32 @@ the transaction will be committed. Transactions can be nested.
 
 ## Notify and Listen
 
-PostgreSQL supports asynchronous notifications via `NOTIFY` and `LISTEN`. Obtain a `Listener` from the pool and call `Listen` to subscribe:
+PostgreSQL supports asynchronous notifications via `NOTIFY` and `LISTEN`. The preferred API is `Subscribe`, which acquires a dedicated listener connection from the pool, invokes a callback for each notification, and automatically unsubscribes when the context is cancelled or the pool is closed.
 
 ```go
-import pg "github.com/mutablelogic/go-pg"
+import (
+  "context"
 
-// Create a listener
-listener := pool.Listener()
-defer listener.Close(ctx)
+  pg "github.com/mutablelogic/go-pg"
+)
 
-// Subscribe to a channel
-if err := listener.Listen(ctx, "my_channel"); err != nil {
+// Subscribe to a channel using a pool-backed connection.
+if err := pool.Subscribe(ctx, "my_channel", func(_ context.Context, n pg.Notification) error {
+  fmt.Printf("Channel: %s, Payload: %s\n", n.Channel, n.Payload)
+  return nil
+}); err != nil {
   panic(err)
 }
 
-// Wait for notifications
-for {
-  notification, err := listener.WaitForNotification(ctx)
-  if err != nil {
-    return
-  }
-  fmt.Printf("Channel: %s, Payload: %s\n", notification.Channel, notification.Payload)
-}
+// Block until shutdown.
+<-ctx.Done()
 ```
+
+Subscriptions are long-lived and tied to a dedicated PostgreSQL session, so they are only supported on pool-backed connections. Calling `Subscribe` from a transactional or bulk connection returns `pg.ErrNotAvailable`.
+
+`Subscribe` returns setup errors only. After registration, the subscription runs in the background and stops if the callback returns an error or if the listener encounters a non-context error such as a dropped connection. The callback receives a context that is cancelled when the subscription is shutting down.
+
+When `pool.Close()` is called, all active subscriptions are cancelled and the pool waits for their callbacks to exit before returning.
 
 To send a notification from another connection:
 
@@ -432,6 +435,8 @@ if err := pool.Exec(ctx, `NOTIFY my_channel, 'hello world'`); err != nil {
   panic(err)
 }
 ```
+
+The lower-level `Listener` API still exists for compatibility, but `Subscribe` is the recommended interface for new code.
 
 ## Schema Support
 
@@ -450,9 +455,47 @@ err := pg.SchemaCreate(ctx, conn, "myschema")
 err := pg.SchemaDrop(ctx, conn, "myschema")
 ```
 
-## Error Handing and Tracing
+## Error Handling and Tracing
 
-The package provides typed errors for common PostgreSQL conditions:
+The package provides typed errors for common PostgreSQL conditions. Most query helpers already
+normalize driver errors before returning them, but `pg.NormalizeError` is available if you need to
+normalize a raw `pgx` or `pgconn` error yourself.
+
+Common checks are:
+
+* `pg.ErrNotFound` for `pgx.ErrNoRows`
+* `pg.ErrConflict` and `pg.ErrUniqueViolation` for SQLSTATE `23505`
+* `pg.ErrBadParameter` for common input and constraint errors such as foreign key, not null,
+  check constraint and invalid text/date formats
+* `pg.ErrDatabase` for any PostgreSQL error with a SQLSTATE code
+
+```go
+import (
+  "errors"
+  "log"
+
+  pg "github.com/mutablelogic/go-pg"
+)
+
+err := conn.Update(ctx, &obj, req, req)
+err = pg.NormalizeError(err)
+
+switch {
+case errors.Is(err, pg.ErrNotFound):
+  // Row not found
+case errors.Is(err, pg.ErrConflict):
+  // Duplicate key or other conflict
+case errors.Is(err, pg.ErrBadParameter):
+  // Invalid user-supplied data
+case errors.Is(err, pg.ErrDatabase):
+  // Other PostgreSQL error
+  log.Printf("sqlstate=%s err=%v", pg.SQLState(err), err)
+case err != nil:
+  // Non-database error
+}
+```
+
+If you need the specific PostgreSQL code for logging or translation, use `pg.SQLState(err)`.
 
 ```go
 import pg "github.com/mutablelogic/go-pg"
@@ -460,8 +503,12 @@ import pg "github.com/mutablelogic/go-pg"
 if err := conn.Get(ctx, &obj, req); err != nil {
   if errors.Is(err, pg.ErrNotFound) {
     // Row not found
+  } else if errors.Is(err, pg.ErrConflict) {
+    // Conflict
   } else if errors.Is(err, pg.ErrBadParameter) {
     // Invalid parameter
+  } else if errors.Is(err, pg.ErrDatabase) {
+    log.Printf("postgres error: sqlstate=%s err=%v", pg.SQLState(err), err)
   } else {
     // Other error
   }

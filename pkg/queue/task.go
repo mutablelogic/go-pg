@@ -160,7 +160,11 @@ func (manager *Manager) runTaskLoop(ctx context.Context, sem chan int, handler T
 	if listener == nil {
 		return pg.ErrBadParameter.With("listener is nil")
 	}
-	defer listener.Close(context.Background())
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = listener.Close(shutdownCtx)
+	}()
 
 	// Subscribe to queue insert notifications for this namespace
 	topic := manager.ns + schema.TopicQueueInsert

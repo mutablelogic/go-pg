@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"slices"
 	"testing"
+	"time"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	assert "github.com/stretchr/testify/assert"
+	require "github.com/stretchr/testify/require"
 )
 
 // Global connection variable
@@ -127,6 +131,101 @@ func Test_Pool_003(t *testing.T) {
 		return nil
 	})
 	assert.NoError(err)
+}
+
+func Test_Pool_004(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	conn := conn.Begin(t)
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	channel := fmt.Sprintf("test_pool_subscribe_%d", time.Now().UnixNano())
+	notifyCh := make(chan pg.Notification, 1)
+
+	require.NoError(conn.Subscribe(ctx, channel, func(subCtx context.Context, n pg.Notification) error {
+		require.NoError(subCtx.Err())
+		notifyCh <- pg.Notification{Channel: n.Channel, Payload: append([]byte(nil), n.Payload...)}
+		return nil
+	}))
+	require.NoError(conn.Exec(context.Background(), fmt.Sprintf("SELECT pg_notify('%s', 'hello')", channel)))
+
+	select {
+	case notify := <-notifyCh:
+		assert.Equal(channel, notify.Channel)
+		assert.Equal([]byte("hello"), notify.Payload)
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for notification")
+	}
+
+	require.ErrorIs(conn.Tx(context.Background(), func(tx pg.Conn) error {
+		return tx.Subscribe(context.Background(), channel, func(context.Context, pg.Notification) error { return nil })
+	}), pg.ErrNotAvailable)
+
+	require.ErrorIs(conn.Bulk(context.Background(), func(tx pg.Conn) error {
+		return tx.Subscribe(context.Background(), channel, func(context.Context, pg.Notification) error { return nil })
+	}), pg.ErrNotAvailable)
+}
+
+func Test_Pool_005(t *testing.T) {
+	require := require.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	verbose := slices.Contains(os.Args, "-test.v=true")
+	container, pool, err := test.NewPgxContainer(ctx, t.Name(), verbose, nil)
+	require.NoError(err)
+	defer container.Close(context.Background())
+
+	channel := fmt.Sprintf("test_pool_close_%d", time.Now().UnixNano())
+	started := make(chan struct{})
+	closingStarted := make(chan struct{})
+	cancelled := make(chan struct{})
+	closed := make(chan struct{})
+
+	require.NoError(pool.Subscribe(context.Background(), channel, func(subCtx context.Context, n pg.Notification) error {
+		require.NoError(subCtx.Err())
+		require.Equal(channel, n.Channel)
+		require.Equal([]byte("hello"), n.Payload)
+		close(started)
+		<-subCtx.Done()
+		close(cancelled)
+		return subCtx.Err()
+	}))
+	require.NoError(pool.Exec(context.Background(), fmt.Sprintf("SELECT pg_notify('%s', 'hello')", channel)))
+
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for callback")
+	}
+
+	go func() {
+		close(closingStarted)
+		pool.Close()
+		close(closed)
+	}()
+
+	select {
+	case <-closingStarted:
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for pool close to start")
+	}
+
+	select {
+	case <-cancelled:
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for callback cancellation")
+	}
+
+	select {
+	case <-closed:
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for pool close")
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	// Packages
 	pgx "github.com/jackc/pgx/v5"
@@ -32,6 +33,10 @@ type PoolConn interface {
 
 type pool struct {
 	*pgxpool.Pool
+	mu            sync.Mutex
+	subscriptions *subscriptionArray
+	closeOnce     sync.Once
+	closeDone     chan struct{}
 }
 
 type poolconn struct {
@@ -82,7 +87,7 @@ func NewPool(ctx context.Context, opts ...Opt) (PoolConn, error) {
 	}
 
 	// Wrap the connection pool as if it's a transaction
-	return &poolconn{&pool{p}, o.bind}, nil
+	return &poolconn{&pool{Pool: p, subscriptions: newSubscriptionArray(), closeDone: make(chan struct{})}, o.bind}, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -116,11 +121,11 @@ func (p *poolconn) Ping(ctx context.Context) error {
 }
 
 func (p *poolconn) Close() {
-	p.conn.Pool.Close()
+	p.conn.close()
 }
 
 func (p *poolconn) Reset() {
-	p.conn.Pool.Reset()
+	p.conn.reset()
 }
 
 // Return a new connection with new bound parameters
@@ -146,6 +151,13 @@ func (p *poolconn) Tx(ctx context.Context, fn func(conn Conn) error) error {
 // Perform a bulk operation
 func (p *poolconn) Bulk(ctx context.Context, fn func(conn Conn) error) error {
 	return bulk(ctx, p.conn, p.bind, fn)
+}
+
+// Subscribe to a PostgreSQL notification channel using a dedicated connection.
+// Subscribe returns only initial registration errors; runtime listener errors
+// terminate the background subscription.
+func (p *poolconn) Subscribe(ctx context.Context, channel string, fn func(context.Context, Notification) error) error {
+	return subscribe(ctx, p, channel, fn)
 }
 
 // Execute a query
@@ -176,4 +188,54 @@ func (p *poolconn) Get(ctx context.Context, reader Reader, sel Selector) error {
 // Perform a list
 func (p *poolconn) List(ctx context.Context, reader Reader, sel Selector) error {
 	return list(ctx, p.conn, p.bind, reader, sel)
+}
+
+func (p *pool) addSubscription(cancel context.CancelFunc) (*subscription, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.subscriptions == nil {
+		return nil, ErrNotAvailable.With("subscriptions are unavailable")
+	}
+
+	return p.subscriptions.Add(cancel)
+}
+
+func (p *pool) removeSubscription(sub *subscription) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.subscriptions != nil {
+		p.subscriptions.Remove(sub)
+	}
+}
+
+func (p *pool) swapSubscriptions(next *subscriptionArray) *subscriptionArray {
+	p.mu.Lock()
+	current := p.subscriptions
+	p.subscriptions = next
+	p.mu.Unlock()
+	return current
+}
+
+func (p *pool) close() {
+	p.closeOnce.Do(func() {
+		p.closeSubscriptions(p.swapSubscriptions(nil))
+		p.Pool.Close()
+		close(p.closeDone)
+	})
+	<-p.closeDone
+}
+
+func (p *pool) reset() {
+	p.closeSubscriptions(p.swapSubscriptions(newSubscriptionArray()))
+	p.Pool.Reset()
+}
+
+func (p *pool) closeSubscriptions(group *subscriptionArray) {
+	if group != nil {
+		for _, sub := range group.Close() {
+			sub.Wait()
+		}
+	}
 }

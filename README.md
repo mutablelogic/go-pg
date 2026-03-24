@@ -417,19 +417,24 @@ if err != nil {
   panic(err)
 }
 
-for n := range notifications {
-  fmt.Printf("Channel: %s, Payload: %s\n", n.Channel, n.Payload)
+for {
+  select {
+  case <-ctx.Done():
+    return
+  case n, ok := <-notifications:
+    if !ok {
+      return
+    }
+    fmt.Printf("Channel: %s, Payload: %s\n", n.Channel, n.Payload)
+  }
 }
-
-// Block until shutdown.
-<-ctx.Done()
 ```
 
 Subscriptions are long-lived and tied to a dedicated PostgreSQL session, so they are only supported on pool-backed connections. Calling `Subscribe` from a transactional or bulk connection returns `pg.ErrNotAvailable`.
 
 `Subscribe` returns setup errors only. After registration, the subscription runs in the background and closes the returned channel if the context is cancelled or if the listener encounters an error such as a dropped connection.
 
-When `pool.Close()` is called, all active subscriptions are cancelled and the pool waits for their callbacks to exit before returning.
+When `pool.Close()` is called, all active subscriptions are cancelled and the pool waits for their listener goroutines to exit and channels to close before returning.
 
 To send a notification from another connection:
 

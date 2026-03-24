@@ -106,8 +106,8 @@ func subscribe(ctx context.Context, pg *poolconn, channel string) (<-chan Notifi
 	notifyCh := make(chan Notification)
 
 	go func() {
-		defer close(notifyCh)
 		defer sub.Done()
+		defer close(notifyCh)
 		defer pg.conn.removeSubscription(sub)
 		defer cancel()
 		defer func() {

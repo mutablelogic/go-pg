@@ -155,9 +155,9 @@ func (p *poolconn) Bulk(ctx context.Context, fn func(conn Conn) error) error {
 
 // Subscribe to a PostgreSQL notification channel using a dedicated connection.
 // Subscribe returns only initial registration errors; runtime listener errors
-// terminate the background subscription.
-func (p *poolconn) Subscribe(ctx context.Context, channel string, fn func(context.Context, Notification) error) error {
-	return subscribe(ctx, p, channel, fn)
+// terminate the background subscription and close the returned channel.
+func (p *poolconn) Subscribe(ctx context.Context, channel string) (<-chan Notification, error) {
+	return subscribe(ctx, p, channel)
 }
 
 // Execute a query

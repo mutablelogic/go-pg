@@ -7,6 +7,7 @@ import (
 	"time"
 
 	// Packages
+	pg "github.com/mutablelogic/go-pg"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -110,6 +111,14 @@ func TestBroadcaster_SubscribeAndBroadcast(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for second subscriber")
 	}
+}
+
+func TestBroadcaster_SubscribeNilCallback(t *testing.T) {
+	require := require.New(t)
+	b := newTestBroadcaster(t)
+
+	err := b.Subscribe(context.Background(), nil)
+	require.ErrorIs(err, pg.ErrBadParameter)
 }
 
 func TestBroadcaster_UnsubscribeRemovesCanceledSubscriber(t *testing.T) {

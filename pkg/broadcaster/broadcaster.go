@@ -77,6 +77,10 @@ func (b *broadcaster) Close() {
 // PUBLIC METHODS
 
 func (b *broadcaster) Subscribe(ctx context.Context, callback func(ChangeNotification)) error {
+	if callback == nil {
+		return pg.ErrBadParameter.With("callback is required")
+	}
+
 	// Create a new channel for this subscriber
 	subscriber := &subscription{
 		ch:   make(chan ChangeNotification, 10), // Buffered channel to avoid blocking
@@ -112,21 +116,12 @@ func (b *broadcaster) Subscribe(ctx context.Context, callback func(ChangeNotific
 
 func (b *broadcaster) broadcast(change ChangeNotification) {
 	b.mu.RLock()
-	subscribers := slices.Clone(b.subscribers)
-	b.mu.RUnlock()
+	defer b.mu.RUnlock()
 
-	for _, subscriber := range subscribers {
-		// Skip subscribers that were removed after the snapshot was taken.
-		select {
-		case <-subscriber.done:
-			continue
-		default:
-		}
-
-		// Deliver the change unless the subscriber or broadcaster has been canceled.
+	// Deliver the change unless the broadcaster has been canceled.
+	for _, subscriber := range b.subscribers {
 		select {
 		case subscriber.ch <- change:
-		case <-subscriber.done:
 		case <-b.ctx.Done():
 			return
 		}

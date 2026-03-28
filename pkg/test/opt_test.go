@@ -1,5 +1,4 @@
 package test
-package test
 
 import (
 	"strings"
@@ -7,10 +6,10 @@ import (
 
 	// Packages
 	nat "github.com/docker/go-connections/nat"
-	testcontainers "github.com/testcontainers/testcontainers-go"
-	wait "github.com/testcontainers/testcontainers-go/wait"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
+	testcontainers "github.com/testcontainers/testcontainers-go"
+	wait "github.com/testcontainers/testcontainers-go/wait"
 )
 
 func Test_Opt_001(t *testing.T) {

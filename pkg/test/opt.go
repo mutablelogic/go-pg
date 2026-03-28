@@ -52,11 +52,13 @@ func OptEnv(name, value string) Opt {
 	}
 }
 
-// OptPorts exposes one or more container ports and waits for an exposed port.
+// OptPorts exposes one or more container ports and waits for each requested port.
 func OptPorts(ports ...string) Opt {
 	return func(o *opts) error {
 		o.req.ExposedPorts = ports
-		o.appendWaitStrategy(wait.ForExposedPort())
+		for _, port := range ports {
+			o.appendWaitStrategy(wait.ForListeningPort(nat.Port(port)))
+		}
 		return nil
 	}
 }

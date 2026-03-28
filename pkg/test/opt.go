@@ -15,6 +15,7 @@ import (
 ////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
+// Opt mutates a container request before it is started.
 type Opt func(*opts) error
 
 type opts struct {
@@ -24,6 +25,7 @@ type opts struct {
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
+// OptCommand sets the container command.
 func OptCommand(cmd []string) Opt {
 	return func(o *opts) error {
 		o.req.Cmd = cmd
@@ -31,6 +33,15 @@ func OptCommand(cmd []string) Opt {
 	}
 }
 
+// OptEntrypoint sets the container entrypoint.
+func OptEntrypoint(entrypoint ...string) Opt {
+	return func(o *opts) error {
+		o.req.Entrypoint = entrypoint
+		return nil
+	}
+}
+
+// OptEnv sets a single container environment variable.
 func OptEnv(name, value string) Opt {
 	return func(o *opts) error {
 		if o.req.Env == nil {
@@ -41,6 +52,7 @@ func OptEnv(name, value string) Opt {
 	}
 }
 
+// OptPorts exposes one or more container ports and waits for an exposed port.
 func OptPorts(ports ...string) Opt {
 	return func(o *opts) error {
 		o.req.ExposedPorts = ports
@@ -49,6 +61,36 @@ func OptPorts(ports ...string) Opt {
 	}
 }
 
+// OptFile copies a single file into the container before startup.
+func OptFile(file testcontainers.ContainerFile) Opt {
+	return func(o *opts) error {
+		o.req.Files = append(o.req.Files, file)
+		return nil
+	}
+}
+
+// OptFiles copies multiple files into the container before startup.
+func OptFiles(files ...testcontainers.ContainerFile) Opt {
+	return func(o *opts) error {
+		o.req.Files = append(o.req.Files, files...)
+		return nil
+	}
+}
+
+// OptWait appends a custom wait strategy to the container request.
+func OptWait(strategy wait.Strategy) Opt {
+	return func(o *opts) error {
+		o.appendWaitStrategy(strategy)
+		return nil
+	}
+}
+
+// OptWaitLog waits for a specific log line before considering the container ready.
+func OptWaitLog(log string) Opt {
+	return OptWait(wait.ForLog(log))
+}
+
+// OptPostgres configures a PostgreSQL container and adds SQL readiness checks.
 func OptPostgres(user, password, database string) Opt {
 	return func(o *opts) error {
 		if err := OptEnv("POSTGRES_USER", user)(o); err != nil {
@@ -81,6 +123,7 @@ func OptPostgresSetting(key, value string) Opt {
 ////////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
+// appendWaitStrategy merges a wait strategy into the current request.
 func (o *opts) appendWaitStrategy(strategy wait.Strategy) {
 	if o.req.WaitingFor == nil {
 		o.req.WaitingFor = strategy

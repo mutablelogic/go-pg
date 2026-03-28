@@ -41,9 +41,18 @@ func Test_Opt_001(t *testing.T) {
 	multi, ok := o.req.WaitingFor.(*wait.MultiStrategy)
 	require.True(ok)
 	assert.Len(multi.Strategies, 3)
-	assert.IsType(wait.ForListeningPort(nat.Port("3389/tcp")), multi.Strategies[0])
-	assert.IsType(wait.ForListeningPort(nat.Port("389/tcp")), multi.Strategies[1])
-	assert.IsType(wait.ForLog("server ready"), multi.Strategies[2])
+
+	strategy0, ok := multi.Strategies[0].(*wait.HostPortStrategy)
+	require.True(ok)
+	assert.Equal(nat.Port("3389/tcp"), strategy0.Port)
+
+	strategy1, ok := multi.Strategies[1].(*wait.HostPortStrategy)
+	require.True(ok)
+	assert.Equal(nat.Port("389/tcp"), strategy1.Port)
+
+	strategy2, ok := multi.Strategies[2].(*wait.LogStrategy)
+	require.True(ok)
+	assert.Equal("server ready", strategy2.Log)
 }
 
 func Test_Opt_002(t *testing.T) {

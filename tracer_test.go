@@ -66,3 +66,22 @@ func Test_args_004(t *testing.T) {
 
 	assert.Nil(actual)
 }
+
+func Test_args_005(t *testing.T) {
+	assert := assert.New(t)
+
+	actual := args(
+		"UPDATE test SET name=@name WHERE id=@id RETURNING id, name",
+		[]any{map[string]any{
+			"id":       101,
+			"name":     "alice",
+			"unused":   true,
+			"otelspan": "test.query",
+		}},
+	)
+
+	assert.Equal(pgx.NamedArgs{
+		"id":   101,
+		"name": "alice",
+	}, actual)
+}

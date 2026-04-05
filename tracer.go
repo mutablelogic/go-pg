@@ -53,7 +53,7 @@ func (t *tracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.Trac
 	}
 
 	otelSpanName := func() string {
-		if args_, ok := args(qd.args).(pgx.NamedArgs); ok {
+		if args_, ok := namedArgs(qd.args); ok {
 			if v, ok := args_[TraceSpanNameArg]; ok {
 				if s, ok := v.(string); ok && s != "" {
 					return s
@@ -94,19 +94,85 @@ func (t *tracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.Tra
 
 	// Call TraceFn if configured
 	if t.TraceFn != nil {
-		t.TraceFn(ctx, strings.TrimSpace(qd.sql), args(qd.args), data.Err)
+		t.TraceFn(ctx, strings.TrimSpace(qd.sql), args(qd.sql, qd.args), data.Err)
 	}
 }
 
 //////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func args(args []any) any {
+// args normalizes traced query arguments and filters named arguments down to
+// the @bind placeholders referenced by the traced SQL.
+func args(query string, args []any) any {
 	if len(args) == 0 {
 		return nil
 	}
-	if len(args) == 1 {
-		return args[0]
+	if args, ok := namedArgs(args); ok {
+		return filterNamedArgs(query, args)
 	}
 	return args
+}
+
+// namedArgs unwraps the pgx named-argument forms used by this package.
+func namedArgs(args []any) (pgx.NamedArgs, bool) {
+	if len(args) != 1 {
+		return nil, false
+	}
+	switch value := args[0].(type) {
+	case pgx.NamedArgs:
+		return value, true
+	case map[string]any:
+		result := make(pgx.NamedArgs, len(value))
+		for key, value := range value {
+			result[key] = value
+		}
+		return result, true
+	default:
+		return nil, false
+	}
+}
+
+// filterNamedArgs returns only the named arguments referenced by @bind
+// placeholders in the traced SQL.
+func filterNamedArgs(query string, args pgx.NamedArgs) pgx.NamedArgs {
+	keys := queryArgs(query)
+	if len(keys) == 0 {
+		return nil
+	}
+	filtered := make(pgx.NamedArgs, len(keys))
+	for key := range keys {
+		if value, ok := args[key]; ok {
+			filtered[key] = value
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+// queryArgs collects placeholder names from @bind parameters in the traced
+// SQL passed to pgx.
+func queryArgs(query string) map[string]struct{} {
+	keys := make(map[string]struct{})
+	for i := 0; i < len(query); i++ {
+		if query[i] != '@' || i+1 >= len(query) || !isArgStart(query[i+1]) {
+			continue
+		}
+		j := i + 2
+		for j < len(query) && isArgPart(query[j]) {
+			j++
+		}
+		keys[query[i+1:j]] = struct{}{}
+		i = j - 1
+	}
+	return keys
+}
+
+func isArgStart(ch byte) bool {
+	return ch == '_' || ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z'
+}
+
+func isArgPart(ch byte) bool {
+	return isArgStart(ch) || ch >= '0' && ch <= '9'
 }

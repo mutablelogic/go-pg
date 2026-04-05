@@ -145,12 +145,12 @@ func (p *poolconn) Remote(database string) Conn {
 
 // Perform a transaction, then commit or rollback
 func (p *poolconn) Tx(ctx context.Context, fn func(conn Conn) error) error {
-	return tx(ctx, p.conn, p.bind, fn)
+	return tx(ctx, p.conn, p.bind.Copy(), fn)
 }
 
 // Perform a bulk operation
 func (p *poolconn) Bulk(ctx context.Context, fn func(conn Conn) error) error {
-	return bulk(ctx, p.conn, p.bind, fn)
+	return bulk(ctx, p.conn, p.bind.Copy(), fn)
 }
 
 // Subscribe to a PostgreSQL notification channel using a dedicated connection.
@@ -162,32 +162,32 @@ func (p *poolconn) Subscribe(ctx context.Context, channel string) (<-chan Notifi
 
 // Execute a query
 func (p *poolconn) Exec(ctx context.Context, query string) error {
-	return p.bind.exec(ctx, p.conn, query)
+	return p.bind.Copy().exec(ctx, p.conn, query)
 }
 
 // Perform an insert
 func (p *poolconn) Insert(ctx context.Context, reader Reader, writer Writer) error {
-	return insert(ctx, p.conn, p.bind, reader, writer)
+	return insert(ctx, p.conn, p.bind.Copy(), reader, writer)
 }
 
 // Perform a update
 func (p *poolconn) Update(ctx context.Context, reader Reader, sel Selector, writer Writer) error {
-	return update(ctx, p.conn, p.bind, reader, sel, writer)
+	return update(ctx, p.conn, p.bind.Copy(), reader, sel, writer)
 }
 
 // Perform a delete
 func (p *poolconn) Delete(ctx context.Context, reader Reader, sel Selector) error {
-	return del(ctx, p.conn, p.bind, reader, sel)
+	return del(ctx, p.conn, p.bind.Copy(), reader, sel)
 }
 
 // Perform a get
 func (p *poolconn) Get(ctx context.Context, reader Reader, sel Selector) error {
-	return get(ctx, p.conn, p.bind, reader, sel)
+	return get(ctx, p.conn, p.bind.Copy(), reader, sel)
 }
 
 // Perform a list
 func (p *poolconn) List(ctx context.Context, reader Reader, sel Selector) error {
-	return list(ctx, p.conn, p.bind, reader, sel)
+	return list(ctx, p.conn, p.bind.Copy(), reader, sel)
 }
 
 func (p *pool) addSubscription(cancel context.CancelFunc) (*subscription, error) {

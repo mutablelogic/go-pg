@@ -99,3 +99,29 @@ func Test_Query_001(t *testing.T) {
 	sql := bind.Query("user.select")
 	assert.Equal("SELECT * FROM users WHERE id = @id", sql)
 }
+
+func Test_Bind_Copy_001(t *testing.T) {
+	assert := assert.New(t)
+
+	bind := pg.NewBind("a", "b")
+	copy := bind.Copy()
+	if assert.NotNil(copy) {
+		assert.Equal("b", copy.Get("a"))
+	}
+
+	copy.Set("a", "c")
+	assert.Equal("b", bind.Get("a"))
+	assert.Equal("c", copy.Get("a"))
+}
+
+func Test_Bind_Copy_002(t *testing.T) {
+	assert := assert.New(t)
+
+	bind := pg.NewBind("a", "b")
+	copy := bind.Copy("c", "d")
+	if assert.NotNil(copy) {
+		assert.Equal("b", copy.Get("a"))
+		assert.Equal("d", copy.Get("c"))
+	}
+	assert.False(bind.Has("c"))
+}

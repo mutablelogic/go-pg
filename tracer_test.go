@@ -11,7 +11,7 @@ func Test_args_001(t *testing.T) {
 	assert := assert.New(t)
 
 	assert.Nil(args("", nil))
-	assert.Equal("value", args("", []any{"value"}))
+	assert.Equal([]any{"value"}, args("", []any{"value"}))
 	assert.Equal([]any{"value", 42}, args("", []any{"value", 42}))
 }
 

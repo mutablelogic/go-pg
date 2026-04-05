@@ -3,6 +3,7 @@ package broadcaster
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"slices"
 	"sync"
 
@@ -16,6 +17,7 @@ import (
 // Broadcaster delivers decoded change notifications to callbacks until the
 // subscriber context or broadcaster lifetime ends.
 type Broadcaster interface {
+	io.Closer
 	Subscribe(context.Context, func(ChangeNotification)) error
 }
 
@@ -32,9 +34,12 @@ type broadcaster struct {
 	cancel      context.CancelFunc
 }
 
+var _ Broadcaster = (*broadcaster)(nil)
+
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
+// NewBroadcaster subscribes to a PostgreSQL channel
 func NewBroadcaster(conn pg.Conn, channel string) (*broadcaster, error) {
 	self := new(broadcaster)
 
@@ -68,14 +73,18 @@ func NewBroadcaster(conn pg.Conn, channel string) (*broadcaster, error) {
 	return self, nil
 }
 
-func (b *broadcaster) Close() {
+// Close stops the broadcaster and waits for its worker goroutines to exit.
+func (b *broadcaster) Close() error {
 	b.cancel()
 	b.wg.Wait()
+	return nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
+// Subscribe registers a callback that receives decoded change notifications
+// until the subscriber context or broadcaster is closed.
 func (b *broadcaster) Subscribe(ctx context.Context, callback func(ChangeNotification)) error {
 	if callback == nil {
 		return pg.ErrBadParameter.With("callback is required")
@@ -114,6 +123,7 @@ func (b *broadcaster) Subscribe(ctx context.Context, callback func(ChangeNotific
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
+// broadcast delivers a change notification to all active subscribers.
 func (b *broadcaster) broadcast(change ChangeNotification) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -128,6 +138,7 @@ func (b *broadcaster) broadcast(change ChangeNotification) {
 	}
 }
 
+// unsubscribe removes a subscriber from the active broadcast set.
 func (b *broadcaster) unsubscribe(subscriber *subscription) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

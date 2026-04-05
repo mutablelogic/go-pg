@@ -36,7 +36,9 @@ func newTestBroadcaster(t *testing.T) *broadcaster {
 		ctx:    ctx,
 		cancel: cancel,
 	}
-	t.Cleanup(b.Close)
+	t.Cleanup(func() {
+		_ = b.Close()
+	})
 
 	return b
 }

@@ -8,8 +8,8 @@ import (
 // TYPES
 
 type OffsetLimit struct {
-	Offset uint64  `json:"offset,omitempty"`
-	Limit  *uint64 `json:"limit,omitempty"`
+	Offset uint64  `json:"offset,omitempty" help:"Offset within the result set" jsonschema:"Offset for pagination" example:"0"`
+	Limit  *uint64 `json:"limit,omitempty" help:"Number of items to return" jsonschema:"Limit for pagination" example:"100"`
 }
 
 ////////////////////////////////////////////////////////////////////////////////

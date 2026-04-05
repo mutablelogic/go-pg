@@ -1,6 +1,8 @@
 package broadcaster
 
-import "encoding/json"
+import (
+	"github.com/mutablelogic/go-server/pkg/types"
+)
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
@@ -13,10 +15,27 @@ type ChangeNotification struct {
 	Action string `json:"action"`
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// STRINGIFY
+
 func (n ChangeNotification) String() string {
-	data, err := json.MarshalIndent(n, "", "  ")
-	if err != nil {
-		return "{}"
+	return types.Stringify(n)
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// MATCHES
+
+// Matches returns true if the notification matches the given schema, table, and action
+// filters. Empty filters match all values.
+func (n ChangeNotification) Matches(schema, table, action string) bool {
+	if schema != "" && n.Schema != schema {
+		return false
 	}
-	return string(data)
+	if table != "" && n.Table != table {
+		return false
+	}
+	if action != "" && n.Action != action {
+		return false
+	}
+	return true
 }

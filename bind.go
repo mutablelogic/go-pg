@@ -55,6 +55,11 @@ func (bind *Bind) Copy(pairs ...any) *Bind {
 	if len(pairs)%2 != 0 {
 		return nil
 	}
+	if len(pairs) == 0 {
+		bind.RLock()
+		defer bind.RUnlock()
+		return &Bind{vars: maps.Clone(bind.vars), dblink: bind.dblink}
+	}
 
 	// Lock before copying
 	varsCopy := func() pgx.NamedArgs {

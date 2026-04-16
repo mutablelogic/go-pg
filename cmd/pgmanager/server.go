@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net/http"
 	"os"
 
 	// Packages
@@ -75,11 +74,6 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 		return err
 	}
 
-	// Register HTTP handlers
-	router := http.NewServeMux()
-	httphandler.RegisterBackendHandlers(router, ctx.HTTP.Prefix, manager)
-	httphandler.RegisterFrontendHandler(router, "", cmd.UI)
-
 	// Create a TLS config
 	var tlsconfig *tls.Config
 	if cmd.TLS.CertFile != "" || cmd.TLS.KeyFile != "" {
@@ -98,10 +92,15 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	}
 
 	// Create a HTTP server
-	server, err := httpserver.New(ctx.HTTP.Addr, router, tlsconfig)
+	server, err := httpserver.New(ctx.HTTP.Addr, tlsconfig)
 	if err != nil {
 		return err
 	}
+
+	// Register HTTP handlers
+	router := server.Router()
+	httphandler.RegisterBackendHandlers(router, ctx.HTTP.Prefix, manager)
+	httphandler.RegisterFrontendHandler(router, "", cmd.UI)
 
 	// Run the server
 	fmt.Println(version.ExecName(), version.Version())

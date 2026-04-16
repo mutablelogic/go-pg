@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	// Packages
-	nat "github.com/docker/go-connections/nat"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 	testcontainers "github.com/testcontainers/testcontainers-go"
@@ -44,11 +43,11 @@ func Test_Opt_001(t *testing.T) {
 
 	strategy0, ok := multi.Strategies[0].(*wait.HostPortStrategy)
 	require.True(ok)
-	assert.Equal(nat.Port("3389/tcp"), strategy0.Port)
+	assert.Equal("3389/tcp", strategy0.Port)
 
 	strategy1, ok := multi.Strategies[1].(*wait.HostPortStrategy)
 	require.True(ok)
-	assert.Equal(nat.Port("389/tcp"), strategy1.Port)
+	assert.Equal("389/tcp", strategy1.Port)
 
 	strategy2, ok := multi.Strategies[2].(*wait.LogStrategy)
 	require.True(ok)
@@ -69,4 +68,12 @@ func Test_Opt_002(t *testing.T) {
 		assert.Equal("/one", o.req.Files[0].ContainerFilePath)
 		assert.Equal("/two", o.req.Files[1].ContainerFilePath)
 	}
+}
+
+func Test_Opt_003(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal(
+		"postgres://postgres:password@localhost:5432/httphandler.test?sslmode=disable",
+		postgresURL("postgres", "password", "httphandler.test", "localhost", "5432/tcp"),
+	)
 }

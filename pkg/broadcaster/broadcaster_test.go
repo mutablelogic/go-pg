@@ -22,7 +22,7 @@ var conn test.Conn
 // TEST MAIN
 
 func TestMain(m *testing.M) {
-	test.Main(m, &conn)
+	test.Main(m, &conn, nil)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -21,7 +21,7 @@ var conn test.Conn
 
 // Start up a container and test the pool
 func TestMain(m *testing.M) {
-	test.Main(m, &conn)
+	test.Main(m, &conn, nil)
 }
 
 func Test_Pool_001(t *testing.T) {

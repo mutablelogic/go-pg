@@ -21,7 +21,7 @@ import (
 var conn pgtest.Conn
 
 func TestMain(m *testing.M) {
-  pgtest.Main(m, &conn)
+  pgtest.Main(m, &conn, nil)
 }
 
 func TestSomething(t *testing.T) {

@@ -2,9 +2,9 @@ package test
 
 import (
 	"fmt"
+	"strings"
 
 	// Packages
-	nat "github.com/docker/go-connections/nat"
 	testcontainers "github.com/testcontainers/testcontainers-go"
 	wait "github.com/testcontainers/testcontainers-go/wait"
 
@@ -57,7 +57,7 @@ func OptPorts(ports ...string) Opt {
 	return func(o *opts) error {
 		o.req.ExposedPorts = ports
 		for _, port := range ports {
-			o.appendWaitStrategy(wait.ForListeningPort(nat.Port(port)))
+			o.appendWaitStrategy(wait.ForListeningPort(port))
 		}
 		return nil
 	}
@@ -107,8 +107,8 @@ func OptPostgres(user, password, database string) Opt {
 		if err := OptPorts(pgxPort)(o); err != nil {
 			return err
 		}
-		o.appendWaitStrategy(wait.ForSQL(nat.Port(pgxPort), "pgx", func(host string, port nat.Port) string {
-			return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", user, password, host, port.Port(), database)
+		o.appendWaitStrategy(wait.ForSQL(pgxPort, "pgx", func(host string, port string) string {
+			return postgresURL(user, password, database, host, port)
 		}))
 		return nil
 	}
@@ -134,4 +134,10 @@ func (o *opts) appendWaitStrategy(strategy wait.Strategy) {
 	} else {
 		o.req.WaitingFor = wait.ForAll(o.req.WaitingFor, strategy)
 	}
+}
+
+// postgresURL builds a Postgres connection URL from the given parameters.
+func postgresURL(user, password, database, host, port string) string {
+	port, _, _ = strings.Cut(port, "/")
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", user, password, host, port, database)
 }

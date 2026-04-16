@@ -33,7 +33,15 @@ const (
 /////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func Main(m *testing.M, conn *Conn) {
+// Main is the entry point for running tests with a test container. It sets up a test database container
+// and runs the tests in the provided testing.M. The provided setup function can be used to perform any additional
+// setup before running the tests, such as initializing the database schema.
+// The returned cleanup function from setup will be called after the tests are complete to clean up any resources.
+func Main(m *testing.M, conn *Conn, setup func(*Conn) (func(), error)) {
+	os.Exit(main(m, conn, setup))
+}
+
+func main(m *testing.M, conn *Conn, setup func(*Conn) (func(), error)) int {
 	// Context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -67,8 +75,20 @@ func Main(m *testing.M, conn *Conn) {
 	// Set the connection
 	*conn = Conn{pool, nil}
 
+	// Run setup if provided
+	cleanup := func() {}
+	if setup != nil {
+		cleanup_, err := setup(conn)
+		if err != nil {
+			panic(err)
+		} else if cleanup_ != nil {
+			cleanup = cleanup_
+		}
+	}
+	defer cleanup()
+
 	// Run tests
-	os.Exit(m.Run())
+	return m.Run()
 }
 
 // Begin a test

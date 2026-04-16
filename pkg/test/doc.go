@@ -12,7 +12,7 @@
 //
 //	 // Start up a container and return the connection
 //		func TestMain(m *testing.M) {
-//						test.Main(m, &conn)
+//						test.Main(m, &conn, nil)
 //					}
 //
 //			     // Run a test which pings the database

@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"sync"
 
@@ -99,11 +98,6 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 		middleware = append(middleware, otel.HTTPHandlerFunc(ctx.tracer))
 	}
 
-	// Register HTTP handlers
-	router := http.NewServeMux()
-	httphandler.RegisterBackendHandlers(router, ctx.HTTP.Prefix, manager, middleware)
-	httphandler.RegisterFrontendHandler(router, "", false, middleware)
-
 	// Create a TLS config
 	var tlsconfig *tls.Config
 	if cmd.TLS.CertFile != "" || cmd.TLS.KeyFile != "" {
@@ -122,10 +116,15 @@ func (cmd *RunServer) Run(ctx *Globals) error {
 	}
 
 	// Create a HTTP server
-	server, err := httpserver.New(ctx.HTTP.Addr, router, tlsconfig)
+	server, err := httpserver.New(ctx.HTTP.Addr, tlsconfig)
 	if err != nil {
 		return err
 	}
+
+	// Register HTTP handlers
+	router := server.Router()
+	httphandler.RegisterBackendHandlers(router, ctx.HTTP.Prefix, manager, middleware)
+	httphandler.RegisterFrontendHandler(router, "", false, middleware)
 
 	// We run the manager and the server concurrently
 	var wg sync.WaitGroup

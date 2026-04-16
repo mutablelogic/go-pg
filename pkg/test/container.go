@@ -7,7 +7,6 @@ import (
 	"time"
 
 	// Packages
-	nat "github.com/docker/go-connections/nat"
 	testcontainers "github.com/testcontainers/testcontainers-go"
 	wait "github.com/testcontainers/testcontainers-go/wait"
 )
@@ -62,7 +61,7 @@ func NewContainer(ctx context.Context, name, image string, opt ...Opt) (*Contain
 	response.MappedPorts = make(map[string]string, len(o.req.ExposedPorts))
 
 	for _, port := range o.req.ExposedPorts {
-		mappedPort, err := container.MappedPort(ctx, nat.Port(port))
+		mappedPort, err := container.MappedPort(ctx, port)
 		if err != nil {
 			return nil, err
 		}

@@ -17,7 +17,10 @@ var conn test.Conn
 
 // Start up a container and test the pool
 func TestMain(m *testing.M) {
-	test.Main(m, &conn, nil)
+	test.Main(m, func(pool pg.PoolConn) (func(), error) {
+		conn = test.Conn{PoolConn: pool}
+		return nil, nil
+	})
 }
 
 ////////////////////////////////////////////////////////////////////////////////

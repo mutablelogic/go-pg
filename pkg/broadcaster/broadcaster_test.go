@@ -22,7 +22,10 @@ var conn test.Conn
 // TEST MAIN
 
 func TestMain(m *testing.M) {
-	test.Main(m, &conn, nil)
+	test.Main(m, func(pool pg.PoolConn) (func(), error) {
+		conn = test.Conn{PoolConn: pool}
+		return nil, nil
+	})
 }
 
 ///////////////////////////////////////////////////////////////////////////////

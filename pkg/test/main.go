@@ -12,6 +12,7 @@ import (
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	manager "github.com/mutablelogic/go-pg/pkg/manager"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 /////////////////////////////////////////////////////////////////////
@@ -37,11 +38,11 @@ const (
 // and runs the tests in the provided testing.M. The provided setup function can be used to perform any additional
 // setup before running the tests, such as initializing the database schema.
 // The returned cleanup function from setup will be called after the tests are complete to clean up any resources.
-func Main(m *testing.M, conn *Conn, setup func(*Conn) (func(), error)) {
-	os.Exit(main(m, conn, setup))
+func Main(m *testing.M, setup func(pg.PoolConn) (func(), error)) {
+	os.Exit(main(m, setup))
 }
 
-func main(m *testing.M, conn *Conn, setup func(*Conn) (func(), error)) int {
+func main(m *testing.M, setup func(pg.PoolConn) (func(), error)) int {
 	// Context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -72,13 +73,10 @@ func main(m *testing.M, conn *Conn, setup func(*Conn) (func(), error)) int {
 	defer pool.Close()
 	defer container.Close(ctx)
 
-	// Set the connection
-	*conn = Conn{pool, nil}
-
 	// Run setup if provided
 	cleanup := func() {}
 	if setup != nil {
-		cleanup_, err := setup(conn)
+		cleanup_, err := setup(types.Ptr(Conn{pool, nil}))
 		if err != nil {
 			panic(err)
 		} else if cleanup_ != nil {
@@ -92,7 +90,7 @@ func main(m *testing.M, conn *Conn, setup func(*Conn) (func(), error)) int {
 }
 
 // Begin a test
-func (c *Conn) Begin(t *testing.T) *Conn {
+func (c *Conn) Begin(t *testing.T) pg.PoolConn {
 	t.Log("Begin", t.Name())
 	return &Conn{c.PoolConn, t}
 }

@@ -21,7 +21,10 @@ import (
 var conn pgtest.Conn
 
 func TestMain(m *testing.M) {
-  pgtest.Main(m, &conn, nil)
+  pgtest.Main(m, func(pool pg.PoolConn) (func(), error) {
+    conn = pgtest.Conn{PoolConn: pool}
+    return nil, nil
+  })
 }
 
 func TestSomething(t *testing.T) {

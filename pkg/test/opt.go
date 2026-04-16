@@ -2,6 +2,7 @@ package test
 
 import (
 	"fmt"
+	"strings"
 
 	// Packages
 	testcontainers "github.com/testcontainers/testcontainers-go"
@@ -107,6 +108,7 @@ func OptPostgres(user, password, database string) Opt {
 			return err
 		}
 		o.appendWaitStrategy(wait.ForSQL(pgxPort, "pgx", func(host string, port string) string {
+			port, _, _ = strings.Cut(port, "/")
 			return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", user, password, host, port, database)
 		}))
 		return nil

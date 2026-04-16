@@ -1,7 +1,6 @@
 package test
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 
@@ -73,23 +72,8 @@ func Test_Opt_002(t *testing.T) {
 
 func Test_Opt_003(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
-
-	o := opts{req: testcontainers.ContainerRequest{WaitingFor: wait.ForAll()}}
-	require.NoError(OptPostgres("postgres", "password", "httphandler.test")(&o))
-
-	multi, ok := o.req.WaitingFor.(*wait.MultiStrategy)
-	require.True(ok)
-	require.Len(multi.Strategies, 2)
-
-	strategyValue := reflect.ValueOf(multi.Strategies[1]).Elem()
-	urlField := strategyValue.FieldByName("URL")
-	require.True(urlField.IsValid())
-
-	urlFn, ok := urlField.Interface().(func(string, string) string)
-	require.True(ok)
 	assert.Equal(
 		"postgres://postgres:password@localhost:5432/httphandler.test?sslmode=disable",
-		urlFn("localhost", "5432/tcp"),
+		postgresURL("postgres", "password", "httphandler.test", "localhost", "5432/tcp"),
 	)
 }

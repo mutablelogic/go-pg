@@ -108,8 +108,7 @@ func OptPostgres(user, password, database string) Opt {
 			return err
 		}
 		o.appendWaitStrategy(wait.ForSQL(pgxPort, "pgx", func(host string, port string) string {
-			port, _, _ = strings.Cut(port, "/")
-			return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", user, password, host, port, database)
+			return postgresURL(user, password, database, host, port)
 		}))
 		return nil
 	}
@@ -135,4 +134,10 @@ func (o *opts) appendWaitStrategy(strategy wait.Strategy) {
 	} else {
 		o.req.WaitingFor = wait.ForAll(o.req.WaitingFor, strategy)
 	}
+}
+
+// postgresURL builds a Postgres connection URL from the given parameters.
+func postgresURL(user, password, database, host, port string) string {
+	port, _, _ = strings.Cut(port, "/")
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", user, password, host, port, database)
 }

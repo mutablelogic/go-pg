@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/djthorpe/go-wasmbuild v0.0.1
-	github.com/jackc/pgx/v5 v5.9.1
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/mutablelogic/go-client v1.4.6
 	github.com/mutablelogic/go-server v1.6.22
 	github.com/prometheus/client_golang v1.23.2

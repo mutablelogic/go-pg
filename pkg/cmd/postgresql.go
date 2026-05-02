@@ -32,13 +32,15 @@ func (cmd *PostgresFlags) Connect(ctx server.Cmd) (pg.PoolConn, error) {
 	if cmd.Password != "" {
 		opts = append(opts, pg.WithPassword(cmd.Password))
 	}
-	opts = append(opts, pg.WithTrace(func(c context.Context, sql string, args any, err error) {
-		if err != nil {
-			ctx.Logger().Log(c, logger.LevelDebug, sql, "args", args, "err", err)
-		} else {
-			ctx.Logger().Log(c, logger.LevelTrace, sql, "args", args)
-		}
-	}))
+	if ctx.IsDebug() {
+		opts = append(opts, pg.WithTrace(func(c context.Context, sql string, args any, err error) {
+			if err != nil {
+				ctx.Logger().Log(c, logger.LevelError, sql, "args", args, "err", err.Error())
+			} else {
+				ctx.Logger().Log(c, logger.LevelTrace, sql, "args", args)
+			}
+		}))
+	}
 
 	// Connect to the database, ping it
 	pool, err := pg.NewPool(ctx.Context(), opts...)

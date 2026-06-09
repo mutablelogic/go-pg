@@ -7,6 +7,7 @@ import (
 	// Packages
 	pgx "github.com/jackc/pgx/v5"
 	pgconn "github.com/jackc/pgx/v5/pgconn"
+	"github.com/mutablelogic/go-server/pkg/httpresponse"
 )
 
 /////////////////////////////////////////////////////////////////////
@@ -39,16 +40,18 @@ const (
 	ErrInvalidTextRepresentation
 	ErrInvalidDatetimeFormat
 	ErrDatetimeFieldOverflow
+	ErrInternalServerError
 )
 
 const (
-	sqlStateUniqueViolation          = "23505"
-	sqlStateForeignKeyViolation      = "23503"
-	sqlStateNotNullViolation         = "23502"
-	sqlStateCheckViolation           = "23514"
+	sqlStateUniqueViolation           = "23505"
+	sqlStateForeignKeyViolation       = "23503"
+	sqlStateNotNullViolation          = "23502"
+	sqlStateCheckViolation            = "23514"
 	sqlStateInvalidTextRepresentation = "22P02"
-	sqlStateInvalidDatetimeFormat    = "22007"
-	sqlStateDatetimeFieldOverflow    = "22008"
+	sqlStateInvalidDatetimeFormat     = "22007"
+	sqlStateDatetimeFieldOverflow     = "22008"
+	sqlStateUndefinedObject           = "42704"
 )
 
 // Error returns the string representation of the error.
@@ -82,6 +85,8 @@ func (e Err) Error() string {
 		return "invalid datetime format"
 	case ErrDatetimeFieldOverflow:
 		return "datetime field overflow"
+	case ErrInternalServerError:
+		return "internal server error"
 	default:
 		return fmt.Sprint("Unknown error ", int(e))
 	}
@@ -175,6 +180,23 @@ func NormalizeError(err error) error {
 	return err
 }
 
+// HTTPError returns the appropriate HTTP status code for the given error.
+func HTTPError(err error) error {
+	err = NormalizeError(err)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		return httpresponse.ErrNotFound.With(err.Error())
+	case errors.Is(err, ErrBadParameter):
+		return httpresponse.ErrBadRequest.With(err.Error())
+	case errors.Is(err, ErrNotImplemented):
+		return httpresponse.ErrNotImplemented.With(err.Error())
+	case errors.Is(err, ErrConflict):
+		return httpresponse.ErrConflict.With(err.Error())
+	default:
+		return httpresponse.ErrInternalError.With(err.Error())
+	}
+}
+
 // IsDatabaseError reports whether err is a PostgreSQL error with a SQLSTATE code.
 func IsDatabaseError(err error) bool {
 	return SQLState(err) != ""
@@ -224,6 +246,8 @@ func newDatabaseError(err *pgconn.PgError) error {
 		kinds = append(kinds, ErrBadParameter, ErrInvalidDatetimeFormat)
 	case sqlStateDatetimeFieldOverflow:
 		kinds = append(kinds, ErrBadParameter, ErrDatetimeFieldOverflow)
+	case sqlStateUndefinedObject:
+		kinds = append(kinds, ErrBadParameter, ErrNotFound)
 	}
 
 	return &DatabaseError{

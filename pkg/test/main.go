@@ -11,7 +11,6 @@ import (
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
-	manager "github.com/mutablelogic/go-pg/pkg/manager"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
@@ -102,63 +101,63 @@ func (c *Conn) Close() {
 	}
 }
 
-// ManagerConn wraps a Manager with its underlying connection for testing
-type ManagerConn struct {
-	*manager.Manager
-	pool      pg.PoolConn
-	container *Container
-}
+// // ManagerConn wraps a Manager with its underlying connection for testing
+// type ManagerConn struct {
+// 	*manager.Manager
+// 	pool      pg.PoolConn
+// 	container *Container
+// }
 
-// NewManager creates a new Manager with a test container for integration testing.
-// The returned ManagerConn must be closed after use.
-func NewManager(t *testing.T) *ManagerConn {
-	t.Helper()
-	t.Log("Begin", t.Name())
+// // NewManager creates a new Manager with a test container for integration testing.
+// // The returned ManagerConn must be closed after use.
+// func NewManager(t *testing.T) *ManagerConn {
+// 	t.Helper()
+// 	t.Log("Begin", t.Name())
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+// 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+// 	defer cancel()
 
-	// Start the container
-	name, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	verbose := slices.Contains(os.Args, "-test.v=true")
-	container, pool, err := NewPgxContainer(ctx, filepath.Base(name), verbose, func(ctx context.Context, sql string, args any, err error) {
-		if err != nil {
-			log.Printf("ERROR: %v", err)
-		}
-		if verbose || err != nil {
-			if args == nil {
-				log.Printf("SQL: %v", sql)
-			} else {
-				log.Printf("SQL: %v, ARGS: %v", sql, args)
-			}
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	// Start the container
+// 	name, err := os.Executable()
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	verbose := slices.Contains(os.Args, "-test.v=true")
+// 	container, pool, err := NewPgxContainer(ctx, filepath.Base(name), verbose, func(ctx context.Context, sql string, args any, err error) {
+// 		if err != nil {
+// 			log.Printf("ERROR: %v", err)
+// 		}
+// 		if verbose || err != nil {
+// 			if args == nil {
+// 				log.Printf("SQL: %v", sql)
+// 			} else {
+// 				log.Printf("SQL: %v, ARGS: %v", sql, args)
+// 			}
+// 		}
+// 	})
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	// Create the manager
-	mgr, err := manager.New(ctx, pool)
-	if err != nil {
-		pool.Close()
-		container.Close(ctx)
-		t.Fatal(err)
-	}
+// 	// Create the manager
+// 	mgr, err := manager.New(ctx, pool)
+// 	if err != nil {
+// 		pool.Close()
+// 		container.Close(ctx)
+// 		t.Fatal(err)
+// 	}
 
-	return &ManagerConn{
-		Manager:   mgr,
-		pool:      pool,
-		container: container,
-	}
-}
+// 	return &ManagerConn{
+// 		Manager:   mgr,
+// 		pool:      pool,
+// 		container: container,
+// 	}
+// }
 
-// Close closes the manager connection and container
-func (m *ManagerConn) Close() {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	m.pool.Close()
-	m.container.Close(ctx)
-}
+// // Close closes the manager connection and container
+// func (m *ManagerConn) Close() {
+// 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+// 	defer cancel()
+// 	m.pool.Close()
+// 	m.container.Close(ctx)
+// }

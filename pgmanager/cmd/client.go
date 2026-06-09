@@ -33,7 +33,9 @@ type DatabaseClientCommands struct {
 }
 
 type ConnectionClientCommands struct {
-	ConnectiionList ConnectionListCmd `cmd:"" name:"connections" help:"List connections." group:"CONNECTION"`
+	ConnectionList   ConnectionListCmd   `cmd:"" name:"connections" help:"List connections." group:"CONNECTION"`
+	ConnectionGet    ConnectionGetCmd    `cmd:"" name:"connection" help:"Get connection details." group:"CONNECTION"`
+	ConnectionDelete ConnectionDeleteCmd `cmd:"" name:"connection-delete" help:"Delete a connection." group:"CONNECTION"`
 }
 
 type DatabaseListCmd struct {
@@ -59,6 +61,14 @@ type DatabaseUpdateCmd struct {
 
 type ConnectionListCmd struct {
 	schema.ConnectionListRequest
+}
+
+type ConnectionGetCmd struct {
+	Pid uint64 `arg:"" name:"pid" help:"PID of the connection."`
+}
+
+type ConnectionDeleteCmd struct {
+	Pid uint64 `arg:"" name:"pid" help:"PID of the connection."`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -188,5 +198,23 @@ func (cmd *ConnectionListCmd) Run(ctx server.Cmd) error {
 		}
 
 		return nil
+	})
+}
+
+func (cmd *ConnectionGetCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "connection", func(ctx context.Context, client *httpclient.Client) error {
+		connection, err := client.GetConnection(ctx, cmd.Pid)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(connection)
+		return nil
+	})
+}
+
+func (cmd *ConnectionDeleteCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "connection-delete", func(ctx context.Context, client *httpclient.Client) error {
+		return client.DeleteConnection(ctx, cmd.Pid)
 	})
 }

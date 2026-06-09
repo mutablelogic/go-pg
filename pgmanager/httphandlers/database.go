@@ -19,7 +19,7 @@ import (
 // TYPES
 
 type DatabasePathParams struct {
-	Database string `json:"database" path:"database" validate:"required"`
+	Database string `json:"database"`
 }
 
 type ForceQueryParams struct {
@@ -52,7 +52,7 @@ func RegisterDatabaseHandlers(manager *manager.Manager, router *httprouter.Route
 			),
 		),
 
-		router.RegisterPath("database/{database}", jsonschema.MustFor[DatabasePathParams](), httprequest.NewPathItem("Databases", "Manage PostgreSQL databases").
+		router.RegisterPath("database/{database}", jsonschema.MustFor[DatabasePathParams](), httprequest.NewPathItem("Database", "Manage a PostgreSQL database").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = GetDatabase(w, r, manager, r.PathValue("database"))

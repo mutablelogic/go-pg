@@ -3,6 +3,7 @@ package httphandlers
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
@@ -17,6 +18,10 @@ import (
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
+
+type ConnectionPathParams struct {
+	Pid uint32 `json:"pid" path:"pid" validate:"required"`
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
@@ -34,6 +39,26 @@ func RegisterConnectionHandlers(manager *manager.Manager, router *httprouter.Rou
 				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.ConnectionList]()),
 			),
 		),
+		router.RegisterPath("connection/{pid}", jsonschema.MustFor[ConnectionPathParams](), httprequest.NewPathItem("Connection", "Manage a PostgreSQL connection").
+			Get(
+				func(w http.ResponseWriter, r *http.Request) {
+					_ = GetConnection(w, r, manager, r.PathValue("pid"))
+				},
+				"Get connection",
+				openapi.WithTags("Connections"),
+				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Connection]()),
+				openapi.WithErrorResponse(http.StatusNotFound, "Process not found"),
+			).
+			Delete(
+				func(w http.ResponseWriter, r *http.Request) {
+					_ = DeleteConnection(w, r, manager, r.PathValue("pid"))
+				},
+				"Delete connection",
+				openapi.WithTags("Connections"),
+				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Connection]()),
+				openapi.WithErrorResponse(http.StatusNotFound, "Process not found"),
+			),
+		),
 	)
 }
 
@@ -49,5 +74,29 @@ func ListConnections(w http.ResponseWriter, r *http.Request, manager *manager.Ma
 		return httpresponse.Error(w, pg.HTTPError(err))
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), connections)
+	}
+}
+
+func GetConnection(w http.ResponseWriter, r *http.Request, manager *manager.Manager, pid string) error {
+	pid_, err := strconv.ParseUint(pid, 10, 64)
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.ErrBadRequest.With("invalid pid"), pid)
+	}
+	if connection, err := manager.GetConnection(r.Context(), pid_); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err), pid)
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), connection)
+	}
+}
+
+func DeleteConnection(w http.ResponseWriter, r *http.Request, manager *manager.Manager, pid string) error {
+	pid_, err := strconv.ParseUint(pid, 10, 64)
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.ErrBadRequest.With("invalid pid"), pid)
+	}
+	if connection, err := manager.DeleteConnection(r.Context(), pid_); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err), pid)
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), connection)
 	}
 }

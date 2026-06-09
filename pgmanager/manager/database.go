@@ -33,7 +33,7 @@ func (manager *Manager) ListDatabases(ctx context.Context, req schema.DatabaseLi
 
 	// Set the offset and limit in the result to reflect the actual count of items returned
 	// which may be less than the requested limit if there are not enough items in the database.
-	result.OffsetLimit = req.OffsetLimit
+	result.DatabaseListRequest = req
 	result.OffsetLimit.Clamp(result.Count)
 
 	// Return success

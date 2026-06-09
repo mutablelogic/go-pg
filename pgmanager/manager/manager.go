@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	// Packages
 	"github.com/mutablelogic/go-pg"
 	"github.com/mutablelogic/go-pg/pgmanager/schema"
 )

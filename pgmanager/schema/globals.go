@@ -4,7 +4,8 @@ package schema
 // GLOBALS
 
 const (
-	DatabaseListLimit = 50
+	DatabaseListLimit   = 50
+	ConnectionListLimit = 50
 )
 
 const (

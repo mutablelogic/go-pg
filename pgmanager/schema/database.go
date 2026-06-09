@@ -32,7 +32,7 @@ type DatabaseListRequest struct {
 }
 
 type DatabaseList struct {
-	pg.OffsetLimit
+	DatabaseListRequest
 	Count uint64     `json:"count"`
 	Body  []Database `json:"body,omitempty"`
 }

@@ -50,6 +50,7 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 			return errors.Join(
 				httphandlers.RegisterStatusHandlers(pgmanager, router),
 				httphandlers.RegisterDatabaseHandlers(pgmanager, router),
+				httphandlers.RegisterConnectionHandlers(pgmanager, router),
 			)
 		})
 

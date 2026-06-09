@@ -17,7 +17,14 @@ import (
 // TYPES
 
 type ClientCommands struct {
-	Ping           PingCmd           `cmd:"" name:"ping" help:"Ping the server." group:"STATUS"`
+	Ping PingCmd `cmd:"" name:"ping" help:"Ping the server." group:"STATUS"`
+	DatabaseClientCommands
+	ConnectionClientCommands
+}
+
+type PingCmd struct{}
+
+type DatabaseClientCommands struct {
 	DatabaseList   DatabaseListCmd   `cmd:"" name:"databases" help:"List databases." group:"DATABASE"`
 	DatabaseGet    DatabaseGetCmd    `cmd:"" name:"database" help:"Get database details." group:"DATABASE"`
 	DatabaseCreate DatabaseCreateCmd `cmd:"" name:"database-create" help:"Create a new database." group:"DATABASE"`
@@ -25,7 +32,9 @@ type ClientCommands struct {
 	DatabaseUpdate DatabaseUpdateCmd `cmd:"" name:"database-update" help:"Update a database." group:"DATABASE"`
 }
 
-type PingCmd struct{}
+type ConnectionClientCommands struct {
+	ConnectiionList ConnectionListCmd `cmd:"" name:"connections" help:"List connections." group:"CONNECTION"`
+}
 
 type DatabaseListCmd struct {
 	schema.DatabaseListRequest
@@ -48,6 +57,10 @@ type DatabaseUpdateCmd struct {
 	schema.DatabaseMeta
 }
 
+type ConnectionListCmd struct {
+	schema.ConnectionListRequest
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
@@ -67,7 +80,7 @@ func withClient(ctx server.Cmd, span string, fn func(context.Context, *httpclien
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// COMMANDS
+// DATABASE COMMANDS
 
 func (cmd *PingCmd) Run(ctx server.Cmd) error {
 	return withClient(ctx, "ping", func(ctx context.Context, client *httpclient.Client) error {
@@ -144,6 +157,36 @@ func (cmd *DatabaseUpdateCmd) Run(ctx server.Cmd) error {
 		}
 
 		fmt.Println(database)
+		return nil
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// CONNECTION COMMANDS
+
+func (cmd *ConnectionListCmd) Run(ctx server.Cmd) error {
+	// Set the width of the terminal
+	width := ctx.IsTerm()
+
+	// Perform the request
+	return withClient(ctx, "connections", func(ctx context.Context, client *httpclient.Client) error {
+		connections, err := client.ListConnections(ctx, cmd.ConnectionListRequest)
+		if err != nil {
+			return err
+		}
+
+		// Connections list table
+		table := tui.TableFor[schema.Connection](tui.SetWidth(width))
+		if _, err := table.Write(os.Stdout, connections.Body...); err != nil {
+			return err
+		}
+
+		// Connections list summary
+		summary := tui.TableSummary("connections", uint(connections.Count), connections.Offset, connections.Limit)
+		if _, err := summary.Write(os.Stdout); err != nil {
+			return err
+		}
+
 		return nil
 	})
 }

@@ -47,6 +47,7 @@ func New(conn pg.PoolConn, opt ...Opt) (*Manager, error) {
 	if self.metrics != nil {
 		err := errors.Join(
 			self.RegisterDatabaseMetrics("database"),
+			self.RegisterConnectionMetrics("connection"),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("register metrics: %w", err)

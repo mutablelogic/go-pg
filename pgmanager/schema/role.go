@@ -2,8 +2,8 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -42,6 +42,7 @@ type RoleListRequest struct {
 }
 
 type RoleList struct {
+	RoleListRequest
 	Count uint64 `json:"count"`
 	Body  []Role `json:"body,omitempty"`
 }
@@ -50,35 +51,91 @@ type RoleList struct {
 // STRINGIFY
 
 func (r Role) String() string {
-	data, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(r)
 }
 
 func (r RoleMeta) String() string {
-	data, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(r)
 }
 
 func (r RoleList) String() string {
-	data, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(r)
 }
 
 func (r RoleListRequest) String() string {
-	data, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		return err.Error()
+	return types.Stringify(r)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (r Role) Header() []string {
+	return []string{"Oid", "Name", "Attributes", "ConnectionLimit", "Expires", "Groups"}
+}
+
+func (r Role) Width(col int) int {
+	return 0
+}
+
+func (r Role) Cell(col int) string {
+	switch col {
+	case 0:
+		return fmt.Sprint(r.Oid)
+	case 1:
+		return r.Name
+	case 2:
+		var attr []string
+		if r.Superuser != nil && *r.Superuser {
+			attr = append(attr, "SUPERUSER")
+		}
+		if r.Inherit != nil && *r.Inherit {
+			attr = append(attr, "INHERIT")
+		}
+		if r.CreateRoles != nil && *r.CreateRoles {
+			attr = append(attr, "CREATEROLE")
+		}
+		if r.CreateDatabases != nil && *r.CreateDatabases {
+			attr = append(attr, "CREATEDB")
+		}
+		if r.Replication != nil && *r.Replication {
+			attr = append(attr, "REPLICATION")
+		}
+		if r.BypassRowLevelSecurity != nil && *r.BypassRowLevelSecurity {
+			attr = append(attr, "BYPASSRLS")
+		}
+		if r.Login != nil && *r.Login {
+			attr = append(attr, "LOGIN")
+		}
+		return strings.Join(attr, " ")
+	case 3:
+		if r.ConnectionLimit == nil {
+			return ""
+		}
+		return fmt.Sprint(*r.ConnectionLimit)
+	case 4:
+		if r.Expires == nil {
+			return ""
+		}
+		return r.Expires.Format(time.RFC3339)
+	case 5:
+		return strings.Join(r.Groups, ", ")
+	default:
+		return ""
 	}
-	return string(data)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+func (d RoleListRequest) Query() url.Values {
+	q := url.Values{}
+	if d.Offset > 0 {
+		q.Set("offset", fmt.Sprint(d.Offset))
+	}
+	if d.Limit != nil {
+		q.Set("limit", fmt.Sprint(types.Value(d.Limit)))
+	}
+	return q
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -288,31 +345,31 @@ func (r RoleMeta) with(insert bool) string {
 		return "NO" + v
 	}
 	if r.Superuser != nil {
-		with = append(with, opt("SUPERUSER", types.PtrBool(r.Superuser)))
+		with = append(with, opt("SUPERUSER", types.Value(r.Superuser)))
 	}
 	if r.CreateDatabases != nil {
-		with = append(with, opt("CREATEDB", types.PtrBool(r.CreateDatabases)))
+		with = append(with, opt("CREATEDB", types.Value(r.CreateDatabases)))
 	}
 	if r.CreateRoles != nil {
-		with = append(with, opt("CREATEROLE", types.PtrBool(r.CreateRoles)))
+		with = append(with, opt("CREATEROLE", types.Value(r.CreateRoles)))
 	}
 	if r.Replication != nil {
-		with = append(with, opt("REPLICATION", types.PtrBool(r.Replication)))
+		with = append(with, opt("REPLICATION", types.Value(r.Replication)))
 	}
 	if r.Inherit != nil {
-		with = append(with, opt("INHERIT", types.PtrBool(r.Inherit)))
+		with = append(with, opt("INHERIT", types.Value(r.Inherit)))
 	}
 	if r.Login != nil {
-		with = append(with, opt("LOGIN", types.PtrBool(r.Login)))
+		with = append(with, opt("LOGIN", types.Value(r.Login)))
 	}
 	if r.BypassRowLevelSecurity != nil {
-		with = append(with, opt("BYPASSRLS", types.PtrBool(r.BypassRowLevelSecurity)))
+		with = append(with, opt("BYPASSRLS", types.Value(r.BypassRowLevelSecurity)))
 	}
 	if r.ConnectionLimit != nil {
-		with = append(with, fmt.Sprintf("CONNECTION LIMIT %v", types.PtrUint64(r.ConnectionLimit)))
+		with = append(with, fmt.Sprintf("CONNECTION LIMIT %v", types.Value(r.ConnectionLimit)))
 	}
 	if r.Password != nil {
-		if password := types.PtrString(r.Password); password == pgObfuscatedPassword {
+		if password := types.Value(r.Password); password == pgObfuscatedPassword {
 			// Do nothing
 		} else if password == "" {
 			with = append(with, "PASSWORD NULL")
@@ -320,7 +377,7 @@ func (r RoleMeta) with(insert bool) string {
 			with = append(with, fmt.Sprintf("PASSWORD %v", types.Quote(password)))
 		}
 	}
-	if expires := types.PtrTime(r.Expires).UTC(); !expires.IsZero() {
+	if expires := types.Value(r.Expires).UTC(); !expires.IsZero() {
 		with = append(with, fmt.Sprintf("VALID UNTIL %v", types.Quote(expires.Format(pgTimestampFormat))))
 	}
 	if len(r.Groups) > 0 && insert {

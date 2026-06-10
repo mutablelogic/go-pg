@@ -18,6 +18,7 @@ import (
 
 type ClientCommands struct {
 	Ping PingCmd `cmd:"" name:"ping" help:"Ping the server." group:"STATUS"`
+	RoleClientCommands
 	DatabaseClientCommands
 	SchemaClientCommands
 	ConnectionClientCommands
@@ -26,6 +27,11 @@ type ClientCommands struct {
 }
 
 type PingCmd struct{}
+
+type RoleClientCommands struct {
+	RoleList   RoleListCmd   `cmd:"" name:"roles" help:"List roles." group:"ROLE"`
+	RoleCreate RoleCreateCmd `cmd:"" name:"role-create" help:"Create a new role." group:"ROLE"`
+}
 
 type DatabaseClientCommands struct {
 	DatabaseList   DatabaseListCmd   `cmd:"" name:"databases" help:"List databases." group:"DATABASE"`
@@ -61,6 +67,14 @@ type SettingClientCommands struct {
 	SettingCategoryList SettingCategoryListCmd `cmd:"" name:"categories" help:"List distinct setting categories." group:"SETTING"`
 	SettingGet          SettingGetCmd          `cmd:"" name:"setting" help:"Get setting details." group:"SETTING"`
 	SettingUpdate       SettingUpdateCmd       `cmd:"" name:"setting-update" help:"Update a setting." group:"SETTING"`
+}
+
+type RoleListCmd struct {
+	schema.RoleListRequest
+}
+
+type RoleCreateCmd struct {
+	schema.RoleMeta
 }
 
 type DatabaseListCmd struct {
@@ -181,6 +195,48 @@ func withClient(ctx server.Cmd, span string, fn func(context.Context, *httpclien
 func (cmd *PingCmd) Run(ctx server.Cmd) error {
 	return withClient(ctx, "ping", func(ctx context.Context, client *httpclient.Client) error {
 		return client.Ping(ctx)
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ROLE COMMANDS
+
+func (cmd *RoleListCmd) Run(ctx server.Cmd) error {
+	// Set the width of the terminal
+	width := ctx.IsTerm()
+
+	// Perform the request
+	return withClient(ctx, "roles", func(ctx context.Context, client *httpclient.Client) error {
+		roles, err := client.ListRoles(ctx, cmd.RoleListRequest)
+		if err != nil {
+			return err
+		}
+
+		// Roles list table
+		table := tui.TableFor[schema.Role](tui.SetWidth(width))
+		if _, err := table.Write(os.Stdout, roles.Body...); err != nil {
+			return err
+		}
+
+		// Roles list summary
+		summary := tui.TableSummary("roles", uint(roles.Count), roles.Offset, roles.Limit)
+		if _, err := summary.Write(os.Stdout); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func (cmd *RoleCreateCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "role-create", func(ctx context.Context, client *httpclient.Client) error {
+		role, err := client.CreateRole(ctx, cmd.RoleMeta)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(role)
+		return nil
 	})
 }
 

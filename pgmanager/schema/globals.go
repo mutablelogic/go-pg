@@ -8,7 +8,8 @@ const (
 	ConnectionListLimit = 50
 	ExtensionListLimit  = 50
 	SchemaListLimit     = 50
-	SettingListLimit    = 50
+	SettingListLimit    = 100
+	RoleListLimit       = 50
 )
 
 const (
@@ -17,6 +18,8 @@ const (
 )
 
 const (
-	defaultSchema  = "public"
-	reservedPrefix = "pg_"
+	defaultSchema        = "public"
+	reservedPrefix       = "pg_"
+	pgTimestampFormat    = "2006-01-02 15:04:05"
+	pgObfuscatedPassword = "********"
 )

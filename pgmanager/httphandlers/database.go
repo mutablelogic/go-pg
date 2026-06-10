@@ -102,6 +102,18 @@ func ListDatabases(w http.ResponseWriter, r *http.Request, manager *manager.Mana
 	}
 }
 
+func CreateDatabase(w http.ResponseWriter, r *http.Request, manager *manager.Manager) error {
+	var meta schema.DatabaseMeta
+	if err := httprequest.Read(r, &meta); err != nil {
+		return httpresponse.Error(w, httpresponse.ErrBadRequest.With(err.Error()))
+	}
+	if database, err := manager.CreateDatabase(r.Context(), meta); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err), meta.Name)
+	} else {
+		return httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), database)
+	}
+}
+
 func GetDatabase(w http.ResponseWriter, r *http.Request, manager *manager.Manager, name string) error {
 	if database, err := manager.GetDatabase(r.Context(), name); err != nil {
 		return httpresponse.Error(w, pg.HTTPError(err), name)
@@ -119,18 +131,6 @@ func DeleteDatabase(w http.ResponseWriter, r *http.Request, manager *manager.Man
 		return httpresponse.Error(w, pg.HTTPError(err), name)
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), database)
-	}
-}
-
-func CreateDatabase(w http.ResponseWriter, r *http.Request, manager *manager.Manager) error {
-	var meta schema.DatabaseMeta
-	if err := httprequest.Read(r, &meta); err != nil {
-		return httpresponse.Error(w, httpresponse.ErrBadRequest.With(err.Error()))
-	}
-	if database, err := manager.CreateDatabase(r.Context(), meta); err != nil {
-		return httpresponse.Error(w, pg.HTTPError(err), meta.Name)
-	} else {
-		return httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), database)
 	}
 }
 

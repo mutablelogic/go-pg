@@ -52,6 +52,8 @@ const (
 	sqlStateInvalidDatetimeFormat      = "22007"
 	sqlStateDatetimeFieldOverflow      = "22008"
 	sqlStateUndefinedObject            = "42704"
+	sqlStateDuplicateObject            = "42710"
+	sqlStateRoleMembershipLoop         = "0LP01"
 	sqlStateDependentObjectsStillExist = "2BP01"
 )
 
@@ -249,6 +251,10 @@ func newDatabaseError(err *pgconn.PgError) error {
 		kinds = append(kinds, ErrBadParameter, ErrDatetimeFieldOverflow)
 	case sqlStateUndefinedObject:
 		kinds = append(kinds, ErrBadParameter, ErrNotFound)
+	case sqlStateDuplicateObject:
+		kinds = append(kinds, ErrConflict)
+	case sqlStateRoleMembershipLoop:
+		kinds = append(kinds, ErrConflict)
 	case sqlStateDependentObjectsStillExist:
 		kinds = append(kinds, ErrConflict)
 	}

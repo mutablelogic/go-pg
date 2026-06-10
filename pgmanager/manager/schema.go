@@ -6,9 +6,11 @@ import (
 	"slices"
 
 	// Packages
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
-	schema "github.com/mutablelogic/go-pg/pkg/manager/schema"
+	schema "github.com/mutablelogic/go-pg/pgmanager/schema"
 	types "github.com/mutablelogic/go-server/pkg/types"
+	attribute "go.opentelemetry.io/otel/attribute"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -17,30 +19,33 @@ import (
 // ListSchemas returns a list of schemas across all databases matching the request criteria.
 // It supports pagination through the OffsetLimit fields in the request.
 // If Database is specified in the request, only schemas from that database are returned.
-func (manager *Manager) ListSchemas(ctx context.Context, req schema.SchemaListRequest) (*schema.SchemaList, error) {
-	var list schema.SchemaList
-	var offset, limit uint64
+func (manager *Manager) ListSchemas(ctx context.Context, req schema.SchemaListRequest) (_ *schema.SchemaList, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ListSchemas",
+		attribute.String("req", types.Stringify(req)),
+	)
+	defer func() { endSpan(err) }()
 
 	// Set limit lower if request limit is lower
+	var offset, limit uint64
 	limit = schema.SchemaListLimit
-	if req.Limit != nil && types.PtrUint64(req.Limit) < limit {
-		limit = types.PtrUint64(req.Limit)
+	if req.Limit != nil && types.Value(req.Limit) < limit {
+		limit = types.Value(req.Limit)
 	}
 
-	// Allocate the body with capacity
-	list.Body = make([]schema.Schema, 0, limit)
-
 	// Iterate through all the databases
+	var result schema.SchemaList
+	result.Body = make([]schema.Schema, 0, limit)
 	if _, err := manager.withDatabases(ctx, func(database *schema.Database) error {
 		// Filter by database
-		if name := types.PtrString(req.Database); name != "" && name != database.Name {
+		if name := types.Value(req.Database); name != "" && name != database.Name {
 			return nil
 		}
 
 		// Iterate through all the schemas
 		count, err := manager.withSchemas(ctx, database.Name, func(s *schema.Schema) error {
-			if offset >= req.Offset && uint64(len(list.Body)) < limit {
-				list.Body = append(list.Body, *s)
+			if offset >= req.Offset && uint64(len(result.Body)) < limit {
+				result.Body = append(result.Body, *s)
 			}
 			offset++
 			return nil
@@ -50,7 +55,7 @@ func (manager *Manager) ListSchemas(ctx context.Context, req schema.SchemaListRe
 		}
 
 		// Increment the count
-		list.Count += count
+		result.Count += count
 
 		// Return success
 		return nil
@@ -58,19 +63,34 @@ func (manager *Manager) ListSchemas(ctx context.Context, req schema.SchemaListRe
 		return nil, err
 	}
 
+	// Set the offset and limit in the result to reflect the actual count of items returned
+	// which may be less than the requested limit if there are not enough items
+	result.SchemaListRequest = req
+	result.OffsetLimit.Clamp(result.Count)
+
 	// Return success
-	return &list, nil
+	return &result, nil
 }
 
 // GetSchema retrieves a single schema by database and namespace name.
 // Returns an error if the database or namespace is empty or the schema is not found.
-func (manager *Manager) GetSchema(ctx context.Context, database, namespace string) (*schema.Schema, error) {
+func (manager *Manager) GetSchema(ctx context.Context, database, namespace string) (_ *schema.Schema, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "GetSchema",
+		attribute.String("database", database),
+		attribute.String("namespace", namespace),
+	)
+	defer func() { endSpan(err) }()
+
+	// Validate input
 	if database == "" {
 		return nil, pg.ErrBadParameter.With("database is empty")
 	}
 	if namespace == "" {
 		return nil, pg.ErrBadParameter.With("namespace is empty")
 	}
+
+	// Get the schema
 	var s schema.Schema
 	if err := manager.conn.Remote(database).With("as", schema.SchemaDef).Get(ctx, &s, schema.SchemaName(namespace)); err != nil {
 		return nil, err
@@ -81,15 +101,21 @@ func (manager *Manager) GetSchema(ctx context.Context, database, namespace strin
 // CreateSchema creates a new schema in the specified database with the given metadata.
 // ACL grants are applied after schema creation. If ACL grants fail, the schema is deleted
 // to maintain consistency.
-func (manager *Manager) CreateSchema(ctx context.Context, database string, meta schema.SchemaMeta) (*schema.Schema, error) {
+func (manager *Manager) CreateSchema(ctx context.Context, database string, meta schema.SchemaMeta) (_ *schema.Schema, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "CreateSchema",
+		attribute.String("database", database),
+		attribute.String("meta", types.Stringify(meta)),
+	)
+	defer func() { endSpan(err) }()
+
+	// Validate input
 	if database == "" {
 		return nil, pg.ErrBadParameter.With("database is empty")
 	}
 
-	var s schema.Schema
-	conn := manager.conn.Remote(database)
-
 	// Create the schema
+	conn := manager.conn.Remote(database)
 	if err := conn.Insert(ctx, nil, meta); err != nil {
 		return nil, err
 	}
@@ -104,22 +130,31 @@ func (manager *Manager) CreateSchema(ctx context.Context, database string, meta 
 		return nil
 	}); err != nil {
 		// Delete the schema if there is an issue with ACL's
-		deleteErr := conn.With("force", true).Delete(ctx, nil, schema.SchemaName(meta.Name))
-		return nil, errors.Join(err, deleteErr)
+		return nil, errors.Join(err, conn.With("force", true).Delete(ctx, nil, schema.SchemaName(meta.Name)))
 	}
 
 	// Get the schema
-	if err := conn.With("as", schema.SchemaDef).Get(ctx, &s, schema.SchemaName(meta.Name)); err != nil {
+	var result schema.Schema
+	if err := conn.With("as", schema.SchemaDef).Get(ctx, &result, schema.SchemaName(meta.Name)); err != nil {
 		return nil, err
 	}
 
 	// Return success
-	return &s, nil
+	return &result, nil
 }
 
 // DeleteSchema drops a schema by database and namespace name, returning its metadata before deletion.
 // If force is true, the schema is dropped with CASCADE even if there are dependent objects.
-func (manager *Manager) DeleteSchema(ctx context.Context, database, namespace string, force bool) (*schema.Schema, error) {
+func (manager *Manager) DeleteSchema(ctx context.Context, database, namespace string, force bool) (_ *schema.Schema, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "DeleteSchema",
+		attribute.String("database", database),
+		attribute.String("namespace", namespace),
+		attribute.Bool("force", force),
+	)
+	defer func() { endSpan(err) }()
+
+	// Validate input
 	if database == "" {
 		return nil, pg.ErrBadParameter.With("database is empty")
 	}
@@ -127,11 +162,10 @@ func (manager *Manager) DeleteSchema(ctx context.Context, database, namespace st
 		return nil, pg.ErrBadParameter.With("namespace is empty")
 	}
 
-	var s schema.Schema
-	conn := manager.conn.Remote(database)
-
 	// Get the schema
-	if err := conn.With("as", schema.SchemaDef).Get(ctx, &s, schema.SchemaName(namespace)); err != nil {
+	conn := manager.conn.Remote(database)
+	var result schema.Schema
+	if err := conn.With("as", schema.SchemaDef).Get(ctx, &result, schema.SchemaName(namespace)); err != nil {
 		return nil, err
 	}
 
@@ -141,13 +175,22 @@ func (manager *Manager) DeleteSchema(ctx context.Context, database, namespace st
 	}
 
 	// Return success
-	return &s, nil
+	return &result, nil
 }
 
 // UpdateSchema modifies an existing schema's metadata including name, owner, and ACLs.
 // If meta.Name is provided and differs from namespace, the schema is renamed.
 // ACL changes are synchronized by revoking removed privileges and granting new ones.
-func (manager *Manager) UpdateSchema(ctx context.Context, database, namespace string, meta schema.SchemaMeta) (*schema.Schema, error) {
+func (manager *Manager) UpdateSchema(ctx context.Context, database, namespace string, meta schema.SchemaMeta) (_ *schema.Schema, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "UpdateSchema",
+		attribute.String("database", database),
+		attribute.String("namespace", namespace),
+		attribute.String("meta", types.Stringify(meta)),
+	)
+	defer func() { endSpan(err) }()
+
+	// Validate input
 	if database == "" {
 		return nil, pg.ErrBadParameter.With("database is empty")
 	}
@@ -155,11 +198,10 @@ func (manager *Manager) UpdateSchema(ctx context.Context, database, namespace st
 		return nil, pg.ErrBadParameter.With("namespace is empty")
 	}
 
-	var s schema.Schema
-	conn := manager.conn.Remote(database)
-
 	// Get the schema
-	if err := conn.With("as", schema.SchemaDef).Get(ctx, &s, schema.SchemaName(namespace)); err != nil {
+	var result schema.Schema
+	conn := manager.conn.Remote(database)
+	if err := conn.With("as", schema.SchemaDef).Get(ctx, &result, schema.SchemaName(namespace)); err != nil {
 		return nil, err
 	}
 
@@ -173,7 +215,7 @@ func (manager *Manager) UpdateSchema(ctx context.Context, database, namespace st
 	}
 
 	// Update the owner if provided and different
-	if meta.Owner != "" && s.Owner != meta.Owner {
+	if meta.Owner != "" && result.Owner != meta.Owner {
 		if err := conn.Update(ctx, nil, meta, meta); err != nil {
 			return nil, err
 		}
@@ -181,18 +223,18 @@ func (manager *Manager) UpdateSchema(ctx context.Context, database, namespace st
 
 	// Update ACL's
 	if meta.Acl != nil {
-		if err := manager.updateSchemaACLs(ctx, conn, meta.Name, s.Acl, meta.Acl); err != nil {
+		if err := manager.updateSchemaACLs(ctx, conn, meta.Name, result.Acl, meta.Acl); err != nil {
 			return nil, err
 		}
 	}
 
 	// Get the updated schema
-	if err := conn.With("as", schema.SchemaDef).Get(ctx, &s, schema.SchemaName(meta.Name)); err != nil {
+	if err := conn.With("as", schema.SchemaDef).Get(ctx, &result, schema.SchemaName(meta.Name)); err != nil {
 		return nil, err
 	}
 
 	// Return success
-	return &s, nil
+	return &result, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////

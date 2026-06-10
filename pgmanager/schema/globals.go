@@ -7,6 +7,7 @@ const (
 	DatabaseListLimit   = 50
 	ConnectionListLimit = 50
 	ExtensionListLimit  = 50
+	SchemaListLimit     = 50
 )
 
 const (
@@ -15,5 +16,6 @@ const (
 )
 
 const (
+	defaultSchema  = "public"
 	reservedPrefix = "pg_"
 )

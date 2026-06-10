@@ -19,6 +19,7 @@ import (
 type ClientCommands struct {
 	Ping PingCmd `cmd:"" name:"ping" help:"Ping the server." group:"STATUS"`
 	DatabaseClientCommands
+	SchemaClientCommands
 	ConnectionClientCommands
 	ExtensionClientCommands
 }
@@ -31,6 +32,10 @@ type DatabaseClientCommands struct {
 	DatabaseCreate DatabaseCreateCmd `cmd:"" name:"database-create" help:"Create a new database." group:"DATABASE"`
 	DatabaseDelete DatabaseDeleteCmd `cmd:"" name:"database-delete" help:"Delete a database." group:"DATABASE"`
 	DatabaseUpdate DatabaseUpdateCmd `cmd:"" name:"database-update" help:"Update a database." group:"DATABASE"`
+}
+
+type SchemaClientCommands struct {
+	SchemaList SchemaListCmd `cmd:"" name:"schemas" help:"List schemas." group:"SCHEMA"`
 }
 
 type ConnectionClientCommands struct {
@@ -65,6 +70,10 @@ type DatabaseDeleteCmd struct {
 type DatabaseUpdateCmd struct {
 	NewName string `flag:"" name:"name" help:"New name of the database."`
 	schema.DatabaseMeta
+}
+
+type SchemaListCmd struct {
+	schema.SchemaListRequest
 }
 
 type ConnectionListCmd struct {
@@ -116,13 +125,16 @@ func withClient(ctx server.Cmd, span string, fn func(context.Context, *httpclien
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// DATABASE COMMANDS
+// STATUS COMMANDS
 
 func (cmd *PingCmd) Run(ctx server.Cmd) error {
 	return withClient(ctx, "ping", func(ctx context.Context, client *httpclient.Client) error {
 		return client.Ping(ctx)
 	})
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// DATABASE COMMANDS
 
 func (cmd *DatabaseListCmd) Run(ctx server.Cmd) error {
 	// Set the width of the terminal
@@ -193,6 +205,36 @@ func (cmd *DatabaseUpdateCmd) Run(ctx server.Cmd) error {
 		}
 
 		fmt.Println(database)
+		return nil
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// SCHEMA COMMANDS
+
+func (cmd *SchemaListCmd) Run(ctx server.Cmd) error {
+	// Set the width of the terminal
+	width := ctx.IsTerm()
+
+	// Perform the request
+	return withClient(ctx, "schemas", func(ctx context.Context, client *httpclient.Client) error {
+		schemas, err := client.ListSchemas(ctx, cmd.SchemaListRequest)
+		if err != nil {
+			return err
+		}
+
+		// Schemas list table
+		table := tui.TableFor[schema.Schema](tui.SetWidth(width))
+		if _, err := table.Write(os.Stdout, schemas.Body...); err != nil {
+			return err
+		}
+
+		// Schemas list summary
+		summary := tui.TableSummary("schemas", uint(schemas.Count), schemas.Offset, schemas.Limit)
+		if _, err := summary.Write(os.Stdout); err != nil {
+			return err
+		}
+
 		return nil
 	})
 }

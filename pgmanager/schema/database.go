@@ -60,7 +60,7 @@ func (d DatabaseList) String() string {
 // TABLE
 
 func (r Database) Header() []string {
-	return []string{"Oid", "Name", "Owner", "Size"}
+	return []string{"Oid", "Name", "Owner", "Acl", "Size"}
 }
 
 func (r Database) Width(col int) int {
@@ -76,6 +76,11 @@ func (r Database) Cell(col int) string {
 	case 2:
 		return r.Owner
 	case 3:
+		if len(r.Acl) == 0 {
+			return ""
+		}
+		return fmt.Sprint(r.Acl)
+	case 4:
 		return fmt.Sprint(r.Size)
 	default:
 		return ""

@@ -1,7 +1,8 @@
 package schema
 
 import (
-	"encoding/json"
+	"fmt"
+	"net/url"
 	"strings"
 
 	// Packages
@@ -28,11 +29,12 @@ type Schema struct {
 }
 
 type SchemaListRequest struct {
-	Database *string `json:"database,omitempty" help:"Database"`
+	Database *string `json:"database,omitempty" arg:"" optional:"" help:"Database"`
 	pg.OffsetLimit
 }
 
 type SchemaList struct {
+	SchemaListRequest
 	Count uint64   `json:"count"`
 	Body  []Schema `json:"body,omitempty"`
 }
@@ -41,35 +43,66 @@ type SchemaList struct {
 // STRINGIFY
 
 func (s SchemaMeta) String() string {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(s)
 }
 
 func (s Schema) String() string {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(s)
 }
 
 func (s SchemaListRequest) String() string {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(s)
 }
 
 func (s SchemaList) String() string {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err.Error()
+	return types.Stringify(s)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (r Schema) Header() []string {
+	return []string{"Oid", "Database", "Schema", "Owner", "Acl", "Size"}
+}
+
+func (r Schema) Width(col int) int {
+	return 0
+}
+
+func (r Schema) Cell(col int) string {
+	switch col {
+	case 0:
+		return fmt.Sprint(r.Oid)
+	case 1:
+		return r.Database
+	case 2:
+		return r.Name
+	case 3:
+		return r.Owner
+	case 4:
+		if len(r.Acl) == 0 {
+			return ""
+		}
+		return fmt.Sprint(r.Acl)
+	case 5:
+		return fmt.Sprint(r.Size)
+	default:
+		return ""
 	}
-	return string(data)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+func (s SchemaListRequest) Query() url.Values {
+	q := url.Values{}
+	if s.Offset > 0 {
+		q.Set("offset", fmt.Sprint(s.Offset))
+	}
+	if s.Limit != nil {
+		q.Set("limit", fmt.Sprint(types.Value(s.Limit)))
+	}
+	return q
 }
 
 ////////////////////////////////////////////////////////////////////////////////

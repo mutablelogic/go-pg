@@ -44,6 +44,25 @@ func RegisterSettingHandlers(manager *manager.Manager, router *httprouter.Router
 				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.SettingCategoryList]()),
 			),
 		),
+		router.RegisterPath("setting/{setting}", nil, httprequest.NewPathItem("Settings", "Manage a PostgreSQL setting").
+			Get(
+				func(w http.ResponseWriter, r *http.Request) {
+					_ = GetSetting(w, r, manager, r.PathValue("setting"))
+				},
+				"Get a setting by name",
+				openapi.WithTags("Settings"),
+				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Setting]()),
+			).
+			Patch(
+				func(w http.ResponseWriter, r *http.Request) {
+					_ = UpdateSetting(w, r, manager, r.PathValue("setting"))
+				},
+				"Update a setting by name",
+				openapi.WithTags("Settings"),
+				openapi.WithJSONRequest(jsonschema.MustFor[schema.SettingMeta]()),
+				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Setting]()),
+			),
+		),
 	)
 }
 
@@ -67,5 +86,25 @@ func ListSettingCategories(w http.ResponseWriter, r *http.Request, manager *mana
 		return httpresponse.Error(w, pg.HTTPError(err))
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), categories)
+	}
+}
+
+func GetSetting(w http.ResponseWriter, r *http.Request, manager *manager.Manager, setting string) error {
+	if result, err := manager.GetSetting(r.Context(), setting); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err))
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), result)
+	}
+}
+
+func UpdateSetting(w http.ResponseWriter, r *http.Request, manager *manager.Manager, setting string) error {
+	var req schema.SettingMeta
+	if err := httprequest.Read(r, &req); err != nil {
+		return httpresponse.Error(w, httpresponse.ErrBadRequest.With(err.Error()))
+	}
+	if result, err := manager.UpdateSetting(r.Context(), setting, req); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err))
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), result)
 	}
 }

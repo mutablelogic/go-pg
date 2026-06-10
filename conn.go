@@ -224,14 +224,18 @@ func insert(ctx context.Context, conn pgx.Tx, bind *Bind, reader Reader, writer 
 }
 
 func update(ctx context.Context, conn pgx.Tx, bind *Bind, reader Reader, sel Selector, writer Writer) error {
-	query, err := sel.Select(bind, Update)
-	if err != nil {
-		return err
-	}
+	// Perform the update before the select, so we can choose the query
+	// based on the update
 	if writer != nil {
 		if err := writer.Update(bind); err != nil {
 			return err
 		}
+	}
+
+	// Now select the query based on the selector and operation
+	query, err := sel.Select(bind, Update)
+	if err != nil {
+		return err
 	}
 	return exec(ctx, conn, bind, query, reader)
 }

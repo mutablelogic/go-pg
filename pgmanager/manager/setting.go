@@ -98,6 +98,11 @@ func (manager *Manager) UpdateSetting(ctx context.Context, name string, meta sch
 		return nil, err
 	}
 
+	// Perform a reload
+	if err := manager.ReloadConfig(ctx); err != nil {
+		return nil, err
+	}
+
 	// Get and return the updated setting
 	return manager.GetSetting(ctx, name)
 }

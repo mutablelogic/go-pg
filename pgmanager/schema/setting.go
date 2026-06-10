@@ -212,9 +212,8 @@ func (m SettingMeta) Insert(_ *pg.Bind) (string, error) {
 }
 
 func (m SettingMeta) Update(bind *pg.Bind) error {
-	// Set value (nil means reset)
 	if m.Value != nil {
-		bind.Set("value", *m.Value)
+		bind.Set("value", types.Value(m.Value))
 	}
 	return nil
 }

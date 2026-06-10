@@ -59,6 +59,8 @@ type ExtensionClientCommands struct {
 type SettingClientCommands struct {
 	SettingList         SettingListCmd         `cmd:"" name:"settings" help:"List server settings." group:"SETTING"`
 	SettingCategoryList SettingCategoryListCmd `cmd:"" name:"categories" help:"List distinct setting categories." group:"SETTING"`
+	SettingGet          SettingGetCmd          `cmd:"" name:"setting" help:"Get setting details." group:"SETTING"`
+	SettingUpdate       SettingUpdateCmd       `cmd:"" name:"setting-update" help:"Update a setting." group:"SETTING"`
 }
 
 type DatabaseListCmd struct {
@@ -144,6 +146,15 @@ type SettingListCmd struct {
 
 type SettingCategoryListCmd struct {
 	schema.SettingCategoryListRequest
+}
+
+type SettingGetCmd struct {
+	Name string `arg:"" name:"name" help:"Name of the setting."`
+}
+
+type SettingUpdateCmd struct {
+	Name string `arg:"" name:"name" help:"Name of the setting."`
+	schema.SettingMeta
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -489,6 +500,30 @@ func (cmd *SettingCategoryListCmd) Run(ctx server.Cmd) error {
 			return err
 		}
 
+		return nil
+	})
+}
+
+func (cmd *SettingGetCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "setting", func(ctx context.Context, client *httpclient.Client) error {
+		setting, err := client.GetSetting(ctx, cmd.Name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(setting)
+		return nil
+	})
+}
+
+func (cmd *SettingUpdateCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "setting-update", func(ctx context.Context, client *httpclient.Client) error {
+		setting, err := client.UpdateSetting(ctx, cmd.Name, cmd.SettingMeta)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(setting)
 		return nil
 	})
 }

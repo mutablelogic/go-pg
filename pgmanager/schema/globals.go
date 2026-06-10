@@ -8,6 +8,7 @@ const (
 	ConnectionListLimit = 50
 	ExtensionListLimit  = 50
 	SchemaListLimit     = 50
+	SettingListLimit    = 50
 )
 
 const (

@@ -1,10 +1,13 @@
 package schema
 
 import (
-	"encoding/json"
 
 	// Packages
+	"fmt"
+	"net/url"
+
 	pg "github.com/mutablelogic/go-pg"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -37,6 +40,7 @@ type SettingListRequest struct {
 
 // SettingList contains the list of settings
 type SettingList struct {
+	SettingListRequest
 	Count uint64    `json:"count"`
 	Body  []Setting `json:"body,omitempty"`
 }
@@ -54,27 +58,70 @@ type SettingCategoryList struct {
 // STRINGIFY
 
 func (s Setting) String() string {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(s)
 }
 
 func (s SettingList) String() string {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(s)
 }
 
 func (s SettingCategoryList) String() string {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err.Error()
+	return types.Stringify(s)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (r Setting) Header() []string {
+	return []string{"Name", "Value", "Unit", "Category", "Context", "Description", "ExtraDesc"}
+}
+
+func (r Setting) Width(col int) int {
+	return 0
+}
+
+func (r Setting) Cell(col int) string {
+	switch col {
+	case 0:
+		return r.Name
+	case 1:
+		if r.Value == nil {
+			return ""
+		}
+		return *r.Value
+	case 2:
+		if r.Unit == nil {
+			return ""
+		}
+		return *r.Unit
+	case 3:
+		return r.Category
+	case 4:
+		return r.Context
+	case 5:
+		return r.Description
+	case 6:
+		return r.ExtraDesc
+	default:
+		return ""
 	}
-	return string(data)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+func (d SettingListRequest) Query() url.Values {
+	q := url.Values{}
+	if d.Offset > 0 {
+		q.Set("offset", fmt.Sprint(d.Offset))
+	}
+	if d.Limit != nil {
+		q.Set("limit", fmt.Sprint(types.Value(d.Limit)))
+	}
+	if d.Category != nil {
+		q.Set("category", *d.Category)
+	}
+	return q
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -22,6 +22,7 @@ type ClientCommands struct {
 	SchemaClientCommands
 	ConnectionClientCommands
 	ExtensionClientCommands
+	SettingClientCommands
 }
 
 type PingCmd struct{}
@@ -53,6 +54,10 @@ type ExtensionClientCommands struct {
 	ExtensionGet    ExtensionGetCmd    `cmd:"" name:"extension" help:"Get extension details." group:"EXTENSION"`
 	ExtensionCreate ExtensionCreateCmd `cmd:"" name:"extension-install" help:"Install an extension into a database schema." group:"EXTENSION"`
 	ExtensionDelete ExtensionDeleteCmd `cmd:"" name:"extension-remove" help:"Remove an extension from one or more database schemas." group:"EXTENSION"`
+}
+
+type SettingClientCommands struct {
+	SettingList SettingListCmd `cmd:"" name:"settings" help:"List server settings." group:"SETTING"`
 }
 
 type DatabaseListCmd struct {
@@ -130,6 +135,10 @@ type ExtensionCreateCmd struct {
 type ExtensionDeleteCmd struct {
 	Name    string `arg:"" name:"name" help:"Name of the extension."`
 	Cascade bool   `flag:"" name:"cascade" help:"Cascade option."`
+}
+
+type SettingListCmd struct {
+	schema.SettingListRequest
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -412,6 +421,36 @@ func (cmd *ExtensionCreateCmd) Run(ctx server.Cmd) error {
 		}
 
 		fmt.Println(extension)
+		return nil
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// SETTING COMMANDS
+
+func (cmd *SettingListCmd) Run(ctx server.Cmd) error {
+	// Set the width of the terminal
+	width := ctx.IsTerm()
+
+	// Perform the request
+	return withClient(ctx, "settings", func(ctx context.Context, client *httpclient.Client) error {
+		settings, err := client.ListSettings(ctx, cmd.SettingListRequest)
+		if err != nil {
+			return err
+		}
+
+		// Settings list table
+		table := tui.TableFor[schema.Setting](tui.SetWidth(width))
+		if _, err := table.Write(os.Stdout, settings.Body...); err != nil {
+			return err
+		}
+
+		// Settings list summary
+		summary := tui.TableSummary("settings", uint(settings.Count), settings.Offset, settings.Limit)
+		if _, err := summary.Write(os.Stdout); err != nil {
+			return err
+		}
+
 		return nil
 	})
 }

@@ -63,11 +63,7 @@ func ListSettings(w http.ResponseWriter, r *http.Request, manager *manager.Manag
 }
 
 func ListSettingCategories(w http.ResponseWriter, r *http.Request, manager *manager.Manager) error {
-	var req schema.SettingCategoryListRequest
-	if err := httprequest.Query(r.URL.Query(), &req); err != nil {
-		return httpresponse.Error(w, httpresponse.ErrBadRequest.With(err.Error()))
-	}
-	if categories, err := manager.ListSettingCategories(r.Context(), req); err != nil {
+	if categories, err := manager.ListSettingCategories(r.Context(), schema.SettingCategoryListRequest{}); err != nil {
 		return httpresponse.Error(w, pg.HTTPError(err))
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), categories)

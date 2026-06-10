@@ -57,7 +57,8 @@ type ExtensionClientCommands struct {
 }
 
 type SettingClientCommands struct {
-	SettingList SettingListCmd `cmd:"" name:"settings" help:"List server settings." group:"SETTING"`
+	SettingList         SettingListCmd         `cmd:"" name:"settings" help:"List server settings." group:"SETTING"`
+	SettingCategoryList SettingCategoryListCmd `cmd:"" name:"categories" help:"List distinct setting categories." group:"SETTING"`
 }
 
 type DatabaseListCmd struct {
@@ -139,6 +140,10 @@ type ExtensionDeleteCmd struct {
 
 type SettingListCmd struct {
 	schema.SettingListRequest
+}
+
+type SettingCategoryListCmd struct {
+	schema.SettingCategoryListRequest
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -447,6 +452,39 @@ func (cmd *SettingListCmd) Run(ctx server.Cmd) error {
 
 		// Settings list summary
 		summary := tui.TableSummary("settings", uint(settings.Count), settings.Offset, settings.Limit)
+		if _, err := summary.Write(os.Stdout); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func (cmd *SettingCategoryListCmd) Run(ctx server.Cmd) error {
+	// Set the width of the terminal
+	width := ctx.IsTerm()
+
+	// Perform the request
+	return withClient(ctx, "setting-categories", func(ctx context.Context, client *httpclient.Client) error {
+		categories, err := client.ListSettingCategories(ctx, cmd.SettingCategoryListRequest)
+		if err != nil {
+			return err
+		}
+
+		// Comvert string to schema.CategoryName for table rendering
+		categoryNames := make([]schema.CategoryName, len(categories.Body))
+		for i, category := range categories.Body {
+			categoryNames[i] = schema.CategoryName(category)
+		}
+
+		// Categories list table
+		table := tui.TableFor[schema.CategoryName](tui.SetWidth(width))
+		if _, err := table.Write(os.Stdout, categoryNames...); err != nil {
+			return err
+		}
+
+		// Categories list summary
+		summary := tui.TableSummary("categories", uint(categories.Count), 0, nil)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}

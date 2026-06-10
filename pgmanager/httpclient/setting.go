@@ -21,3 +21,13 @@ func (c *Client) ListSettings(ctx context.Context, req schema.SettingListRequest
 	// Return the responses
 	return types.Ptr(response), nil
 }
+
+func (c *Client) ListSettingCategories(ctx context.Context, req schema.SettingCategoryListRequest) (*schema.SettingCategoryList, error) {
+	var response schema.SettingCategoryList
+	if err := c.DoWithContext(ctx, client.MethodGet, &response, client.OptPath("setting", "category"), client.OptQuery(req.Query())); err != nil {
+		return nil, err
+	}
+
+	// Return the responses
+	return types.Ptr(response), nil
+}

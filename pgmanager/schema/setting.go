@@ -16,6 +16,9 @@ import (
 // SettingName is a setting name identifier
 type SettingName string
 
+// CategoryName is a setting category identifier
+type CategoryName string
+
 // SettingMeta represents the mutable parts of a setting
 type SettingMeta struct {
 	Value *string `json:"value"`
@@ -107,6 +110,23 @@ func (r Setting) Cell(col int) string {
 	}
 }
 
+func (r CategoryName) Header() []string {
+	return []string{"Category"}
+}
+
+func (r CategoryName) Width(col int) int {
+	return 0
+}
+
+func (r CategoryName) Cell(col int) string {
+	switch col {
+	case 0:
+		return string(r)
+	default:
+		return ""
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // QUERY
 
@@ -122,6 +142,10 @@ func (d SettingListRequest) Query() url.Values {
 		q.Set("category", *d.Category)
 	}
 	return q
+}
+
+func (d SettingCategoryListRequest) Query() url.Values {
+	return url.Values{}
 }
 
 ///////////////////////////////////////////////////////////////////////////////

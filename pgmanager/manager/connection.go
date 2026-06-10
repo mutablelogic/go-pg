@@ -25,7 +25,7 @@ func (manager *Manager) ListConnections(ctx context.Context, req schema.Connecti
 
 	// List connections
 	var result schema.ConnectionList
-	if err := manager.conn.List(ctx, &result, req); err != nil {
+	if err := manager.conn.List(ctx, &result, &req); err != nil {
 		return nil, err
 	}
 

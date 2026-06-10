@@ -31,7 +31,7 @@ func (manager *Manager) ListExtensions(ctx context.Context, req schema.Extension
 	var result schema.ExtensionList
 	if database := strings.TrimSpace(types.Value(req.Database)); database != "" {
 		// Query specific database via Remote
-		if err := manager.conn.Remote(database).With("as", schema.ExtensionDef).List(ctx, &result, req); err != nil {
+		if err := manager.conn.Remote(database).With("as", schema.ExtensionDef).List(ctx, &result, &req); err != nil {
 			return nil, err
 		}
 
@@ -41,7 +41,7 @@ func (manager *Manager) ListExtensions(ctx context.Context, req schema.Extension
 		}
 	} else {
 		// No database specified - query directly for cluster-wide available extensions
-		if err := manager.conn.List(ctx, &result, req); err != nil {
+		if err := manager.conn.List(ctx, &result, &req); err != nil {
 			return nil, err
 		}
 	}

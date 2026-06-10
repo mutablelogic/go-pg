@@ -121,7 +121,7 @@ func (r Connection) Cell(col int) string {
 ////////////////////////////////////////////////////////////////////////////////
 // SELECT
 
-func (c ConnectionListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (c *ConnectionListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Where
 	bind.Del("where")
 	if c.Database != nil {

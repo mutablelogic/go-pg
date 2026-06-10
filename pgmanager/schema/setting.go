@@ -151,7 +151,7 @@ func (d SettingCategoryListRequest) Query() url.Values {
 ///////////////////////////////////////////////////////////////////////////////
 // SELECT
 
-func (r SettingListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (r *SettingListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Set empty where
 	bind.Set("where", "")
 	bind.Set("orderby", "ORDER BY category, name")

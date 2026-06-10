@@ -104,7 +104,7 @@ func (d DatabaseListRequest) Query() url.Values {
 ////////////////////////////////////////////////////////////////////////////////
 // SELECT
 
-func (d DatabaseListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (d *DatabaseListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Set empty where
 	bind.Set("where", "")
 	bind.Set("orderby", "ORDER BY name ASC")

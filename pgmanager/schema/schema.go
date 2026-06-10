@@ -108,7 +108,7 @@ func (s SchemaListRequest) Query() url.Values {
 ////////////////////////////////////////////////////////////////////////////////
 // SELECT
 
-func (d SchemaListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (d *SchemaListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Order
 	bind.Set("orderby", `ORDER BY name ASC`)
 

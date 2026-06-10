@@ -27,7 +27,7 @@ func (manager *Manager) ListDatabases(ctx context.Context, req schema.DatabaseLi
 
 	// List databases
 	var result schema.DatabaseList
-	if err := manager.conn.List(ctx, &result, req); err != nil {
+	if err := manager.conn.List(ctx, &result, &req); err != nil {
 		return nil, err
 	}
 

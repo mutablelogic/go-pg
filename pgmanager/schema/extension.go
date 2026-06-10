@@ -128,7 +128,7 @@ func (r Extension) Cell(col int) string {
 ////////////////////////////////////////////////////////////////////////////////
 // SELECT
 
-func (e ExtensionListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (e *ExtensionListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	if op != pg.List {
 		return "", pg.ErrNotImplemented.Withf("operation %q", op)
 	}

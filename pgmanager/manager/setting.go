@@ -23,7 +23,7 @@ func (manager *Manager) ListSettings(ctx context.Context, req schema.SettingList
 	defer func() { endSpan(err) }()
 
 	var result schema.SettingList
-	if err := manager.conn.List(ctx, &result, req); err != nil {
+	if err := manager.conn.List(ctx, &result, &req); err != nil {
 		return nil, err
 	}
 

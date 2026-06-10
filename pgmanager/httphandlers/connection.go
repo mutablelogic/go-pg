@@ -27,6 +27,8 @@ type ConnectionPathParams struct {
 // LIFECYCLE
 
 func RegisterConnectionHandlers(manager *manager.Manager, router *httprouter.Router) error {
+	router.Spec().AddTag("Connections", "Cluster Connection Operations")
+
 	return errors.Join(
 		router.RegisterPath("connection", nil, httprequest.NewPathItem("Connections", "Manage PostgreSQL connections").
 			Get(

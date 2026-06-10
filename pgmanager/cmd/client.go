@@ -35,7 +35,11 @@ type DatabaseClientCommands struct {
 }
 
 type SchemaClientCommands struct {
-	SchemaList SchemaListCmd `cmd:"" name:"schemas" help:"List schemas." group:"SCHEMA"`
+	SchemaList   SchemaListCmd   `cmd:"" name:"schemas" help:"List schemas." group:"SCHEMA"`
+	SchemaGet    SchemaGetCmd    `cmd:"" name:"schema" help:"Get schema details." group:"SCHEMA"`
+	SchemaCreate SchemaCreateCmd `cmd:"" name:"schema-create" help:"Create a new schema in a database." group:"SCHEMA"`
+	SchemaDelete SchemaDeleteCmd `cmd:"" name:"schema-delete" help:"Delete a schema from a database." group:"SCHEMA"`
+	SchemaUpdate SchemaUpdateCmd `cmd:"" name:"schema-update" help:"Update a schema in a database." group:"SCHEMA"`
 }
 
 type ConnectionClientCommands struct {
@@ -74,6 +78,28 @@ type DatabaseUpdateCmd struct {
 
 type SchemaListCmd struct {
 	schema.SchemaListRequest
+}
+
+type SchemaGetCmd struct {
+	Database  string `arg:"" name:"database" help:"Name of the database."`
+	Namespace string `arg:"" name:"schema" help:"Name of the schema."`
+}
+
+type SchemaCreateCmd struct {
+	Database string `arg:"" name:"database" help:"Name of the database."`
+	schema.SchemaMeta
+}
+
+type SchemaDeleteCmd struct {
+	Database  string `arg:"" name:"database" help:"Name of the database."`
+	Namespace string `arg:"" name:"schema" help:"Name of the schema."`
+	Force     bool   `flag:"" name:"force" help:"Force deletion of the schema."`
+}
+
+type SchemaUpdateCmd struct {
+	Database     string `arg:"" name:"database" help:"Name of the database."`
+	NewNamespace string `flag:"" name:"schema" help:"New name of the schema."`
+	schema.SchemaMeta
 }
 
 type ConnectionListCmd struct {
@@ -235,6 +261,55 @@ func (cmd *SchemaListCmd) Run(ctx server.Cmd) error {
 			return err
 		}
 
+		return nil
+	})
+}
+
+func (cmd *SchemaGetCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "schema", func(ctx context.Context, client *httpclient.Client) error {
+		schema, err := client.GetSchema(ctx, cmd.Database, cmd.Namespace)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(schema)
+		return nil
+	})
+}
+
+func (cmd *SchemaCreateCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "schema-create", func(ctx context.Context, client *httpclient.Client) error {
+		schema, err := client.CreateSchema(ctx, cmd.Database, cmd.SchemaMeta)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(schema)
+		return nil
+	})
+}
+
+func (cmd *SchemaDeleteCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "schema-delete", func(ctx context.Context, client *httpclient.Client) error {
+		if _, err := client.DeleteSchema(ctx, cmd.Database, cmd.Namespace, cmd.Force); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func (cmd *SchemaUpdateCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "schema-update", func(ctx context.Context, client *httpclient.Client) error {
+		// We swap the name in the meta with the new name
+		cmd.Name, cmd.NewNamespace = cmd.NewNamespace, cmd.Name
+
+		// Perform the update
+		schema, err := client.UpdateSchema(ctx, cmd.Database, cmd.NewNamespace, cmd.SchemaMeta)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(schema)
 		return nil
 	})
 }

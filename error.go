@@ -44,14 +44,15 @@ const (
 )
 
 const (
-	sqlStateUniqueViolation           = "23505"
-	sqlStateForeignKeyViolation       = "23503"
-	sqlStateNotNullViolation          = "23502"
-	sqlStateCheckViolation            = "23514"
-	sqlStateInvalidTextRepresentation = "22P02"
-	sqlStateInvalidDatetimeFormat     = "22007"
-	sqlStateDatetimeFieldOverflow     = "22008"
-	sqlStateUndefinedObject           = "42704"
+	sqlStateUniqueViolation            = "23505"
+	sqlStateForeignKeyViolation        = "23503"
+	sqlStateNotNullViolation           = "23502"
+	sqlStateCheckViolation             = "23514"
+	sqlStateInvalidTextRepresentation  = "22P02"
+	sqlStateInvalidDatetimeFormat      = "22007"
+	sqlStateDatetimeFieldOverflow      = "22008"
+	sqlStateUndefinedObject            = "42704"
+	sqlStateDependentObjectsStillExist = "2BP01"
 )
 
 // Error returns the string representation of the error.
@@ -248,6 +249,8 @@ func newDatabaseError(err *pgconn.PgError) error {
 		kinds = append(kinds, ErrBadParameter, ErrDatetimeFieldOverflow)
 	case sqlStateUndefinedObject:
 		kinds = append(kinds, ErrBadParameter, ErrNotFound)
+	case sqlStateDependentObjectsStillExist:
+		kinds = append(kinds, ErrConflict)
 	}
 
 	return &DatabaseError{

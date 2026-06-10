@@ -17,6 +17,8 @@ import (
 // LIFECYCLE
 
 func RegisterStatusHandlers(manager *manager.Manager, router *httprouter.Router) error {
+	router.Spec().AddTag("Status", "Cluster Status Operations")
+
 	return errors.Join(
 		// Register Ping Handler
 		router.RegisterPath("health", nil, httprequest.NewPathItem("Health", "Determine the health of the PostgreSQL server").

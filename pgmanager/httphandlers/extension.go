@@ -31,6 +31,8 @@ type ExtensionDeleteQueryParams struct {
 // LIFECYCLE
 
 func RegisterExtensionHandlers(manager *manager.Manager, router *httprouter.Router) error {
+	router.Spec().AddTag("Extensions", "Database Extension Operations")
+
 	return errors.Join(
 		router.RegisterPath("extension", nil, httprequest.NewPathItem("Extensions", "Manage PostgreSQL extensions").
 			Get(

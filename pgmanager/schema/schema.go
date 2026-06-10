@@ -16,7 +16,7 @@ import (
 type SchemaName string
 
 type SchemaMeta struct {
-	Name  string  `json:"name,omitempty" arg:"" help:"Name"`
+	Name  string  `json:"schema,omitempty" arg:"" help:"Schema name"`
 	Owner string  `json:"owner,omitempty" help:"Owner"`
 	Acl   ACLList `json:"acl,omitempty" help:"Access privileges"`
 }

@@ -15,7 +15,6 @@ import (
 // PUBLIC METHODS
 
 func (c *Client) ListDatabases(ctx context.Context, req schema.DatabaseListRequest) (*schema.DatabaseList, error) {
-	// Perform request
 	var response schema.DatabaseList
 	if err := c.DoWithContext(ctx, client.MethodGet, &response, client.OptPath("database"), client.OptQuery(req.Query())); err != nil {
 		return nil, err
@@ -26,11 +25,8 @@ func (c *Client) ListDatabases(ctx context.Context, req schema.DatabaseListReque
 }
 
 func (c *Client) GetDatabase(ctx context.Context, name string) (*schema.Database, error) {
-	req := client.NewRequest()
-
-	// Perform request
 	var response schema.Database
-	if err := c.DoWithContext(ctx, req, &response, client.OptPath("database", name)); err != nil {
+	if err := c.DoWithContext(ctx, client.MethodGet, &response, client.OptPath("database", name)); err != nil {
 		return nil, err
 	}
 

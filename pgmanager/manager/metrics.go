@@ -20,6 +20,7 @@ func (manager *Manager) RegisterDatabaseMetrics(name string) error {
 	); err != nil {
 		return pg.ErrInternalServerError.With("RegisterDatabaseMetrics: %w", err)
 	} else if _, err := manager.metrics.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
+		// TODO: Paginate through databases
 		databases, err := manager.ListDatabases(ctx, schema.DatabaseListRequest{})
 		if err != nil {
 			return pg.ErrInternalServerError.With("RegisterDatabaseMetrics: %w", err)
@@ -40,12 +41,41 @@ func (manager *Manager) RegisterDatabaseMetrics(name string) error {
 	return nil
 }
 
+func (manager *Manager) RegisterSchemaMetrics(name string) error {
+	if guage, err := manager.metrics.Int64ObservableGauge(
+		name, metric.WithDescription("Size of schema in bytes"),
+	); err != nil {
+		return pg.ErrInternalServerError.With("RegisterSchemaMetrics: %w", err)
+	} else if _, err := manager.metrics.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
+		// TODO: Paginate through schemas
+		schemas, err := manager.ListSchemas(ctx, schema.SchemaListRequest{})
+		if err != nil {
+			return pg.ErrInternalServerError.With("RegisterSchemaMetrics: %w", err)
+		}
+		for _, schema := range schemas.Body {
+			observer.ObserveInt64(guage, int64(schema.Size), metric.WithAttributes(
+				attribute.String("cluster", manager.cluster),
+				attribute.String("database", schema.Database),
+				attribute.String("schema", schema.Name),
+				attribute.Int64("oid", int64(schema.Oid)),
+			))
+		}
+		return nil
+	}, guage); err != nil {
+		return pg.ErrInternalServerError.With("RegisterSchemaMetrics: %w", err)
+	}
+
+	// Return success
+	return nil
+}
+
 func (manager *Manager) RegisterConnectionMetrics(name string) error {
 	if guage, err := manager.metrics.Int64ObservableGauge(
 		name, metric.WithDescription("Number of active connections"),
 	); err != nil {
 		return pg.ErrInternalServerError.With("RegisterConnectionMetrics: %w", err)
 	} else if _, err := manager.metrics.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
+		// TODO: Paginate through connections
 		connections, err := manager.ListConnections(ctx, schema.ConnectionListRequest{})
 		if err != nil {
 			return pg.ErrInternalServerError.With("RegisterConnectionMetrics: %w", err)

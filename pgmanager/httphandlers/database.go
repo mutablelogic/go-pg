@@ -30,6 +30,8 @@ type ForceQueryParams struct {
 // LIFECYCLE
 
 func RegisterDatabaseHandlers(manager *manager.Manager, router *httprouter.Router) error {
+	router.Spec().AddTag("Databases", "Database Operations")
+
 	return errors.Join(
 		router.RegisterPath("database", nil, httprequest.NewPathItem("Databases", "Manage PostgreSQL databases").
 			Get(

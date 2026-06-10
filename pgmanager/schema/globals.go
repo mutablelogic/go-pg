@@ -6,6 +6,7 @@ package schema
 const (
 	DatabaseListLimit   = 50
 	ConnectionListLimit = 50
+	ExtensionListLimit  = 50
 )
 
 const (

@@ -20,6 +20,7 @@ type ClientCommands struct {
 	Ping PingCmd `cmd:"" name:"ping" help:"Ping the server." group:"STATUS"`
 	DatabaseClientCommands
 	ConnectionClientCommands
+	ExtensionClientCommands
 }
 
 type PingCmd struct{}
@@ -36,6 +37,10 @@ type ConnectionClientCommands struct {
 	ConnectionList   ConnectionListCmd   `cmd:"" name:"connections" help:"List connections." group:"CONNECTION"`
 	ConnectionGet    ConnectionGetCmd    `cmd:"" name:"connection" help:"Get connection details." group:"CONNECTION"`
 	ConnectionDelete ConnectionDeleteCmd `cmd:"" name:"connection-delete" help:"Delete a connection." group:"CONNECTION"`
+}
+
+type ExtensionClientCommands struct {
+	ExtensionList ExtensionListCmd `cmd:"" name:"extensions" help:"List extensions." group:"EXTENSION"`
 }
 
 type DatabaseListCmd struct {
@@ -69,6 +74,10 @@ type ConnectionGetCmd struct {
 
 type ConnectionDeleteCmd struct {
 	Pid uint64 `arg:"" name:"pid" help:"PID of the connection."`
+}
+
+type ExtensionListCmd struct {
+	schema.ExtensionListRequest
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -216,5 +225,35 @@ func (cmd *ConnectionGetCmd) Run(ctx server.Cmd) error {
 func (cmd *ConnectionDeleteCmd) Run(ctx server.Cmd) error {
 	return withClient(ctx, "connection-delete", func(ctx context.Context, client *httpclient.Client) error {
 		return client.DeleteConnection(ctx, cmd.Pid)
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// EXTENSION COMMANDS
+
+func (cmd *ExtensionListCmd) Run(ctx server.Cmd) error {
+	// Set the width of the terminal
+	width := ctx.IsTerm()
+
+	// Perform the request
+	return withClient(ctx, "extensions", func(ctx context.Context, client *httpclient.Client) error {
+		extensions, err := client.ListExtensions(ctx, cmd.ExtensionListRequest)
+		if err != nil {
+			return err
+		}
+
+		// Extensions list table
+		table := tui.TableFor[schema.Extension](tui.SetWidth(width))
+		if _, err := table.Write(os.Stdout, extensions.Body...); err != nil {
+			return err
+		}
+
+		// Extensions list summary
+		summary := tui.TableSummary("extensions", uint(extensions.Count), extensions.Offset, extensions.Limit)
+		if _, err := summary.Write(os.Stdout); err != nil {
+			return err
+		}
+
+		return nil
 	})
 }

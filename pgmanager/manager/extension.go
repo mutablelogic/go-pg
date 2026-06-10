@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	// Packages
@@ -77,6 +78,36 @@ func (manager *Manager) GetExtension(ctx context.Context, name string) (_ *schem
 	return &ext, nil
 }
 
+func (manager *Manager) GetInstalledExtension(ctx context.Context, name, database string) (_ *schema.Extension, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "GetInstalledExtension",
+		attribute.String("name", name),
+		attribute.String("database", database),
+	)
+	defer func() { endSpan(err) }()
+
+	// Validate input
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, pg.ErrBadParameter.With("name is empty")
+	}
+	database = strings.TrimSpace(database)
+	if database == "" {
+		return nil, pg.ErrBadParameter.With("database is empty")
+	}
+
+	// Query the specific database for the extension
+	var ext schema.Extension
+	if err := manager.conn.Remote(database).With("as", schema.ExtensionDef).Get(ctx, &ext, schema.ExtensionName(name)); err != nil {
+		return nil, err
+	} else {
+		ext.Database = database
+	}
+
+	// Return success
+	return &ext, nil
+}
+
 // CreateExtension installs an extension in a database.
 // The Database field in meta specifies which database to install into.
 // If cascade is true, dependent extensions are also installed.
@@ -98,14 +129,19 @@ func (manager *Manager) CreateExtension(ctx context.Context, meta schema.Extensi
 		return nil, pg.ErrBadParameter.With("name is empty")
 	}
 
-	// Create the extension
+	// Check for extension existence first to avoid creating an extension that already exists
+	var ext schema.Extension
 	conn := manager.conn.Remote(database).With("cascade", cascade)
+	if err := conn.With("as", schema.ExtensionDef).Get(ctx, &ext, schema.ExtensionName(name)); errors.Is(err, pg.ErrNotFound) == false {
+		return nil, pg.ErrConflict.Withf("extension %q already exists in database %q", name, database)
+	}
+
+	// Create the extension
 	if err := conn.Insert(ctx, nil, meta); err != nil {
 		return nil, err
 	}
 
 	// Get the extension
-	var ext schema.Extension
 	if err := conn.With("as", schema.ExtensionDef).Get(ctx, &ext, schema.ExtensionName(name)); err != nil {
 		return nil, err
 	} else {

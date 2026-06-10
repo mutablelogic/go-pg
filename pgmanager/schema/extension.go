@@ -20,7 +20,7 @@ type ExtensionMeta struct {
 	Database string `json:"database,omitempty" help:"Database to install extension into"`
 	Schema   string `json:"schema,omitempty" help:"Schema to install extension into"`
 	Owner    string `json:"owner,omitempty"`
-	Version  string `json:"version,omitempty" help:"Extension version"`
+	Version  string `json:"version,omitempty" name:"ver" help:"Extension version"`
 }
 
 type Extension struct {

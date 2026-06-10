@@ -40,7 +40,10 @@ type ConnectionClientCommands struct {
 }
 
 type ExtensionClientCommands struct {
-	ExtensionList ExtensionListCmd `cmd:"" name:"extensions" help:"List extensions." group:"EXTENSION"`
+	ExtensionList   ExtensionListCmd   `cmd:"" name:"extensions" help:"List extensions." group:"EXTENSION"`
+	ExtensionGet    ExtensionGetCmd    `cmd:"" name:"extension" help:"Get extension details." group:"EXTENSION"`
+	ExtensionCreate ExtensionCreateCmd `cmd:"" name:"extension-install" help:"Install an extension into a database schema." group:"EXTENSION"`
+	ExtensionDelete ExtensionDeleteCmd `cmd:"" name:"extension-remove" help:"Remove an extension from one or more database schemas." group:"EXTENSION"`
 }
 
 type DatabaseListCmd struct {
@@ -78,6 +81,20 @@ type ConnectionDeleteCmd struct {
 
 type ExtensionListCmd struct {
 	schema.ExtensionListRequest
+}
+
+type ExtensionGetCmd struct {
+	Name string `arg:"" name:"name" help:"Name of the extension."`
+}
+
+type ExtensionCreateCmd struct {
+	schema.ExtensionMeta
+	Cascade bool `flag:"" name:"cascade" help:"Cascade option."`
+}
+
+type ExtensionDeleteCmd struct {
+	Name    string `arg:"" name:"name" help:"Name of the extension."`
+	Cascade bool   `flag:"" name:"cascade" help:"Cascade option."`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -254,6 +271,30 @@ func (cmd *ExtensionListCmd) Run(ctx server.Cmd) error {
 			return err
 		}
 
+		return nil
+	})
+}
+
+func (cmd *ExtensionGetCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "extension", func(ctx context.Context, client *httpclient.Client) error {
+		extension, err := client.GetExtension(ctx, cmd.Name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(extension)
+		return nil
+	})
+}
+
+func (cmd *ExtensionCreateCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "extension-install", func(ctx context.Context, client *httpclient.Client) error {
+		extension, err := client.CreateExtension(ctx, cmd.ExtensionMeta, cmd.Cascade)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(extension)
 		return nil
 	})
 }

@@ -51,7 +51,6 @@ func RegisterDatabaseHandlers(manager *manager.Manager, router *httprouter.Route
 				openapi.WithJSONResponse(http.StatusCreated, jsonschema.MustFor[schema.Database]()),
 			),
 		),
-
 		router.RegisterPath("database/{database}", jsonschema.MustFor[DatabasePathParams](), httprequest.NewPathItem("Database", "Manage a PostgreSQL database").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {

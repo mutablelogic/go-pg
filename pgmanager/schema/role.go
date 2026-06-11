@@ -1,0 +1,423 @@
+package schema
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+
+	// Packages
+	pg "github.com/mutablelogic/go-pg"
+	types "github.com/mutablelogic/go-server/pkg/types"
+)
+
+////////////////////////////////////////////////////////////////////////////////
+// TYPES
+
+type RoleName string
+
+type RoleMeta struct {
+	Name                   string     `json:"name,omitempty" arg:"" help:"Role name"`
+	Superuser              *bool      `json:"super,omitempty" name:"super" help:"Superuser permission" negatable:""`
+	Inherit                *bool      `json:"inherit,omitempty" help:"Inherit permissions" negatable:""`
+	CreateRoles            *bool      `json:"createrole,omitempty" help:"Create roles permission" negatable:""`
+	CreateDatabases        *bool      `json:"createdb,omitempty" help:"Create databases permission" negatable:""`
+	Replication            *bool      `json:"replication,omitempty" help:"Replication permission" negatable:""`
+	ConnectionLimit        *uint64    `json:"conlimit,omitempty" help:"Connection limit"`
+	BypassRowLevelSecurity *bool      `json:"bypassrls,omitempty" help:"Bypass row-level security" negatable:""`
+	Login                  *bool      `json:"login,omitempty" help:"Login permission" negatable:""`
+	Password               *string    `json:"password,omitempty" help:"Password"`
+	Expires                *time.Time `json:"expires,omitzero" help:"Password expiration"`
+	Groups                 []string   `json:"memberof,omitempty" help:"Group memberships"`
+}
+
+type Role struct {
+	Oid uint32 `json:"oid"`
+	RoleMeta
+}
+
+type RoleListRequest struct {
+	pg.OffsetLimit
+}
+
+type RoleList struct {
+	RoleListRequest
+	Count uint64 `json:"count"`
+	Body  []Role `json:"body,omitempty"`
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// STRINGIFY
+
+func (r Role) String() string {
+	return types.Stringify(r)
+}
+
+func (r RoleMeta) String() string {
+	return types.Stringify(r)
+}
+
+func (r RoleList) String() string {
+	return types.Stringify(r)
+}
+
+func (r RoleListRequest) String() string {
+	return types.Stringify(r)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (r Role) Header() []string {
+	return []string{"Oid", "Name", "Attributes", "ConnectionLimit", "Expires", "Groups"}
+}
+
+func (r Role) Width(col int) int {
+	return 0
+}
+
+func (r Role) Cell(col int) string {
+	switch col {
+	case 0:
+		return fmt.Sprint(r.Oid)
+	case 1:
+		return r.Name
+	case 2:
+		var attr []string
+		if r.Superuser != nil && *r.Superuser {
+			attr = append(attr, "SUPERUSER")
+		}
+		if r.Inherit != nil && *r.Inherit {
+			attr = append(attr, "INHERIT")
+		}
+		if r.CreateRoles != nil && *r.CreateRoles {
+			attr = append(attr, "CREATEROLE")
+		}
+		if r.CreateDatabases != nil && *r.CreateDatabases {
+			attr = append(attr, "CREATEDB")
+		}
+		if r.Replication != nil && *r.Replication {
+			attr = append(attr, "REPLICATION")
+		}
+		if r.BypassRowLevelSecurity != nil && *r.BypassRowLevelSecurity {
+			attr = append(attr, "BYPASSRLS")
+		}
+		if r.Login != nil && *r.Login {
+			attr = append(attr, "LOGIN")
+		}
+		return strings.Join(attr, " ")
+	case 3:
+		if r.ConnectionLimit == nil {
+			return ""
+		}
+		return fmt.Sprint(*r.ConnectionLimit)
+	case 4:
+		if r.Expires == nil {
+			return ""
+		}
+		return r.Expires.Format(time.RFC3339)
+	case 5:
+		return strings.Join(r.Groups, ", ")
+	default:
+		return ""
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+func (d RoleListRequest) Query() url.Values {
+	q := url.Values{}
+	if d.Offset > 0 {
+		q.Set("offset", fmt.Sprint(d.Offset))
+	}
+	if d.Limit != nil {
+		q.Set("limit", fmt.Sprint(types.Value(d.Limit)))
+	}
+	return q
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS
+
+// RevokeGroupMembership revokes group membership from a role.
+// Both group and member must be valid role names.
+func RevokeGroupMembership(ctx context.Context, conn pg.Conn, group, member string) error {
+	if group == "" || member == "" {
+		return pg.ErrBadParameter.With("group and member are required")
+	}
+	if !types.IsIdentifier(group) || !types.IsIdentifier(member) {
+		return pg.ErrBadParameter.With("invalid group or member name")
+	}
+	return conn.Exec(ctx, fmt.Sprintf("REVOKE %s FROM %s", types.DoubleQuote(group), types.DoubleQuote(member)))
+}
+
+// GrantGroupMembership grants group membership to a role.
+// Both group and member must be valid role names.
+func GrantGroupMembership(ctx context.Context, conn pg.Conn, group, member string) error {
+	if group == "" || member == "" {
+		return pg.ErrBadParameter.With("group and member are required")
+	}
+	if !types.IsIdentifier(group) || !types.IsIdentifier(member) {
+		return pg.ErrBadParameter.With("invalid group or member name")
+	}
+	return conn.Exec(ctx, fmt.Sprintf("GRANT %s TO %s", types.DoubleQuote(group), types.DoubleQuote(member)))
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// VALIDATION
+
+// Validate checks that the RoleMeta has valid values.
+// Returns an error if the name is empty, has a reserved prefix, or is not a valid identifier.
+func (r RoleMeta) Validate() error {
+	name := strings.TrimSpace(r.Name)
+	if name == "" {
+		return pg.ErrBadParameter.With("name is missing")
+	}
+	if strings.HasPrefix(name, reservedPrefix) {
+		return pg.ErrBadParameter.Withf("name cannot start with reserved prefix %q", reservedPrefix)
+	}
+	if !types.IsIdentifier(name) {
+		return pg.ErrBadParameter.With("name is not a valid identifier")
+	}
+	return nil
+}
+
+// name validates and returns the role name.
+// Returns an error if the name is empty or has a reserved prefix.
+func (r RoleMeta) name() (string, error) {
+	name := strings.TrimSpace(r.Name)
+	if name == "" {
+		return "", pg.ErrBadParameter.With("name is missing")
+	}
+	if strings.HasPrefix(name, reservedPrefix) {
+		return "", pg.ErrBadParameter.Withf("name cannot start with reserved prefix %q", reservedPrefix)
+	}
+	return name, nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// SELECT
+
+func (r *RoleListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	// Set empty where
+	bind.Set("where", "")
+
+	// Bind offset and limit
+	r.OffsetLimit.Bind(bind, RoleListLimit)
+
+	// Return query
+	switch op {
+	case pg.List:
+		return roleList, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported RoleListRequest operation %q", op)
+	}
+}
+
+func (r RoleName) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	// Set name
+	if name := strings.TrimSpace(string(r)); name == "" {
+		return "", pg.ErrBadParameter.With("name is missing")
+	} else if strings.HasPrefix(name, reservedPrefix) && (op == pg.Update || op == pg.Delete) {
+		return "", pg.ErrBadParameter.Withf("cannot alter a system role %q", name)
+	} else {
+		bind.Set("name", name)
+	}
+
+	// Return query
+	switch op {
+	case pg.Get:
+		return roleGet, nil
+	case pg.Update:
+		return roleRename, nil
+	case pg.Delete:
+		return roleDelete, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported RoleName operation %q", op)
+	}
+}
+
+func (r RoleMeta) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	// Validate and set name
+	name, err := r.name()
+	if err != nil {
+		return "", err
+	}
+	bind.Set("name", name)
+
+	// Return query
+	switch op {
+	case pg.Update:
+		return roleUpdate, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported RoleMeta operation %q", op)
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// READER
+
+func (r *Role) Scan(row pg.Row) error {
+	var connlimit int64
+	if err := row.Scan(&r.Oid, &r.Name, &r.Superuser, &r.Inherit, &r.CreateRoles, &r.CreateDatabases, &r.Replication, &connlimit, &r.BypassRowLevelSecurity, &r.Login, &r.Password, &r.Expires, &r.Groups); err != nil {
+		return err
+	}
+	if connlimit >= 0 {
+		r.ConnectionLimit = types.Uint64Ptr(uint64(connlimit))
+	} else {
+		r.ConnectionLimit = nil
+	}
+	if len(r.Groups) == 0 {
+		r.Groups = nil
+	}
+	return nil
+}
+
+func (n *RoleList) Scan(row pg.Row) error {
+	var role Role
+	if err := role.Scan(row); err != nil {
+		return err
+	} else {
+		n.Body = append(n.Body, role)
+	}
+	return nil
+}
+
+func (n *RoleList) ScanCount(row pg.Row) error {
+	return row.Scan(&n.Count)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// WRITER
+
+func (r RoleMeta) Insert(bind *pg.Bind) (string, error) {
+	// Validate name
+	if err := r.Validate(); err != nil {
+		return "", err
+	}
+	bind.Set("name", r.Name)
+
+	// With
+	bind.Set("with", r.with(true))
+
+	// Return the query
+	return roleCreate, nil
+}
+
+func (r RoleName) Insert(bind *pg.Bind) (string, error) {
+	return "", pg.ErrNotImplemented.With("RoleName.Insert")
+}
+
+func (r RoleName) Update(bind *pg.Bind) error {
+	name := strings.TrimSpace(string(r))
+	if name == "" {
+		return pg.ErrBadParameter.With("name is missing")
+	}
+	if strings.HasPrefix(name, reservedPrefix) {
+		return pg.ErrBadParameter.Withf("name cannot start with %q", reservedPrefix)
+	}
+	if !types.IsIdentifier(name) {
+		return pg.ErrBadParameter.With("name is not a valid identifier")
+	}
+	bind.Set("old_name", name)
+	return nil
+}
+
+func (r RoleMeta) Update(bind *pg.Bind) error {
+	// With
+	bind.Set("with", r.with(false))
+
+	// Return success
+	return nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
+func (r RoleMeta) with(insert bool) string {
+	var with []string
+	opt := func(v string, b bool) string {
+		if b {
+			return v
+		}
+		return "NO" + v
+	}
+	if r.Superuser != nil {
+		with = append(with, opt("SUPERUSER", types.Value(r.Superuser)))
+	}
+	if r.CreateDatabases != nil {
+		with = append(with, opt("CREATEDB", types.Value(r.CreateDatabases)))
+	}
+	if r.CreateRoles != nil {
+		with = append(with, opt("CREATEROLE", types.Value(r.CreateRoles)))
+	}
+	if r.Replication != nil {
+		with = append(with, opt("REPLICATION", types.Value(r.Replication)))
+	}
+	if r.Inherit != nil {
+		with = append(with, opt("INHERIT", types.Value(r.Inherit)))
+	}
+	if r.Login != nil {
+		with = append(with, opt("LOGIN", types.Value(r.Login)))
+	}
+	if r.BypassRowLevelSecurity != nil {
+		with = append(with, opt("BYPASSRLS", types.Value(r.BypassRowLevelSecurity)))
+	}
+	if r.ConnectionLimit != nil {
+		with = append(with, fmt.Sprintf("CONNECTION LIMIT %v", types.Value(r.ConnectionLimit)))
+	}
+	if r.Password != nil {
+		if password := types.Value(r.Password); password == pgObfuscatedPassword {
+			// Do nothing
+		} else if password == "" {
+			with = append(with, "PASSWORD NULL")
+		} else {
+			with = append(with, fmt.Sprintf("PASSWORD %v", types.Quote(password)))
+		}
+	}
+	if expires := types.Value(r.Expires).UTC(); !expires.IsZero() {
+		with = append(with, fmt.Sprintf("VALID UNTIL %v", types.Quote(expires.Format(pgTimestampFormat))))
+	}
+	if len(r.Groups) > 0 && insert {
+		with = append(with, "IN ROLE "+strings.Join(r.Groups, ", "))
+	}
+
+	// Return the with clause
+	if len(with) > 0 {
+		return "WITH " + strings.Join(with, " ")
+	}
+	return ""
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// SQL
+
+const (
+	roleCreate = `
+		CREATE ROLE ${"name"} ${with}
+	`
+	roleRename = `
+		ALTER ROLE ${"old_name"} RENAME TO ${"name"}
+	`
+	roleDelete = `
+		DROP ROLE ${"name"}
+	`
+	roleUpdate = `
+		ALTER ROLE ${"name"} ${with}
+	`
+	roleSelect = `
+		WITH roles AS (
+			SELECT
+				"oid", "rolname", "rolsuper", "rolinherit", "rolcreaterole", "rolcreatedb", "rolreplication", "rolconnlimit", "rolbypassrls", "rolcanlogin", "rolpassword", "rolvaliduntil",
+                ARRAY(SELECT R2.rolname FROM "pg_catalog".pg_auth_members M JOIN "pg_catalog".pg_roles R2 ON M.roleid = R2.oid WHERE M.member = R.oid) AS groups
+			FROM
+				${"schema"}."pg_roles" R
+			WHERE
+				"rolname" NOT LIKE 'pg_%'
+		) SELECT * FROM roles
+	`
+	roleGet  = roleSelect + `WHERE rolname = @name`
+	roleList = `WITH q AS (` + roleSelect + `) SELECT * FROM q ${where}`
+)

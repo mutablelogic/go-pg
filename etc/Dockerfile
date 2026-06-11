@@ -4,14 +4,14 @@ ARG ARCH=amd64
 # Creates a docker image for pgmanager
 
 # Build stage
-FROM --platform=${OS}/${ARCH} golang:1.24 AS builder
+FROM --platform=${OS}/${ARCH} golang:1.25 AS builder
 WORKDIR /usr/src/app
 COPY . .
 RUN go install github.com/djthorpe/go-wasmbuild/cmd/wasmbuild@latest && \
-    OS=${OS} ARCH=${ARCH} make pgmanager
+    OS=${OS} ARCH=${ARCH} make cmd/pgmanager
 
 # Runtime stage
-FROM --platform=${OS}/${ARCH} debian:bookworm-slim
+FROM --platform=${OS}/${ARCH} debian:trixie-slim
 ARG SOURCE=https://github.com/mutablelogic/go-pg
 COPY --from=builder /usr/src/app/build/ /usr/local/bin/
 RUN apt-get update && \

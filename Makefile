@@ -2,45 +2,43 @@
 GO ?= $(shell which go  2>/dev/null)
 DOCKER ?= $(shell which docker 2>/dev/null)
 WASMBUILD ?= $(shell which wasmbuild 2>/dev/null)
-BUILDDIR ?= build
-CMDDIR=$(wildcard cmd/*)
+
+# Locations
+BUILD_DIR ?= build
+CMD_DIR := $(filter-out cmd/_%,$(wildcard cmd/*))
 
 # Set OS and Architecture
 ARCH ?= $(shell arch | tr A-Z a-z | sed 's/x86_64/amd64/' | sed 's/i386/amd64/' | sed 's/armv7l/arm/' | sed 's/aarch64/arm64/')
 OS ?= $(shell uname | tr A-Z a-z)
 VERSION ?= $(shell git describe --tags --always | sed 's/^v//')
 
-# Build flags
-BUILD_MODULE = $(shell cat go.mod | head -1 | cut -d ' ' -f 2)
-BUILD_LD_FLAGS += -X $(BUILD_MODULE)/pkg/version.GitSource=${BUILD_MODULE}
-BUILD_LD_FLAGS += -X $(BUILD_MODULE)/pkg/version.GitTag=$(shell git describe --tags --always)
-BUILD_LD_FLAGS += -X $(BUILD_MODULE)/pkg/version.GitBranch=$(shell git name-rev HEAD --name-only --always)
-BUILD_LD_FLAGS += -X $(BUILD_MODULE)/pkg/version.GitHash=$(shell git rev-parse HEAD)
-BUILD_LD_FLAGS += -X $(BUILD_MODULE)/pkg/version.GoBuildTime=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
-BUILD_FLAGS = -ldflags="-s -w ${BUILD_LD_FLAGS}"
+# Set build flags
+VERSION_PKG = "github.com/mutablelogic/go-server/pkg/version"
+BUILD_LD_FLAGS += -X $(VERSION_PKG)/GitTag=$(shell git describe --tags --always)
+BUILD_LD_FLAGS += -X $(VERSION_PKG)/GitBranch=$(shell git name-rev HEAD --name-only --always)
+BUILD_FLAGS = -ldflags "-s -w ${BUILD_LD_FLAGS}" 
 
 # Docker
 DOCKER_REPO ?= ghcr.io/mutablelogic/pgmanager
-DOCKER_SOURCE ?= ${BUILD_MODULE}
+DOCKER_SOURCE ?= $(shell cat go.mod | head -1 | cut -d ' ' -f 2)
 DOCKER_TAG = ${DOCKER_REPO}-${OS}-${ARCH}:${VERSION}
 
-# All targets
-all: tidy $(CMDDIR)
+###############################################################################
+# ALL
 
-# Rules for building
-.PHONY: $(CMDDIR)
-$(CMDDIR): go-dep mkdir
-	@echo 'go build $@'
-	@rm -rf ${BUILDDIR}/$(shell basename $@)
-	@$(GO) build -tags frontend $(BUILD_FLAGS) -o ${BUILDDIR}/$(shell basename $@) ./$@
+.PHONY: all
+all: build
 
-# Build pgmanager with embedded frontend
-.PHONY: pgmanager
-pgmanager: go-dep wasmbuild-dep tidy mkdir
-	@echo 'go generate frontend'
-	@$(GO) generate -tags frontend ./pkg/manager/httphandler/...
-	@echo 'go build cmd/pgmanager'
-	@$(GO) build -tags frontend $(BUILD_FLAGS) -o ${BUILDDIR}/pgmanager ./cmd/pgmanager
+###############################################################################
+# BUILD
+
+# Build the commands in the cmd directory
+.PHONY: build
+build: tidy $(CMD_DIR)
+
+$(CMD_DIR): go-dep mkdir
+	@echo Build command $(notdir $@) GOOS=${OS} GOARCH=${ARCH}
+	@GOOS=${OS} GOARCH=${ARCH} ${GO} build ${BUILD_FLAGS} -o ${BUILD_DIR}/$(notdir $@) ./$@
 
 # Build the docker image
 .PHONY: docker
@@ -48,6 +46,7 @@ docker: docker-dep ${NPM_DIR}
 	@echo build docker image ${DOCKER_TAG} OS=${OS} ARCH=${ARCH} SOURCE=${DOCKER_SOURCE} VERSION=${VERSION}
 	@${DOCKER} build \
 		--tag ${DOCKER_TAG} \
+		--provenance=false \
 		--build-arg ARCH=${ARCH} \
 		--build-arg OS=${OS} \
 		--build-arg SOURCE=${DOCKER_SOURCE} \
@@ -65,17 +64,32 @@ docker-push: docker-dep
 docker-version: docker-dep 
 	@echo "tag=${VERSION}"
 
-# Rules for testing
+###############################################################################
+# TEST
+
 .PHONY: test
-test: tidy
-	@echo 'running tests...'
-	@$(GO) test .
-	@$(GO) test ./pkg/...
+test: unit-test coverage-test
+
+.PHONY: unit-test
+unit-test: go-dep
+	@echo Unit Tests
+	@${GO} test .
+	@${GO} test ./pgmanager/...
+	@${GO} test ./pkg/...
+
+.PHONY: coverage-test
+coverage-test: go-dep mkdir
+	@echo Test Coverage
+	@${GO} test -v -coverprofile ${BUILD_DIR}/coverprofile.out ./pkg/...
+	@${GO} tool cover -func ${BUILD_DIR}/coverprofile.out > ${BUILD_DIR}/coverage.txt
+
+###############################################################################
+# CLEAN
 
 # Other rules
 .PHONY: mkdir
 mkdir:
-	@install -d $(BUILDDIR)
+	@install -d $(BUILD_DIR)
 
 .PHONY: go-dep tidy
 tidy:
@@ -85,7 +99,7 @@ tidy:
 .PHONY: clean
 clean: tidy
 	@echo 'clean'
-	@rm -fr $(BUILDDIR)
+	@rm -fr $(BUILD_DIR)
 	@$(GO) clean
 
 ###############################################################################

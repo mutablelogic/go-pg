@@ -31,9 +31,19 @@ func (r *OffsetLimit) Bind(bind *Bind, max uint64) {
 	}
 }
 
-// Clamp restricts the limit to the maximum length.
-func (r *OffsetLimit) Clamp(len uint64) {
-	if r.Limit != nil {
-		*r.Limit = min(*r.Limit, len)
+// Clamp restricts the limit to the number of rows available after offset.
+func (r *OffsetLimit) Clamp(total uint64) {
+	if r.Limit == nil {
+		return
 	}
+
+	// Available rows are constrained by total count and current offset.
+	available := total
+	if r.Offset >= total {
+		available = 0
+	} else {
+		available = total - r.Offset
+	}
+
+	*r.Limit = min(*r.Limit, available)
 }

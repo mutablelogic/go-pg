@@ -6,6 +6,7 @@ import (
 	// Packages
 	pgx "github.com/jackc/pgx/v5"
 	pgconn "github.com/jackc/pgx/v5/pgconn"
+	"github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -51,7 +52,6 @@ func Test_NormalizeError_003(t *testing.T) {
 		{"invalid_datetime", sqlStateInvalidDatetimeFormat, ErrInvalidDatetimeFormat},
 		{"datetime_overflow", sqlStateDatetimeFieldOverflow, ErrDatetimeFieldOverflow},
 	}
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -62,5 +62,27 @@ func Test_NormalizeError_003(t *testing.T) {
 			assert.ErrorIs(err, tc.kind)
 			assert.Equal(tc.code, SQLState(err))
 		})
-		}
 	}
+
+}
+
+func Test_HTTPError_001(t *testing.T) {
+	assert := assert.New(t)
+
+	err := HTTPError(&pgconn.PgError{Code: sqlStateDependentObjectsStillExist, Message: "cannot drop schema public because other objects depend on it"})
+	assert.ErrorIs(err, httpresponse.ErrConflict)
+}
+
+func Test_HTTPError_002(t *testing.T) {
+	assert := assert.New(t)
+
+	err := HTTPError(&pgconn.PgError{Code: sqlStateInsufficientPrivilege, Message: "could not set permissions on directory \"/media\": Operation not permitted"})
+	assert.ErrorIs(err, httpresponse.ErrBadRequest)
+}
+
+func Test_HTTPError_003(t *testing.T) {
+	assert := assert.New(t)
+
+	err := HTTPError(&pgconn.PgError{Code: sqlStateUndefinedFile, Message: "directory \"/tmp/test\" does not exist"})
+	assert.ErrorIs(err, httpresponse.ErrNotFound)
+}

@@ -1,0 +1,314 @@
+package schema
+
+import (
+	"fmt"
+	"net/url"
+	"strings"
+
+	// Packages
+	pg "github.com/mutablelogic/go-pg"
+	types "github.com/mutablelogic/go-server/pkg/types"
+)
+
+////////////////////////////////////////////////////////////////////////////////
+// TYPES
+
+type SchemaName string
+
+type SchemaMeta struct {
+	Name  string  `json:"schema,omitempty" arg:"" help:"Schema name"`
+	Owner string  `json:"owner,omitempty" help:"Owner"`
+	Acl   ACLList `json:"acl,omitempty" help:"Access privileges"`
+}
+
+type Schema struct {
+	Oid      uint32 `json:"oid"`
+	Database string `json:"database,omitempty" help:"Database"`
+	SchemaMeta
+	Size uint64 `json:"bytes,omitempty" help:"Size of schema in bytes"`
+}
+
+type SchemaListRequest struct {
+	Database *string `json:"database,omitempty" arg:"" optional:"" help:"Database"`
+	pg.OffsetLimit
+}
+
+type SchemaList struct {
+	SchemaListRequest
+	Count uint64   `json:"count"`
+	Body  []Schema `json:"body,omitempty"`
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// STRINGIFY
+
+func (s SchemaMeta) String() string {
+	return types.Stringify(s)
+}
+
+func (s Schema) String() string {
+	return types.Stringify(s)
+}
+
+func (s SchemaListRequest) String() string {
+	return types.Stringify(s)
+}
+
+func (s SchemaList) String() string {
+	return types.Stringify(s)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (r Schema) Header() []string {
+	return []string{"Oid", "Database", "Schema", "Owner", "Acl", "Size"}
+}
+
+func (r Schema) Width(col int) int {
+	return 0
+}
+
+func (r Schema) Cell(col int) string {
+	switch col {
+	case 0:
+		return fmt.Sprint(r.Oid)
+	case 1:
+		return r.Database
+	case 2:
+		return r.Name
+	case 3:
+		return r.Owner
+	case 4:
+		if len(r.Acl) == 0 {
+			return ""
+		}
+		return fmt.Sprint(r.Acl)
+	case 5:
+		return fmt.Sprint(r.Size)
+	default:
+		return ""
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+func (s SchemaListRequest) Query() url.Values {
+	q := url.Values{}
+	if s.Offset > 0 {
+		q.Set("offset", fmt.Sprint(s.Offset))
+	}
+	if s.Limit != nil {
+		q.Set("limit", fmt.Sprint(types.Value(s.Limit)))
+	}
+	return q
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// SELECT
+
+func (d *SchemaListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	// Order
+	bind.Set("orderby", `ORDER BY name ASC`)
+
+	// Where
+	bind.Del("where")
+	if database := types.PtrString(d.Database); database != "" {
+		bind.Append("where", `database = `+types.Quote(database))
+	}
+	if where := bind.Join("where", " AND "); where != "" {
+		bind.Set("where", `WHERE `+where)
+	} else {
+		bind.Set("where", "")
+	}
+
+	// Bind offset and limit
+	d.OffsetLimit.Bind(bind, SchemaListLimit)
+
+	// Return query
+	switch op {
+	case pg.List:
+		return schemaList, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported SchemaListRequest operation %q", op)
+	}
+}
+
+func (s SchemaName) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	// Set name
+	if name := strings.TrimSpace(string(s)); name == "" {
+		return "", pg.ErrBadParameter.With("schema is missing")
+	} else {
+		bind.Set("name", name)
+	}
+
+	// Set force
+	if force, ok := bind.Get("force").(bool); ok && force {
+		bind.Set("with", "CASCADE")
+	} else {
+		bind.Set("with", "")
+	}
+
+	// Return query
+	switch op {
+	case pg.Get:
+		return schemaGet, nil
+	case pg.Update:
+		return schemaRename, nil
+	case pg.Delete:
+		return schemaDelete, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported SchemaName operation %q", op)
+	}
+}
+
+func (s SchemaMeta) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	// Set name
+	if name := strings.TrimSpace(s.Name); name == "" {
+		return "", pg.ErrBadParameter.With("schema is missing")
+	} else {
+		bind.Set("name", name)
+	}
+
+	// Return query
+	switch op {
+	case pg.Update:
+		return schemaUpdate, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported SchemaMeta operation %q", op)
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// READER
+
+func (s *Schema) Scan(row pg.Row) error {
+	var priv []string
+	s.Acl = ACLList{}
+	if err := row.Scan(&s.Oid, &s.Database, &s.Name, &s.Owner, &priv, &s.Size); err != nil {
+		return err
+	}
+	for _, v := range priv {
+		item, err := NewACLItem(v)
+		if err != nil {
+			return err
+		}
+		s.Acl.Append(item)
+	}
+	return nil
+}
+
+func (s *SchemaList) Scan(row pg.Row) error {
+	var schema Schema
+	if err := schema.Scan(row); err != nil {
+		return err
+	} else {
+		s.Body = append(s.Body, schema)
+	}
+	return nil
+}
+
+func (s *SchemaList) ScanCount(row pg.Row) error {
+	return row.Scan(&s.Count)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// WRITER
+
+func (s SchemaMeta) Insert(bind *pg.Bind) (string, error) {
+	// Set name
+	if name := strings.TrimSpace(s.Name); name == "" {
+		return "", pg.ErrBadParameter.With("name is missing")
+	} else if strings.HasPrefix(name, reservedPrefix) {
+		return "", pg.ErrBadParameter.Withf("cannot create a schema prefixed with %q", reservedPrefix)
+	} else {
+		bind.Set("name", name)
+	}
+
+	// Set with
+	if with, err := s.with(true); err != nil {
+		return "", err
+	} else {
+		bind.Set("with", with)
+	}
+
+	// Return success
+	return schemaCreate, nil
+}
+
+func (s SchemaMeta) Update(bind *pg.Bind) error {
+	// With
+	if with, err := s.with(false); err != nil {
+		return err
+	} else if with == "" {
+		return pg.ErrBadParameter.With("no changes specified")
+	} else {
+		bind.Set("with", with)
+	}
+
+	// Return success
+	return nil
+}
+
+func (d SchemaName) Insert(bind *pg.Bind) (string, error) {
+	return "", pg.ErrNotImplemented.With("SchemaName.Insert")
+}
+
+func (d SchemaName) Update(bind *pg.Bind) error {
+	if name := strings.TrimSpace(string(d)); name == "" {
+		return pg.ErrBadParameter.With("name is missing")
+	} else if strings.HasPrefix(name, reservedPrefix) {
+		return pg.ErrBadParameter.Withf("cannot create a schema prefixed with %q", reservedPrefix)
+	} else if strings.ToLower(name) == defaultSchema {
+		return pg.ErrBadParameter.Withf("cannot rename schema %q", name)
+	} else {
+		bind.Set("old_name", name)
+	}
+	return nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
+func (s SchemaMeta) with(insert bool) (string, error) {
+	var with []string
+	if owner := strings.TrimSpace(s.Owner); owner != "" {
+		if insert {
+			with = append(with, "AUTHORIZATION "+types.DoubleQuote(s.Owner))
+		} else {
+			with = append(with, "OWNER TO "+types.DoubleQuote(s.Owner))
+		}
+	}
+
+	// Return the with clause
+	return strings.Join(with, " "), nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// SQL
+
+const (
+	SchemaDef    = `schema ("oid" OID, "database" TEXT, "name" TEXT, "owner" TEXT, "acl" TEXT[], "size" BIGINT)`
+	schemaSelect = `
+		WITH sc AS (
+			SELECT
+				S.oid AS "oid", current_database() AS "database", S.nspname AS "name", R.rolname AS "owner", S.nspacl AS "acl", COALESCE(SUM(pg_relation_size(C.oid)),0) AS "size"
+			FROM
+				"pg_catalog"."pg_namespace" S
+			LEFT JOIN
+				"pg_catalog"."pg_roles" R ON S.nspowner = R.oid
+			LEFT JOIN
+				"pg_catalog"."pg_class" C ON C.relnamespace = S.oid
+			WHERE
+				S.nspname NOT LIKE 'pg_%' AND S.nspname != 'information_schema'
+			GROUP BY
+				1, 2, 3, 4, 5				
+		) SELECT * FROM sc`
+	schemaGet    = schemaSelect + ` WHERE "name" = ${'name'}`
+	schemaList   = `WITH q AS (` + schemaSelect + `) SELECT * FROM q ${where} ${orderby}`
+	schemaDelete = `DROP SCHEMA ${"name"} ${with}`
+	schemaCreate = `CREATE SCHEMA ${"name"} ${with}`
+	schemaRename = `ALTER SCHEMA ${"old_name"} RENAME TO ${"name"}`
+	schemaUpdate = `ALTER SCHEMA ${"name"} ${with}`
+)

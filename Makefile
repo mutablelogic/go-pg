@@ -80,8 +80,8 @@ unit-test: go-dep
 .PHONY: coverage-test
 coverage-test: go-dep mkdir
 	@echo Test Coverage
-	@${GO} test -coverprofile ${BUILD_DIR}/coverprofile.out ./pkg/...
-
+	@${GO} test -v -coverprofile ${BUILD_DIR}/coverprofile.out ./pkg/...
+	@${GO} tool cover -func ${BUILD_DIR}/coverprofile.out > ${BUILD_DIR}/coverage.txt
 
 ###############################################################################
 # CLEAN

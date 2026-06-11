@@ -77,7 +77,7 @@ func New(conn pg.PoolConn, opt ...Opt) (*Manager, error) {
 func (manager *Manager) withDatabases(ctx context.Context, fn func(database *schema.Database) error) (uint64, error) {
 	var req schema.DatabaseListRequest
 	req.Offset = 0
-	req.Limit = types.Uint64Ptr(schema.DatabaseListLimit)
+	req.Limit = types.Ptr(uint64(schema.DatabaseListLimit))
 
 	for {
 		list, err := manager.ListDatabases(ctx, req)
@@ -91,7 +91,7 @@ func (manager *Manager) withDatabases(ctx context.Context, fn func(database *sch
 		}
 
 		// Determine if the next page is over the count
-		next := req.Offset + types.PtrUint64(req.Limit)
+		next := req.Offset + types.Value(req.Limit)
 		if next >= list.Count {
 			return list.Count, nil
 		} else {
@@ -104,7 +104,7 @@ func (manager *Manager) withDatabases(ctx context.Context, fn func(database *sch
 func (manager *Manager) withSchemas(ctx context.Context, database string, fn func(schema *schema.Schema) error) (uint64, error) {
 	var req schema.SchemaListRequest
 	req.Offset = 0
-	req.Limit = types.Uint64Ptr(schema.SchemaListLimit)
+	req.Limit = types.Ptr(uint64(schema.SchemaListLimit))
 
 	for {
 		var list schema.SchemaList
@@ -119,7 +119,7 @@ func (manager *Manager) withSchemas(ctx context.Context, database string, fn fun
 		}
 
 		// Determine if the next page is over the count
-		next := req.Offset + types.PtrUint64(req.Limit)
+		next := req.Offset + types.Value(req.Limit)
 		if next >= list.Count {
 			return list.Count, nil
 		} else {
@@ -128,29 +128,29 @@ func (manager *Manager) withSchemas(ctx context.Context, database string, fn fun
 	}
 }
 
-// // Iterate through all the objects for a database - requires object.go to be ported from go-server
-// func (manager *Manager) withObjects(ctx context.Context, database string, req schema.ObjectListRequest, fn func(schema *schema.Object) error) (uint64, error) {
-// 	req.Offset = 0
-// 	req.Limit = types.Uint64Ptr(schema.ObjectListLimit)
+// Iterate through all the objects for a database - requires object.go to be ported from go-server
+func (manager *Manager) withObjects(ctx context.Context, database string, req schema.ObjectListRequest, fn func(schema *schema.Object) error) (uint64, error) {
+	req.Offset = 0
+	req.Limit = types.Ptr(uint64(schema.ObjectListLimit))
 
-// 	for {
-// 		var list schema.ObjectList
-// 		if err := manager.conn.Remote(database).With("as", schema.ObjectDef).List(ctx, &list, &req); err != nil {
-// 			return 0, err
-// 		}
+	for {
+		var list schema.ObjectList
+		if err := manager.conn.Remote(database).With("as", schema.ObjectDef).List(ctx, &list, &req); err != nil {
+			return 0, err
+		}
 
-// 		for _, object := range list.Body {
-// 			if err := fn(&object); err != nil {
-// 				return 0, err
-// 			}
-// 		}
+		for _, object := range list.Body {
+			if err := fn(&object); err != nil {
+				return 0, err
+			}
+		}
 
-// 		// Determine if the next page is over the count
-// 		next := req.Offset + types.PtrUint64(req.Limit)
-// 		if next >= list.Count {
-// 			return list.Count, nil
-// 		} else {
-// 			req.Offset = next
-// 		}
-// 	}
-// }
+		// Determine if the next page is over the count
+		next := req.Offset + types.Value(req.Limit)
+		if next >= list.Count {
+			return list.Count, nil
+		} else {
+			req.Offset = next
+		}
+	}
+}

@@ -21,6 +21,7 @@ type ClientCommands struct {
 	RoleClientCommands
 	DatabaseClientCommands
 	SchemaClientCommands
+	ObjectClientCommands
 	StatementCommands
 	TablespaceClientCommands
 	ConnectionClientCommands
@@ -53,6 +54,11 @@ type SchemaClientCommands struct {
 	SchemaCreate SchemaCreateCmd `cmd:"" name:"schema-create" help:"Create a new schema in a database." group:"SCHEMA"`
 	SchemaDelete SchemaDeleteCmd `cmd:"" name:"schema-delete" help:"Delete a schema from a database." group:"SCHEMA"`
 	SchemaUpdate SchemaUpdateCmd `cmd:"" name:"schema-update" help:"Update a schema in a database." group:"SCHEMA"`
+}
+
+type ObjectClientCommands struct {
+	ObjectList ObjectListCmd `cmd:"" name:"objects" help:"List objects." group:"OBJECT"`
+	ObjectGet  ObjectGetCmd  `cmd:"" name:"object" help:"Get object details." group:"OBJECT"`
 }
 
 type StatementCommands struct {
@@ -161,6 +167,16 @@ type SchemaUpdateCmd struct {
 	Database     string `arg:"" name:"database" help:"Name of the database."`
 	NewNamespace string `flag:"" name:"name" help:"New name of the schema."`
 	schema.SchemaMeta
+}
+
+type ObjectListCmd struct {
+	schema.ObjectListRequest
+}
+
+type ObjectGetCmd struct {
+	Database  string `arg:"" name:"database" help:"Name of the database."`
+	Namespace string `arg:"" name:"schema" help:"Name of the schema."`
+	Name      string `arg:"" name:"name" help:"Name of the object."`
 }
 
 type StatementListCmd struct {
@@ -511,6 +527,48 @@ func (cmd *SchemaUpdateCmd) Run(ctx server.Cmd) error {
 		}
 
 		fmt.Println(schema)
+		return nil
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// OBJECT COMMANDS
+
+func (cmd *ObjectListCmd) Run(ctx server.Cmd) error {
+	// Set the width of the terminal
+	width := ctx.IsTerm()
+
+	// Perform the request
+	return withClient(ctx, "objects", func(ctx context.Context, client *httpclient.Client) error {
+		objects, err := client.ListObjects(ctx, cmd.ObjectListRequest)
+		if err != nil {
+			return err
+		}
+
+		// Objects list table
+		table := tui.TableFor[schema.Object](tui.SetWidth(width))
+		if _, err := table.Write(os.Stdout, objects.Body...); err != nil {
+			return err
+		}
+
+		// Objects list summary
+		summary := tui.TableSummary("objects", uint(objects.Count), objects.Offset, objects.Limit)
+		if _, err := summary.Write(os.Stdout); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func (cmd *ObjectGetCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "object", func(ctx context.Context, client *httpclient.Client) error {
+		object, err := client.GetObject(ctx, cmd.Database, cmd.Namespace, cmd.Name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(object)
 		return nil
 	})
 }

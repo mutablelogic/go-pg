@@ -8,6 +8,7 @@ const (
 	ConnectionListLimit      = 50
 	ExtensionListLimit       = 50
 	SchemaListLimit          = 20
+	ObjectListLimit          = 20
 	SettingListLimit         = 100
 	RoleListLimit            = 50
 	TablespaceListLimit      = 50

@@ -1,12 +1,13 @@
 package schema
 
 import (
-	"encoding/json"
+	"fmt"
+	"net/url"
 	"strings"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
-	types "github.com/mutablelogic/go-pg/pkg/types"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -48,6 +49,7 @@ type ObjectListRequest struct {
 }
 
 type ObjectList struct {
+	ObjectListRequest
 	Count uint64   `json:"count"`
 	Body  []Object `json:"body,omitempty"`
 }
@@ -56,51 +58,102 @@ type ObjectList struct {
 // STRINGIFY
 
 func (o ObjectMeta) String() string {
-	data, err := json.MarshalIndent(o, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(o)
 }
 
 func (t TableMeta) String() string {
-	data, err := json.MarshalIndent(t, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(t)
 }
 
 func (o Object) String() string {
-	data, err := json.MarshalIndent(o, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(o)
 }
 
 func (o ObjectListRequest) String() string {
-	data, err := json.MarshalIndent(o, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(o)
 }
 
 func (o ObjectList) String() string {
-	data, err := json.MarshalIndent(o, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(o)
 }
 
 func (o ObjectName) String() string {
-	data, err := json.MarshalIndent(o, "", "  ")
-	if err != nil {
-		return err.Error()
+	return types.Stringify(o)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (r Object) Header() []string {
+	return []string{"Oid", "Database", "Schema", "Name", "Type", "Owner", "Acl", "Tablespace", "Size", "LiveTuples", "DeadTuples"}
+}
+
+func (r Object) Width(col int) int {
+	return 0
+}
+
+func (r Object) Cell(col int) string {
+	switch col {
+	case 0:
+		return fmt.Sprint(r.Oid)
+	case 1:
+		return r.Database
+	case 2:
+		return r.Schema
+	case 3:
+		return r.Name
+	case 4:
+		return r.Type
+	case 5:
+		return r.Owner
+	case 6:
+		if len(r.Acl) == 0 {
+			return ""
+		}
+		return fmt.Sprint(r.Acl)
+	case 7:
+		if r.Tablespace == nil {
+			return ""
+		}
+		return *r.Tablespace
+	case 8:
+		return fmt.Sprint(r.Size)
+	case 9:
+		if r.Table == nil || r.Table.LiveTuples == nil {
+			return ""
+		}
+		return fmt.Sprint(*r.Table.LiveTuples)
+	case 10:
+		if r.Table == nil || r.Table.DeadTuples == nil {
+			return ""
+		}
+		return fmt.Sprint(*r.Table.DeadTuples)
+	default:
+		return ""
 	}
-	return string(data)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+func (d ObjectListRequest) Query() url.Values {
+	q := url.Values{}
+	if d.Offset > 0 {
+		q.Set("offset", fmt.Sprint(d.Offset))
+	}
+	if d.Limit != nil {
+		q.Set("limit", fmt.Sprint(types.Value(d.Limit)))
+	}
+	if d.Database != nil {
+		q.Set("database", types.Value(d.Database))
+	}
+	if d.Schema != nil {
+		q.Set("schema", types.Value(d.Schema))
+	}
+	if d.Type != nil {
+		q.Set("type", types.Value(d.Type))
+	}
+	return q
 }
 
 ////////////////////////////////////////////////////////////////////////////////

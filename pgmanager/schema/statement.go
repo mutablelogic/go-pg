@@ -44,7 +44,7 @@ type StatementListRequest struct {
 
 	// Sort by field (calls, rows, total_ms, min_ms, max_ms, mean_ms)
 	// All sort DESC except min_ms which sorts ASC
-	Sort string `json:"sort,omitempty"`
+	Sort string `json:"sort,omitempty" enum:"calls,rows,total_ms,min_ms,max_ms,mean_ms" default:"max_ms"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -65,7 +65,7 @@ func (l StatementListRequest) String() string {
 ///////////////////////////////////////////////////////////////////////////////
 // SELECTOR
 
-func (r StatementListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (r *StatementListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Build WHERE clause
 	var where []string
 	if r.Database != nil && *r.Database != "" {

@@ -20,12 +20,17 @@ func (manager *Manager) ListStatements(ctx context.Context, req schema.Statement
 	}
 
 	// Execute query
-	var list schema.StatementList
-	if err := manager.conn.List(ctx, &list, &req); err != nil {
+	var result schema.StatementList
+	if err := manager.conn.List(ctx, &result, &req); err != nil {
 		return nil, err
 	}
 
-	return &list, nil
+	// Set the offset and limit in the result to reflect the actual count of items returned
+	// which may be less than the requested limit if there are not enough items in the database.
+	result.StatementListRequest = req
+	result.OffsetLimit.Clamp(result.Count)
+
+	return &result, nil
 }
 
 // ResetStatements resets the statistics for all statements.

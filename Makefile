@@ -73,6 +73,8 @@ test: unit-test coverage-test
 .PHONY: unit-test
 unit-test: go-dep
 	@echo Unit Tests
+	@${GO} test .
+	@${GO} test ./pgmanager/...
 	@${GO} test ./pkg/...
 
 .PHONY: coverage-test

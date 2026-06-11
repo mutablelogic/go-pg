@@ -16,7 +16,8 @@ import (
 
 type Manager struct {
 	opts
-	conn pg.PoolConn
+	conn                  pg.PoolConn
+	pgStatementsAvailable bool
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -55,6 +56,14 @@ func New(conn pg.PoolConn, opt ...Opt) (*Manager, error) {
 		if err != nil {
 			return nil, fmt.Errorf("register metrics: %w", err)
 		}
+	}
+
+	// Add required extensions and check for optional ones
+	bootstrapResult, err := schema.Bootstrap(context.Background(), self.conn)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap schema: %w", err)
+	} else {
+		self.pgStatementsAvailable = bootstrapResult.StatStatementsAvailable
 	}
 
 	// Return success

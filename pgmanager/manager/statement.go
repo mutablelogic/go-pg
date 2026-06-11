@@ -5,7 +5,7 @@ import (
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
-	schema "github.com/mutablelogic/go-pg/pkg/manager/schema"
+	schema "github.com/mutablelogic/go-pg/pgmanager/schema"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -15,7 +15,7 @@ import (
 // The request can filter by database, user, and order by various fields.
 // Returns ErrNotAvailable if pg_stat_statements is not installed.
 func (manager *Manager) ListStatements(ctx context.Context, req schema.StatementListRequest) (*schema.StatementList, error) {
-	if !manager.statStatementsAvailable {
+	if !manager.pgStatementsAvailable {
 		return nil, pg.ErrNotAvailable.With("pg_stat_statements")
 	}
 
@@ -31,7 +31,7 @@ func (manager *Manager) ListStatements(ctx context.Context, req schema.Statement
 // ResetStatements resets the statistics for all statements.
 // Returns ErrNotAvailable if pg_stat_statements is not installed.
 func (manager *Manager) ResetStatements(ctx context.Context) error {
-	if !manager.statStatementsAvailable {
+	if !manager.pgStatementsAvailable {
 		return pg.ErrNotAvailable.With("pg_stat_statements")
 	}
 

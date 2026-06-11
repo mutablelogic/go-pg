@@ -9,6 +9,7 @@ import (
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	"github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgmanager/schema"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
 	metric "go.opentelemetry.io/otel/metric"
 )
@@ -171,6 +172,61 @@ func (manager *Manager) RegisterTablespaceMetrics(name string) error {
 		return nil
 	}, guage); err != nil {
 		return pg.ErrInternalServerError.With("RegisterTablespaceMetrics: %w", err)
+	}
+
+	// Return success
+	return nil
+}
+
+func (manager *Manager) RegisterReplicationSlotMetrics(name string) error {
+	lag_bytes, err := manager.metrics.Int64ObservableGauge(
+		name+"_bytes", metric.WithDescription("Lag of replication slot in bytes"),
+	)
+	if err != nil {
+		return pg.ErrInternalServerError.With("RegisterReplicationSlotMetrics: %w", err)
+	}
+	lag_ms, err := manager.metrics.Float64ObservableGauge(
+		name+"_ms", metric.WithDescription("Lag of replication slot in milliseconds"),
+	)
+	if err != nil {
+		return pg.ErrInternalServerError.With("RegisterReplicationSlotMetrics: %w", err)
+	}
+
+	if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) error {
+		// Otel span
+		ctx, endSpan := otel.StartSpan(manager.tracer, parent, "ObserveReplicationSlotMetrics",
+			attribute.String("name", name),
+		)
+		defer func() { endSpan(err) }()
+
+		// TODO: Paginate through replication slots
+		replicationslots, err := manager.ListReplicationSlots(ctx, schema.ReplicationSlotListRequest{})
+		if err != nil {
+			return pg.ErrInternalServerError.With("RegisterReplicationSlotMetrics: %w", err)
+		}
+		for _, slot := range replicationslots.Body {
+			if slot.LagBytes != nil {
+				observer.ObserveInt64(lag_bytes, types.Value(slot.LagBytes), metric.WithAttributes(
+					attribute.String("cluster", manager.cluster),
+					attribute.String("slot", slot.Name),
+					attribute.String("database", slot.Database),
+					attribute.String("type", slot.Type),
+					attribute.String("status", slot.Status),
+				))
+			}
+			if slot.LagMs != nil {
+				observer.ObserveFloat64(lag_ms, types.Value(slot.LagMs), metric.WithAttributes(
+					attribute.String("cluster", manager.cluster),
+					attribute.String("slot", slot.Name),
+					attribute.String("database", slot.Database),
+					attribute.String("type", slot.Type),
+					attribute.String("status", slot.Status),
+				))
+			}
+		}
+		return nil
+	}, lag_bytes, lag_ms); err != nil {
+		return pg.ErrInternalServerError.With("RegisterReplicationSlotMetrics: %w", err)
 	}
 
 	// Return success

@@ -19,14 +19,14 @@ type RoleName string
 
 type RoleMeta struct {
 	Name                   string     `json:"name,omitempty" arg:"" help:"Role name"`
-	Superuser              *bool      `json:"super,omitempty" help:"Superuser permission"`
-	Inherit                *bool      `json:"inherit,omitempty" help:"Inherit permissions"`
-	CreateRoles            *bool      `json:"createrole,omitempty" help:"Create roles permission"`
-	CreateDatabases        *bool      `json:"createdb,omitempty" help:"Create databases permission"`
-	Replication            *bool      `json:"replication,omitempty" help:"Replication permission"`
+	Superuser              *bool      `json:"super,omitempty" name:"super" help:"Superuser permission" negatable:""`
+	Inherit                *bool      `json:"inherit,omitempty" help:"Inherit permissions" negatable:""`
+	CreateRoles            *bool      `json:"createrole,omitempty" help:"Create roles permission" negatable:""`
+	CreateDatabases        *bool      `json:"createdb,omitempty" help:"Create databases permission" negatable:""`
+	Replication            *bool      `json:"replication,omitempty" help:"Replication permission" negatable:""`
 	ConnectionLimit        *uint64    `json:"conlimit,omitempty" help:"Connection limit"`
-	BypassRowLevelSecurity *bool      `json:"bypassrls,omitempty" help:"Bypass row-level security"`
-	Login                  *bool      `json:"login,omitempty" help:"Login permission"`
+	BypassRowLevelSecurity *bool      `json:"bypassrls,omitempty" help:"Bypass row-level security" negatable:""`
+	Login                  *bool      `json:"login,omitempty" help:"Login permission" negatable:""`
 	Password               *string    `json:"password,omitempty" help:"Password"`
 	Expires                *time.Time `json:"expires,omitzero" help:"Password expiration"`
 	Groups                 []string   `json:"memberof,omitempty" help:"Group memberships"`

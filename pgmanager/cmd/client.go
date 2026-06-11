@@ -30,7 +30,10 @@ type PingCmd struct{}
 
 type RoleClientCommands struct {
 	RoleList   RoleListCmd   `cmd:"" name:"roles" help:"List roles." group:"ROLE"`
+	RoleGet    RoleGetCmd    `cmd:"" name:"role" help:"Get role details." group:"ROLE"`
 	RoleCreate RoleCreateCmd `cmd:"" name:"role-create" help:"Create a new role." group:"ROLE"`
+	RoleDelete RoleDeleteCmd `cmd:"" name:"role-delete" help:"Delete a role." group:"ROLE"`
+	RoleUpdate RoleUpdateCmd `cmd:"" name:"role-update" help:"Update a role." group:"ROLE"`
 }
 
 type DatabaseClientCommands struct {
@@ -74,6 +77,19 @@ type RoleListCmd struct {
 }
 
 type RoleCreateCmd struct {
+	schema.RoleMeta
+}
+
+type RoleGetCmd struct {
+	Name string `arg:"" name:"name" help:"Name of the role."`
+}
+
+type RoleDeleteCmd struct {
+	Name string `arg:"" name:"name" help:"Name of the role."`
+}
+
+type RoleUpdateCmd struct {
+	NewName string `flag:"" name:"role" help:"New name for the role."`
 	schema.RoleMeta
 }
 
@@ -231,6 +247,43 @@ func (cmd *RoleListCmd) Run(ctx server.Cmd) error {
 func (cmd *RoleCreateCmd) Run(ctx server.Cmd) error {
 	return withClient(ctx, "role-create", func(ctx context.Context, client *httpclient.Client) error {
 		role, err := client.CreateRole(ctx, cmd.RoleMeta)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(role)
+		return nil
+	})
+}
+
+func (cmd *RoleGetCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "role", func(ctx context.Context, client *httpclient.Client) error {
+		role, err := client.GetRole(ctx, cmd.Name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(role)
+		return nil
+	})
+}
+
+func (cmd *RoleDeleteCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "role-delete", func(ctx context.Context, client *httpclient.Client) error {
+		if _, err := client.DeleteRole(ctx, cmd.Name); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func (cmd *RoleUpdateCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "role-update", func(ctx context.Context, client *httpclient.Client) error {
+		// We swap the name in the meta with the new name
+		cmd.NewName, cmd.RoleMeta.Name = cmd.RoleMeta.Name, cmd.NewName
+
+		// Perform the update
+		role, err := client.UpdateRole(ctx, cmd.NewName, cmd.RoleMeta)
 		if err != nil {
 			return err
 		}

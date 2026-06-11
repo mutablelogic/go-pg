@@ -49,6 +49,36 @@ func RegisterRoleHandlers(manager *manager.Manager, router *httprouter.Router) e
 				openapi.WithJSONResponse(http.StatusCreated, jsonschema.MustFor[schema.Role]()),
 			),
 		),
+		router.RegisterPath("role/{role}", jsonschema.MustFor[RolePathParams](), httprequest.NewPathItem("Role", "Manage a PostgreSQL role").
+			Get(
+				func(w http.ResponseWriter, r *http.Request) {
+					_ = GetRole(w, r, manager, r.PathValue("role"))
+				},
+				"Get role",
+				openapi.WithTags("Roles"),
+				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Role]()),
+				openapi.WithErrorResponse(http.StatusNotFound, "Role not found"),
+			).
+			Delete(
+				func(w http.ResponseWriter, r *http.Request) {
+					_ = DeleteRole(w, r, manager, r.PathValue("role"))
+				},
+				"Delete role",
+				openapi.WithTags("Roles"),
+				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Role]()),
+				openapi.WithErrorResponse(http.StatusNotFound, "Role not found"),
+			).
+			Patch(
+				func(w http.ResponseWriter, r *http.Request) {
+					_ = UpdateRole(w, r, manager, r.PathValue("role"))
+				},
+				"Update role",
+				openapi.WithTags("Roles"),
+				openapi.WithJSONRequest(jsonschema.MustFor[schema.RoleMeta]()),
+				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Role]()),
+				openapi.WithErrorResponse(http.StatusNotFound, "Role not found"),
+			),
+		),
 	)
 }
 
@@ -76,5 +106,33 @@ func CreateRole(w http.ResponseWriter, r *http.Request, manager *manager.Manager
 		return httpresponse.Error(w, pg.HTTPError(err), meta.Name)
 	} else {
 		return httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), role)
+	}
+}
+
+func GetRole(w http.ResponseWriter, r *http.Request, manager *manager.Manager, name string) error {
+	if role, err := manager.GetRole(r.Context(), name); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err), name)
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), role)
+	}
+}
+
+func DeleteRole(w http.ResponseWriter, r *http.Request, manager *manager.Manager, name string) error {
+	if role, err := manager.DeleteRole(r.Context(), name); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err), name)
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), role)
+	}
+}
+
+func UpdateRole(w http.ResponseWriter, r *http.Request, manager *manager.Manager, name string) error {
+	var meta schema.RoleMeta
+	if err := httprequest.Read(r, &meta); err != nil {
+		return httpresponse.Error(w, httpresponse.ErrBadRequest.With(err.Error()))
+	}
+	if role, err := manager.UpdateRole(r.Context(), name, meta); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err), name)
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), role)
 	}
 }

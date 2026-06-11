@@ -49,11 +49,11 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 			ctx.Logger().DebugContext(ctx.Context(), "registering pgmanager handlers")
 			return errors.Join(
 				httphandlers.RegisterStatusHandlers(pgmanager, router),
-				httphandlers.RegisterConnectionHandlers(pgmanager, router),
-				httphandlers.RegisterDatabaseHandlers(pgmanager, router),
 				httphandlers.RegisterRoleHandlers(pgmanager, router),
-				httphandlers.RegisterExtensionHandlers(pgmanager, router),
+				httphandlers.RegisterDatabaseHandlers(pgmanager, router),
 				httphandlers.RegisterSchemaHandlers(pgmanager, router),
+				httphandlers.RegisterConnectionHandlers(pgmanager, router),
+				httphandlers.RegisterExtensionHandlers(pgmanager, router),
 				httphandlers.RegisterSettingHandlers(pgmanager, router),
 				router.RegisterCatchAll("/", true),
 			)

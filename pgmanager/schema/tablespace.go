@@ -1,13 +1,14 @@
 package schema
 
 import (
-	"encoding/json"
+	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
-	types "github.com/mutablelogic/go-pg/pkg/types"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -34,6 +35,7 @@ type TablespaceListRequest struct {
 }
 
 type TablespaceList struct {
+	TablespaceListRequest
 	Count uint64       `json:"count"`
 	Body  []Tablespace `json:"body,omitempty"`
 }
@@ -42,41 +44,77 @@ type TablespaceList struct {
 // STRINGIFY
 
 func (t TablespaceMeta) String() string {
-	data, err := json.MarshalIndent(t, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(t)
 }
 
 func (t Tablespace) String() string {
-	data, err := json.MarshalIndent(t, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(t)
 }
 
 func (t TablespaceListRequest) String() string {
-	data, err := json.MarshalIndent(t, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(t)
 }
 
 func (t TablespaceList) String() string {
-	data, err := json.MarshalIndent(t, "", "  ")
-	if err != nil {
-		return err.Error()
+	return types.Stringify(t)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (r Tablespace) Header() []string {
+	return []string{"Oid", "Name", "Owner", "Acl", "Location", "Options", "Size"}
+}
+
+func (r Tablespace) Width(col int) int {
+	return 0
+}
+
+func (r Tablespace) Cell(col int) string {
+	switch col {
+	case 0:
+		return fmt.Sprint(r.Oid)
+	case 1:
+		return r.Name
+	case 2:
+		return r.Owner
+	case 3:
+		if len(r.Acl) == 0 {
+			return ""
+		}
+		return fmt.Sprint(r.Acl)
+	case 4:
+		return r.Location
+	case 5:
+		if len(r.Options) == 0 {
+			return ""
+		}
+		return fmt.Sprint(r.Options)
+	case 6:
+		return fmt.Sprint(r.Size)
+	default:
+		return ""
 	}
-	return string(data)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+func (d TablespaceListRequest) Query() url.Values {
+	q := url.Values{}
+	if d.Offset > 0 {
+		q.Set("offset", fmt.Sprint(d.Offset))
+	}
+	if d.Limit != nil {
+		q.Set("limit", fmt.Sprint(types.Value(d.Limit)))
+	}
+	return q
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // SELECT
 
-func (t TablespaceListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (t *TablespaceListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Order
 	bind.Set("orderby", `ORDER BY name ASC`)
 

@@ -7,8 +7,11 @@ import (
 	"strings"
 
 	// Packages
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
-	schema "github.com/mutablelogic/go-pg/pkg/manager/schema"
+	schema "github.com/mutablelogic/go-pg/pgmanager/schema"
+	types "github.com/mutablelogic/go-server/pkg/types"
+	attribute "go.opentelemetry.io/otel/attribute"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -16,21 +19,41 @@ import (
 
 // ListTablespaces returns a list of tablespaces matching the request criteria.
 // It supports pagination through the OffsetLimit fields in the request.
-func (manager *Manager) ListTablespaces(ctx context.Context, req schema.TablespaceListRequest) (*schema.TablespaceList, error) {
-	var list schema.TablespaceList
-	if err := manager.conn.List(ctx, &list, req); err != nil {
+func (manager *Manager) ListTablespaces(ctx context.Context, req schema.TablespaceListRequest) (_ *schema.TablespaceList, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ListTablespaces",
+		attribute.String("req", types.Stringify(req)),
+	)
+	defer func() { endSpan(err) }()
+
+	var result schema.TablespaceList
+	if err := manager.conn.List(ctx, &result, &req); err != nil {
 		return nil, err
-	} else {
-		return &list, nil
 	}
+
+	// Set the offset and limit in the result to reflect the actual count of items returned
+	// which may be less than the requested limit if there are not enough items.
+	result.TablespaceListRequest = req
+	result.OffsetLimit.Clamp(result.Count)
+
+	return &result, nil
 }
 
 // GetTablespace retrieves a single tablespace by name.
 // Returns an error if the name is empty or the tablespace is not found.
-func (manager *Manager) GetTablespace(ctx context.Context, name string) (*schema.Tablespace, error) {
+func (manager *Manager) GetTablespace(ctx context.Context, name string) (_ *schema.Tablespace, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "GetTablespace",
+		attribute.String("name", name),
+	)
+	defer func() { endSpan(err) }()
+
+	// Validate input
 	if name == "" {
 		return nil, pg.ErrBadParameter.With("name is empty")
 	}
+
+	// Get the tablespace
 	var response schema.Tablespace
 	if err := manager.conn.Get(ctx, &response, schema.TablespaceName(name)); err != nil {
 		return nil, err
@@ -42,10 +65,16 @@ func (manager *Manager) GetTablespace(ctx context.Context, name string) (*schema
 // The tablespace creation cannot be done in a transaction, but ACL grants are
 // applied within a transaction. If ACL grants fail, the tablespace is deleted
 // to maintain consistency.
-func (manager *Manager) CreateTablespace(ctx context.Context, meta schema.TablespaceMeta, location string) (*schema.Tablespace, error) {
-	var response schema.Tablespace
+func (manager *Manager) CreateTablespace(ctx context.Context, meta schema.TablespaceMeta, location string) (_ *schema.Tablespace, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "CreateTablespace",
+		attribute.String("meta", types.Stringify(meta)),
+		attribute.String("location", location),
+	)
+	defer func() { endSpan(err) }()
 
 	// Create the tablespace (outside a transaction)
+	var response schema.Tablespace
 	if err := manager.conn.With("location", location).Insert(ctx, nil, meta); err != nil {
 		return nil, err
 	}
@@ -75,7 +104,14 @@ func (manager *Manager) CreateTablespace(ctx context.Context, meta schema.Tables
 
 // DeleteTablespace drops a tablespace by name and returns its metadata before deletion.
 // Returns an error if the name is empty or the tablespace is not found.
-func (manager *Manager) DeleteTablespace(ctx context.Context, name string) (*schema.Tablespace, error) {
+func (manager *Manager) DeleteTablespace(ctx context.Context, name string) (_ *schema.Tablespace, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "DeleteTablespace",
+		attribute.String("name", name),
+	)
+	defer func() { endSpan(err) }()
+
+	// Validate input
 	if name == "" {
 		return nil, pg.ErrBadParameter.With("name is empty")
 	}
@@ -99,13 +135,21 @@ func (manager *Manager) DeleteTablespace(ctx context.Context, name string) (*sch
 // All changes are applied within a transaction to ensure atomicity.
 // If meta.Name is provided and differs from name, the tablespace is renamed.
 // ACL changes are synchronized by revoking removed privileges and granting new ones.
-func (manager *Manager) UpdateTablespace(ctx context.Context, name string, meta schema.TablespaceMeta) (*schema.Tablespace, error) {
+func (manager *Manager) UpdateTablespace(ctx context.Context, name string, meta schema.TablespaceMeta) (_ *schema.Tablespace, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "UpdateTablespace",
+		attribute.String("name", name),
+		attribute.String("meta", types.Stringify(meta)),
+	)
+	defer func() { endSpan(err) }()
+
+	// Validate input
 	if name == "" {
 		return nil, pg.ErrBadParameter.With("name is empty")
 	}
-	var response schema.Tablespace
 
 	// Get the tablespace
+	var response schema.Tablespace
 	if err := manager.conn.Get(ctx, &response, schema.TablespaceName(name)); err != nil {
 		return nil, err
 	}

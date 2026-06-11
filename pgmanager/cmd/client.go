@@ -21,6 +21,7 @@ type ClientCommands struct {
 	RoleClientCommands
 	DatabaseClientCommands
 	SchemaClientCommands
+	TablespaceClientCommands
 	ConnectionClientCommands
 	ExtensionClientCommands
 	SettingClientCommands
@@ -50,6 +51,14 @@ type SchemaClientCommands struct {
 	SchemaCreate SchemaCreateCmd `cmd:"" name:"schema-create" help:"Create a new schema in a database." group:"SCHEMA"`
 	SchemaDelete SchemaDeleteCmd `cmd:"" name:"schema-delete" help:"Delete a schema from a database." group:"SCHEMA"`
 	SchemaUpdate SchemaUpdateCmd `cmd:"" name:"schema-update" help:"Update a schema in a database." group:"SCHEMA"`
+}
+
+type TablespaceClientCommands struct {
+	TablespaceList   TablespaceListCmd   `cmd:"" name:"tablespaces" help:"List tablespaces." group:"TABLESPACE"`
+	TablespaceGet    TablespaceGetCmd    `cmd:"" name:"tablespace" help:"Get tablespace details." group:"TABLESPACE"`
+	TablespaceCreate TablespaceCreateCmd `cmd:"" name:"tablespace-create" help:"Create a new tablespace." group:"TABLESPACE"`
+	TablespaceDelete TablespaceDeleteCmd `cmd:"" name:"tablespace-delete" help:"Delete a tablespace." group:"TABLESPACE"`
+	TablespaceUpdate TablespaceUpdateCmd `cmd:"" name:"tablespace-update" help:"Update a tablespace." group:"TABLESPACE"`
 }
 
 type ConnectionClientCommands struct {
@@ -136,8 +145,30 @@ type SchemaDeleteCmd struct {
 
 type SchemaUpdateCmd struct {
 	Database     string `arg:"" name:"database" help:"Name of the database."`
-	NewNamespace string `flag:"" name:"schema" help:"New name of the schema."`
+	NewNamespace string `flag:"" name:"name" help:"New name of the schema."`
 	schema.SchemaMeta
+}
+
+type TablespaceListCmd struct {
+	schema.TablespaceListRequest
+}
+
+type TablespaceGetCmd struct {
+	Name string `arg:"" name:"name" help:"Name of the tablespace."`
+}
+
+type TablespaceCreateCmd struct {
+	schema.TablespaceMeta
+	Location string `arg:"" name:"location" help:"Location for the tablespace."`
+}
+
+type TablespaceDeleteCmd struct {
+	Name string `arg:"" name:"name" help:"Name of the tablespace."`
+}
+
+type TablespaceUpdateCmd struct {
+	NewName string `flag:"" name:"name" help:"New name of the tablespace."`
+	schema.TablespaceMeta
 }
 
 type ConnectionListCmd struct {
@@ -444,6 +475,82 @@ func (cmd *SchemaUpdateCmd) Run(ctx server.Cmd) error {
 		}
 
 		fmt.Println(schema)
+		return nil
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// TABLESPACE COMMANDS
+
+func (cmd *TablespaceListCmd) Run(ctx server.Cmd) error {
+	// Set the width of the terminal
+	width := ctx.IsTerm()
+
+	// Perform the request
+	return withClient(ctx, "tablespaces", func(ctx context.Context, client *httpclient.Client) error {
+		tablespaces, err := client.ListTablespaces(ctx, cmd.TablespaceListRequest)
+		if err != nil {
+			return err
+		}
+
+		// Tablespaces list table
+		table := tui.TableFor[schema.Tablespace](tui.SetWidth(width))
+		if _, err := table.Write(os.Stdout, tablespaces.Body...); err != nil {
+			return err
+		}
+
+		// Tablespaces list summary
+		summary := tui.TableSummary("tablespaces", uint(tablespaces.Count), tablespaces.Offset, tablespaces.Limit)
+		if _, err := summary.Write(os.Stdout); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func (cmd *TablespaceGetCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "tablespace", func(ctx context.Context, client *httpclient.Client) error {
+		tablespace, err := client.GetTablespace(ctx, cmd.Name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(tablespace)
+		return nil
+	})
+}
+
+func (cmd *TablespaceCreateCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "tablespace-create", func(ctx context.Context, client *httpclient.Client) error {
+		tablespace, err := client.CreateTablespace(ctx, cmd.TablespaceMeta, cmd.Location)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(tablespace)
+		return nil
+	})
+}
+
+func (cmd *TablespaceDeleteCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "tablespace-delete", func(ctx context.Context, client *httpclient.Client) error {
+		return client.DeleteTablespace(ctx, cmd.Name)
+	})
+}
+
+func (cmd *TablespaceUpdateCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "tablespace-update", func(ctx context.Context, client *httpclient.Client) error {
+		// We swap the name in the meta with the new name
+		cmd.NewName, cmd.TablespaceMeta.Name = cmd.TablespaceMeta.Name, cmd.NewName
+
+		// Perform the update
+		tablespace, err := client.UpdateTablespace(ctx, cmd.NewName, cmd.TablespaceMeta)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(tablespace)
 		return nil
 	})
 }

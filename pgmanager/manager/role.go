@@ -30,7 +30,7 @@ func (manager *Manager) ListRoles(ctx context.Context, req schema.RoleListReques
 	}
 
 	// Set the offset and limit in the result to reflect the actual count of items returned
-	// which may be less than the requested limit if there are not enough items in the database.
+	// which may be less than the requested limit if there are not enough items.
 	result.RoleListRequest = req
 	result.OffsetLimit.Clamp(result.Count)
 

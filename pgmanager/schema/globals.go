@@ -10,6 +10,7 @@ const (
 	SchemaListLimit     = 50
 	SettingListLimit    = 100
 	RoleListLimit       = 50
+	TablespaceListLimit = 50
 )
 
 const (

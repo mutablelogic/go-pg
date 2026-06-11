@@ -72,3 +72,17 @@ func Test_HTTPError_001(t *testing.T) {
 	err := HTTPError(&pgconn.PgError{Code: sqlStateDependentObjectsStillExist, Message: "cannot drop schema public because other objects depend on it"})
 	assert.ErrorIs(err, httpresponse.ErrConflict)
 }
+
+func Test_HTTPError_002(t *testing.T) {
+	assert := assert.New(t)
+
+	err := HTTPError(&pgconn.PgError{Code: sqlStateInsufficientPrivilege, Message: "could not set permissions on directory \"/media\": Operation not permitted"})
+	assert.ErrorIs(err, httpresponse.ErrBadRequest)
+}
+
+func Test_HTTPError_003(t *testing.T) {
+	assert := assert.New(t)
+
+	err := HTTPError(&pgconn.PgError{Code: sqlStateUndefinedFile, Message: "directory \"/tmp/test\" does not exist"})
+	assert.ErrorIs(err, httpresponse.ErrNotFound)
+}

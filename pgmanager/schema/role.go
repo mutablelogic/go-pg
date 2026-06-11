@@ -200,7 +200,7 @@ func (r RoleMeta) name() (string, error) {
 ////////////////////////////////////////////////////////////////////////////////
 // SELECT
 
-func (r RoleListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (r *RoleListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Set empty where
 	bind.Set("where", "")
 

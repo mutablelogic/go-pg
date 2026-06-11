@@ -55,7 +55,7 @@ func RegisterConnectionHandlers(manager *manager.Manager, router *httprouter.Rou
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = DeleteConnection(w, r, manager, r.PathValue("pid"))
 				},
-				"Delete connection",
+				"Drop a connection",
 				openapi.WithTags("Connections"),
 				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Connection]()),
 				openapi.WithErrorResponse(http.StatusNotFound, "Process not found"),

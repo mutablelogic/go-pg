@@ -24,7 +24,7 @@ jobs:
                   go-version: "1.25"
 
             - name: Run tests
-              run: make test
+              run: make test coverage-test
 
             - name: Extract coverage percentage
               id: coverage

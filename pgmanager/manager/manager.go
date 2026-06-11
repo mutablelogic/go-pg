@@ -50,6 +50,7 @@ func New(conn pg.PoolConn, opt ...Opt) (*Manager, error) {
 			self.RegisterDatabaseMetrics("database"),
 			self.RegisterSchemaMetrics("schema"),
 			self.RegisterConnectionMetrics("connection"),
+			self.RegisterTablespaceMetrics("tablespace"),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("register metrics: %w", err)

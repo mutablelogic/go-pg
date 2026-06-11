@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	// Packages
+
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	"github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgmanager/schema"
 	attribute "go.opentelemetry.io/otel/attribute"
@@ -14,12 +16,19 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func (manager *Manager) RegisterDatabaseMetrics(name string) error {
+func (manager *Manager) RegisterDatabaseMetrics(name string) (err error) {
+	// Register a gauge for database size
 	if guage, err := manager.metrics.Int64ObservableGauge(
 		name, metric.WithDescription("Size of database in bytes"),
 	); err != nil {
 		return pg.ErrInternalServerError.With("RegisterDatabaseMetrics: %w", err)
-	} else if _, err := manager.metrics.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
+	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) error {
+		// Otel span
+		ctx, endSpan := otel.StartSpan(manager.tracer, parent, "ObserveDatabaseMetrics",
+			attribute.String("name", name),
+		)
+		defer func() { endSpan(err) }()
+
 		// TODO: Paginate through databases
 		databases, err := manager.ListDatabases(ctx, schema.DatabaseListRequest{})
 		if err != nil {
@@ -46,7 +55,13 @@ func (manager *Manager) RegisterSchemaMetrics(name string) error {
 		name, metric.WithDescription("Size of schema in bytes"),
 	); err != nil {
 		return pg.ErrInternalServerError.With("RegisterSchemaMetrics: %w", err)
-	} else if _, err := manager.metrics.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
+	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) error {
+		// Otel span
+		ctx, endSpan := otel.StartSpan(manager.tracer, parent, "ObserveSchemaMetrics",
+			attribute.String("name", name),
+		)
+		defer func() { endSpan(err) }()
+
 		// TODO: Paginate through schemas
 		schemas, err := manager.ListSchemas(ctx, schema.SchemaListRequest{})
 		if err != nil {
@@ -74,7 +89,13 @@ func (manager *Manager) RegisterConnectionMetrics(name string) error {
 		name, metric.WithDescription("Number of active connections"),
 	); err != nil {
 		return pg.ErrInternalServerError.With("RegisterConnectionMetrics: %w", err)
-	} else if _, err := manager.metrics.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
+	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) error {
+		// Otel span
+		ctx, endSpan := otel.StartSpan(manager.tracer, parent, "ObserveConnectionMetrics",
+			attribute.String("name", name),
+		)
+		defer func() { endSpan(err) }()
+
 		// TODO: Paginate through connections
 		connections, err := manager.ListConnections(ctx, schema.ConnectionListRequest{})
 		if err != nil {
@@ -116,6 +137,40 @@ func (manager *Manager) RegisterConnectionMetrics(name string) error {
 		return nil
 	}, guage); err != nil {
 		return pg.ErrInternalServerError.With("RegisterConnectionMetrics: %w", err)
+	}
+
+	// Return success
+	return nil
+}
+
+func (manager *Manager) RegisterTablespaceMetrics(name string) error {
+	if guage, err := manager.metrics.Int64ObservableGauge(
+		name, metric.WithDescription("Size of tablespace in bytes"),
+	); err != nil {
+		return pg.ErrInternalServerError.With("RegisterTablespaceMetrics: %w", err)
+	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) error {
+		// Otel span
+		ctx, endSpan := otel.StartSpan(manager.tracer, parent, "ObserveTablespaceMetrics",
+			attribute.String("name", name),
+		)
+		defer func() { endSpan(err) }()
+
+		// TODO: Paginate through tablespaces
+		tablespaces, err := manager.ListTablespaces(ctx, schema.TablespaceListRequest{})
+		if err != nil {
+			return pg.ErrInternalServerError.With("RegisterTablespaceMetrics: %w", err)
+		}
+		for _, tablespace := range tablespaces.Body {
+			observer.ObserveInt64(guage, int64(tablespace.Size), metric.WithAttributes(
+				attribute.String("cluster", manager.cluster),
+				attribute.String("tablespace", tablespace.Name),
+				attribute.Int64("oid", int64(tablespace.Oid)),
+				attribute.String("location", tablespace.Location),
+			))
+		}
+		return nil
+	}, guage); err != nil {
+		return pg.ErrInternalServerError.With("RegisterTablespaceMetrics: %w", err)
 	}
 
 	// Return success

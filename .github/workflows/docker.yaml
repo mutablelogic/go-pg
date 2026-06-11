@@ -2,9 +2,12 @@ name: Create Docker Image
 on:
     release:
         types:
-            - created
-
+            - published
     workflow_dispatch:
+
+env:
+    DOCKER_REPO: ghcr.io/${{ github.repository_owner }}/pgmanager
+    DOCKER_SOURCE: github.com/${{ github.repository }}
 
 jobs:
     build:
@@ -13,12 +16,11 @@ jobs:
             matrix:
                 arch: [amd64, arm64]
         runs-on:
-            - ${{ matrix.arch == 'amd64' && 'ubuntu-latest' || matrix.arch }}
+            ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || matrix.arch == 'arm64'
+            && 'ubuntu-24.04-arm' }}
         env:
             OS: linux
             ARCH: ${{ matrix.arch }}
-            DOCKER_REPO: ghcr.io/${{ github.repository_owner }}/pgmanager
-            DOCKER_SOURCE: https://github.com/${{ github.repository }}
         outputs:
             tag: ${{ steps.build.outputs.tag }}
         permissions:
@@ -27,19 +29,19 @@ jobs:
         steps:
             - name: Install build tools
               run: |
-                  sudo apt-get update -y
-                  sudo apt-get install -y build-essential
+                  sudo apt -y update
+                  sudo apt -y install build-essential git
                   git config --global advice.detachedHead false
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
               with:
                   fetch-depth: 0
-                  fetch-tags: true
+                  submodules: recursive
             - name: Login
-              uses: docker/login-action@v3
+              uses: docker/login-action@v4
               with:
                   registry: ghcr.io
-                  username: ${{ github.repository_owner }}
+                  username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
             - name: Build and Push
               id: build
@@ -58,23 +60,24 @@ jobs:
             packages: write
         steps:
             - name: Login
-              uses: docker/login-action@v3
+              uses: docker/login-action@v4
               with:
                   registry: ghcr.io
-                  username: ${{ github.repository_owner }}
+                  username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
             - name: Create
               run: |
-                  docker manifest create ghcr.io/${{ github.repository_owner }}/pgmanager:${{ matrix.tag }} \
-                    --amend ghcr.io/${{ github.repository_owner }}/pgmanager-linux-amd64:${{ needs.build.outputs.tag }} \
-                    --amend ghcr.io/${{ github.repository_owner }}/pgmanager-linux-arm64:${{ needs.build.outputs.tag }}
+                  docker manifest create ${DOCKER_REPO}:${{ matrix.tag }} \
+                    --amend ${DOCKER_REPO}-linux-amd64:${{ needs.build.outputs.tag }} \
+                    --amend ${DOCKER_REPO}-linux-arm64:${{ needs.build.outputs.tag }}
             - name: Annotate
               run: |
                   docker manifest annotate --arch amd64 --os linux \
-                    ghcr.io/${{ github.repository_owner }}/pgmanager:${{ matrix.tag }} \
-                    ghcr.io/${{ github.repository_owner }}/pgmanager-linux-amd64:${{ needs.build.outputs.tag }}
+                    ${DOCKER_REPO}:${{ matrix.tag }} \
+                    ${DOCKER_REPO}-linux-amd64:${{ needs.build.outputs.tag }}
                   docker manifest annotate --arch arm64 --os linux \
-                    ghcr.io/${{ github.repository_owner }}/pgmanager:${{ matrix.tag }} \
-                    ghcr.io/${{ github.repository_owner }}/pgmanager-linux-arm64:${{ needs.build.outputs.tag }}
+                    ${DOCKER_REPO}:${{ matrix.tag }} \
+                    ${DOCKER_REPO}-linux-arm64:${{ needs.build.outputs.tag }}
             - name: Push
-              run: docker manifest push ghcr.io/${{ github.repository_owner }}/pgmanager:${{ matrix.tag }}
+              run: |
+                  docker manifest push ${DOCKER_REPO}:${{ matrix.tag }}

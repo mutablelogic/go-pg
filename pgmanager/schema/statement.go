@@ -1,11 +1,11 @@
 package schema
 
 import (
-	"encoding/json"
 	"strings"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -27,6 +27,7 @@ type Statement struct {
 
 // StatementList is a list of statements with a total count
 type StatementList struct {
+	StatementListRequest
 	Count uint64      `json:"count"`
 	Body  []Statement `json:"body"`
 }
@@ -50,19 +51,15 @@ type StatementListRequest struct {
 // STRINGIFY
 
 func (s Statement) String() string {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(s)
 }
 
 func (l StatementList) String() string {
-	data, err := json.MarshalIndent(l, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(l)
+}
+
+func (l StatementListRequest) String() string {
+	return types.Stringify(l)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

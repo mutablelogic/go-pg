@@ -7,11 +7,12 @@ const (
 	DatabaseListLimit        = 50
 	ConnectionListLimit      = 50
 	ExtensionListLimit       = 50
-	SchemaListLimit          = 50
+	SchemaListLimit          = 20
 	SettingListLimit         = 100
 	RoleListLimit            = 50
 	TablespaceListLimit      = 50
-	ReplicationSlotListLimit = 100
+	ReplicationSlotListLimit = 50
+	StatementListLimit       = 50
 )
 
 const (

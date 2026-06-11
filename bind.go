@@ -11,7 +11,7 @@ import (
 
 	// Packages
 	pgx "github.com/jackc/pgx/v5"
-	types "github.com/mutablelogic/go-pg/pkg/types"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////

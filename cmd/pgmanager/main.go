@@ -22,7 +22,7 @@ type CLI struct {
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
-const description = "Postgresql Manager is an application for managing a database server"
+const description = "PostgreSQL Manager is an application for managing a database server"
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
@@ -30,6 +30,6 @@ const description = "Postgresql Manager is an application for managing a databas
 func main() {
 	if err := servercmd.Main(CLI{}, description, version.Version()); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(-1)
+		os.Exit(1)
 	}
 }

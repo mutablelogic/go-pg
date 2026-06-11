@@ -10,7 +10,7 @@ import (
 
 	// Packages
 	pgxpool "github.com/jackc/pgx/v5/pgxpool"
-	types "github.com/mutablelogic/go-pg/pkg/types"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ////////////////////////////////////////////////////////////////////////////////

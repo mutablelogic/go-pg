@@ -5,12 +5,15 @@ import (
 	"fmt"
 
 	// Packages
+	mcpserver "github.com/mutablelogic/go-llm/mcp/server"
 	pg "github.com/mutablelogic/go-pg"
 	httphandlers "github.com/mutablelogic/go-pg/pgmanager/httphandlers"
 	manager "github.com/mutablelogic/go-pg/pgmanager/manager"
+	"github.com/mutablelogic/go-pg/pgmanager/mcp"
 	pgpkg "github.com/mutablelogic/go-pg/pkg/cmd"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
+	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	errgroup "golang.org/x/sync/errgroup"
 )
@@ -25,6 +28,7 @@ type ServerCommands struct {
 type RunServer struct {
 	cmd.RunServer
 	pgpkg.PostgresFlags `embed:"" prefix:"pg."`
+	MCP                 bool `name:"mcp" help:"Enable an MCP endpoint" negatable:"" default:"false"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -63,12 +67,45 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 			)
 		})
 
+		// If MCP is enabled, register the MCP handler
+		runner.Register(func(router *httprouter.Router) error {
+			if !runner.MCP {
+				return nil
+			}
+
+			ctx.Logger().DebugContext(ctx.Context(), "registering pgmanager mcp server")
+
+			// Set options
+			opts := []mcpserver.ServerOpt{
+				mcpserver.WithInstructions("Manage PostgreSQL database clusters, databases, roles, schemas, and more."),
+				mcpserver.WithTracer(ctx.Tracer()),
+			}
+
+			// Create an MCP server
+			mcpServer, err := mcp.New(pgmanager, ctx.Name(), ctx.Version(), opts...)
+			if err != nil {
+				return err
+			}
+
+			// Serve the MCP endpoint
+			handler := mcpServer.Handler()
+			return router.RegisterPath("/mcp", nil, httprequest.NewPathItem("MCP", "Management Control Protocol endpoint").
+				Post(handler.ServeHTTP, "Send a message to the MCP server").
+				Delete(handler.ServeHTTP, "Close an MCP session"),
+			)
+		})
+
+		// Run the manager
+		errgroup.Go(func() error {
+			return pgmanager.Run(errctx)
+		})
+
 		// Run the server - if any co-routine in the error group returns an error, the server will be shutdown
 		errgroup.Go(func() error {
 			return runner.RunServer.Run(ctx.WithContext(errctx))
 		})
 
-		// Run the server
+		// Wait for the server and manager to exit, and return any error
 		return errgroup.Wait()
 	})
 }

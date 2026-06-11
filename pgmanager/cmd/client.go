@@ -21,6 +21,7 @@ type ClientCommands struct {
 	RoleClientCommands
 	DatabaseClientCommands
 	SchemaClientCommands
+	StatementCommands
 	TablespaceClientCommands
 	ConnectionClientCommands
 	ReplicationSlotClientCommands
@@ -52,6 +53,11 @@ type SchemaClientCommands struct {
 	SchemaCreate SchemaCreateCmd `cmd:"" name:"schema-create" help:"Create a new schema in a database." group:"SCHEMA"`
 	SchemaDelete SchemaDeleteCmd `cmd:"" name:"schema-delete" help:"Delete a schema from a database." group:"SCHEMA"`
 	SchemaUpdate SchemaUpdateCmd `cmd:"" name:"schema-update" help:"Update a schema in a database." group:"SCHEMA"`
+}
+
+type StatementCommands struct {
+	StatementList  StatementListCmd  `cmd:"" name:"statements" help:"Return statement statistics." group:"STATEMENT"`
+	StatementReset StatementResetCmd `cmd:"" name:"statement-reset" help:"Reset statement statistics." group:"STATEMENT"`
 }
 
 type TablespaceClientCommands struct {
@@ -156,6 +162,12 @@ type SchemaUpdateCmd struct {
 	NewNamespace string `flag:"" name:"name" help:"New name of the schema."`
 	schema.SchemaMeta
 }
+
+type StatementListCmd struct {
+	schema.StatementListRequest
+}
+
+type StatementResetCmd struct{}
 
 type TablespaceListCmd struct {
 	schema.TablespaceListRequest
@@ -500,6 +512,41 @@ func (cmd *SchemaUpdateCmd) Run(ctx server.Cmd) error {
 
 		fmt.Println(schema)
 		return nil
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// STATEMENT STAT COMMANDS
+
+func (cmd *StatementListCmd) Run(ctx server.Cmd) error {
+	// Set the width of the terminal
+	width := ctx.IsTerm()
+
+	// Perform the request
+	return withClient(ctx, "statements", func(ctx context.Context, client *httpclient.Client) error {
+		statements, err := client.ListStatements(ctx, cmd.StatementListRequest)
+		if err != nil {
+			return err
+		}
+		// Statements list table
+		table := tui.TableFor[schema.Statement](tui.SetWidth(width))
+		if _, err := table.Write(os.Stdout, statements.Body...); err != nil {
+			return err
+		}
+
+		// Statements list summary
+		summary := tui.TableSummary("statements", uint(statements.Count), statements.Offset, statements.Limit)
+		if _, err := summary.Write(os.Stdout); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func (cmd *StatementResetCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "statement-reset", func(ctx context.Context, client *httpclient.Client) error {
+		return client.ResetStatementStats(ctx)
 	})
 }
 

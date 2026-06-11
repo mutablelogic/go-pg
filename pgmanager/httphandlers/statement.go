@@ -31,6 +31,13 @@ func RegisterStatementHandlers(manager *manager.Manager, router *httprouter.Rout
 				openapi.WithTags("Statements"),
 				openapi.WithQuery(jsonschema.MustFor[schema.StatementListRequest]()),
 				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.StatementList]()),
+			).
+			Delete(
+				func(w http.ResponseWriter, r *http.Request) {
+					_ = ResetStatementStats(w, r, manager)
+				},
+				"Reset statement statistics",
+				openapi.WithTags("Statements"),
 			),
 		),
 	)
@@ -48,5 +55,13 @@ func ListStatements(w http.ResponseWriter, r *http.Request, manager *manager.Man
 		return httpresponse.Error(w, pg.HTTPError(err))
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), statements)
+	}
+}
+
+func ResetStatementStats(w http.ResponseWriter, r *http.Request, manager *manager.Manager) error {
+	if err := manager.ResetStatements(r.Context()); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err))
+	} else {
+		return httpresponse.Empty(w, http.StatusNoContent)
 	}
 }

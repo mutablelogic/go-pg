@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"fmt"
+	"net/url"
 	"strings"
 
 	// Packages
@@ -15,7 +17,7 @@ import (
 type Statement struct {
 	Role     string  `json:"role,omitempty"`     // Name of the role who executed the statement
 	Database string  `json:"database,omitempty"` // Name of the database in which the statement was executed
-	QueryID  int64   `json:"query_id"`           // Hash code to identify identical normalized queries
+	QueryID  uint64  `json:"query_id"`           // Hash code to identify identical normalized queries
 	Query    string  `json:"query"`              // Text of a representative statement
 	Calls    int64   `json:"calls"`              // Number of times the statement was executed
 	Rows     int64   `json:"rows"`               // Total number of rows retrieved or affected by the statement
@@ -62,6 +64,67 @@ func (l StatementListRequest) String() string {
 	return types.Stringify(l)
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (r Statement) Header() []string {
+	return []string{"Role", "Database", "QueryID", "Query", "Calls", "Rows", "Total", "Min", "Max", "Mean"}
+}
+
+func (r Statement) Width(col int) int {
+	return 0
+}
+
+func (r Statement) Cell(col int) string {
+	switch col {
+	case 0:
+		return r.Role
+	case 1:
+		return r.Database
+	case 2:
+		return fmt.Sprintf("0x%016x", r.QueryID)
+	case 3:
+		return r.Query
+	case 4:
+		return fmt.Sprint(r.Calls)
+	case 5:
+		return fmt.Sprint(r.Rows)
+	case 6:
+		return fmt.Sprintf("%.2f", r.Total)
+	case 7:
+		return fmt.Sprintf("%.2f", r.Min)
+	case 8:
+		return fmt.Sprintf("%.2f", r.Max)
+	case 9:
+		return fmt.Sprintf("%.2f", r.Mean)
+	default:
+		return ""
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+func (s StatementListRequest) Query() url.Values {
+	q := url.Values{}
+	if s.Offset > 0 {
+		q.Set("offset", fmt.Sprint(s.Offset))
+	}
+	if s.Limit != nil {
+		q.Set("limit", fmt.Sprint(types.Value(s.Limit)))
+	}
+	if s.Database != nil {
+		q.Set("database", types.Value(s.Database))
+	}
+	if s.Role != nil {
+		q.Set("role", types.Value(s.Role))
+	}
+	if s.Sort != "" {
+		q.Set("sort", s.Sort)
+	}
+	return q
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // SELECTOR
 
@@ -87,23 +150,23 @@ func (r *StatementListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	var sortClause string
 	switch strings.ToLower(r.Sort) {
 	case "":
-		// No additional sort
+		sortClause = "queryid ASC"
 	case "calls":
-		sortClause = ", calls DESC"
+		sortClause = "calls DESC"
 	case "rows":
-		sortClause = ", rows DESC"
+		sortClause = "rows DESC"
 	case "total_ms":
-		sortClause = ", total_exec_time DESC"
+		sortClause = "total_exec_time DESC"
 	case "min_ms":
-		sortClause = ", min_exec_time ASC"
+		sortClause = "min_exec_time ASC"
 	case "max_ms":
-		sortClause = ", max_exec_time DESC"
+		sortClause = "max_exec_time DESC"
 	case "mean_ms":
-		sortClause = ", mean_exec_time DESC"
+		sortClause = "mean_exec_time DESC"
 	default:
 		return "", pg.ErrBadParameter.Withf("invalid sort parameter %q", r.Sort)
 	}
-	bind.Set("orderby", "ORDER BY database ASC, queryid ASC"+sortClause)
+	bind.Set("orderby", "ORDER BY "+sortClause)
 
 	// Set offset/limit
 	r.OffsetLimit.Bind(bind, StatementListLimit)
@@ -121,11 +184,16 @@ func (r *StatementListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 // READER
 
 func (s *Statement) Scan(row pg.Row) error {
-	return row.Scan(
-		&s.Role, &s.Database, &s.QueryID, &s.Query,
+	var queryID int64
+	if err := row.Scan(
+		&s.Role, &s.Database, &queryID, &s.Query,
 		&s.Calls, &s.Rows,
 		&s.Total, &s.Min, &s.Max, &s.Mean,
-	)
+	); err != nil {
+		return err
+	}
+	s.QueryID = uint64(queryID)
+	return nil
 }
 
 func (l *StatementList) Scan(row pg.Row) error {

@@ -54,6 +54,7 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 				httphandlers.RegisterSchemaHandlers(pgmanager, router),
 				httphandlers.RegisterTablespaceHandlers(pgmanager, router),
 				httphandlers.RegisterConnectionHandlers(pgmanager, router),
+				httphandlers.RegisterReplicationSlotHandlers(pgmanager, router),
 				httphandlers.RegisterExtensionHandlers(pgmanager, router),
 				httphandlers.RegisterSettingHandlers(pgmanager, router),
 				router.RegisterCatchAll("/", true),

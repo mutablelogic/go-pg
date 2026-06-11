@@ -1,11 +1,13 @@
 package schema
 
 import (
-	"encoding/json"
+	"fmt"
+	"net/url"
 	"strings"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
+	"github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -16,12 +18,12 @@ type ReplicationSlotName string
 
 // ReplicationSlotMeta contains parameters for creating a replication slot
 type ReplicationSlotMeta struct {
-	Name      string `json:"name"`
-	Type      string `json:"type"`               // physical, logical
-	Plugin    string `json:"plugin,omitempty"`   // required for logical (e.g., pgoutput)
-	Database  string `json:"database,omitempty"` // required for logical
-	Temporary bool   `json:"temporary,omitempty"`
-	TwoPhase  bool   `json:"two_phase,omitempty"` // PG14+
+	Name      string `json:"name" arg:"" help:"Name of the replication slot"`
+	Type      string `json:"type" enum:"physical,logical" required:"" help:"Type of the replication slot"`
+	Plugin    string `json:"plugin,omitempty" help:"Plugin for logical replication slots (e.g., pgoutput)"`
+	Database  string `json:"database,omitempty" help:"Database for logical replication slots"`
+	Temporary bool   `json:"temporary,omitempty" negatable:"" help:"If true, slot will be dropped on disconnect; logical slots only"`
+	TwoPhase  bool   `json:"two_phase,omitempty"  negatable:"" help:"Logical slots only, allows PREPARE/COMMIT semantics for streaming transactions"`
 }
 
 // ReplicationSlot represents a replication slot with its status
@@ -34,7 +36,7 @@ type ReplicationSlot struct {
 	// Connected replica info (when streaming/catchup)
 	ClientAddr string   `json:"client_addr,omitempty"`
 	LagBytes   *int64   `json:"lag_bytes,omitempty"`
-	LagMs      *float64 `json:"lag_ms"`
+	LagMs      *float64 `json:"lag_ms,omitempty"`
 }
 
 // ReplicationSlotListRequest contains parameters for listing replication slots
@@ -44,6 +46,7 @@ type ReplicationSlotListRequest struct {
 
 // ReplicationSlotList is a list of replication slots with a total count
 type ReplicationSlotList struct {
+	ReplicationSlotListRequest
 	Count uint64            `json:"count"`
 	Body  []ReplicationSlot `json:"body,omitempty"`
 }
@@ -52,27 +55,73 @@ type ReplicationSlotList struct {
 // STRINGIFY
 
 func (s ReplicationSlot) String() string {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(s)
 }
 
 func (s ReplicationSlotMeta) String() string {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(s)
 }
 
 func (l ReplicationSlotList) String() string {
-	data, err := json.MarshalIndent(l, "", "  ")
-	if err != nil {
-		return err.Error()
+	return types.Stringify(l)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (r ReplicationSlot) Header() []string {
+	return []string{"Name", "Type", "Plugin", "Database", "Temporary", "TwoPhase", "Status", "ClientAddr", "LagBytes", "LagMs"}
+}
+
+func (r ReplicationSlot) Width(col int) int {
+	return 0
+}
+
+func (r ReplicationSlot) Cell(col int) string {
+	switch col {
+	case 0:
+		return r.Name
+	case 1:
+		return r.Type
+	case 2:
+		return r.Plugin
+	case 3:
+		return r.Database
+	case 4:
+		return fmt.Sprint(r.Temporary)
+	case 5:
+		return fmt.Sprint(r.TwoPhase)
+	case 6:
+		return r.Status
+	case 7:
+		return r.ClientAddr
+	case 8:
+		if r.LagBytes != nil {
+			return fmt.Sprint(*r.LagBytes)
+		}
+		return ""
+	case 9:
+		if r.LagMs != nil {
+			return fmt.Sprintf("%.2f", *r.LagMs)
+		}
+		return ""
+	default:
+		return ""
 	}
-	return string(data)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+func (d ReplicationSlotListRequest) Query() url.Values {
+	q := url.Values{}
+	if d.Offset > 0 {
+		q.Set("offset", fmt.Sprint(d.Offset))
+	}
+	if d.Limit != nil {
+		q.Set("limit", fmt.Sprint(types.Value(d.Limit)))
+	}
+	return q
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -132,7 +181,7 @@ func (n ReplicationSlotName) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	}
 }
 
-func (r ReplicationSlotListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (r *ReplicationSlotListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	bind.Set("where", "")
 	bind.Set("orderby", "ORDER BY name ASC")
 

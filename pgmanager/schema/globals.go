@@ -4,13 +4,14 @@ package schema
 // GLOBALS
 
 const (
-	DatabaseListLimit   = 50
-	ConnectionListLimit = 50
-	ExtensionListLimit  = 50
-	SchemaListLimit     = 50
-	SettingListLimit    = 100
-	RoleListLimit       = 50
-	TablespaceListLimit = 50
+	DatabaseListLimit        = 50
+	ConnectionListLimit      = 50
+	ExtensionListLimit       = 50
+	SchemaListLimit          = 50
+	SettingListLimit         = 100
+	RoleListLimit            = 50
+	TablespaceListLimit      = 50
+	ReplicationSlotListLimit = 100
 )
 
 const (

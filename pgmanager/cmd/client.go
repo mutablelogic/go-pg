@@ -23,6 +23,7 @@ type ClientCommands struct {
 	SchemaClientCommands
 	TablespaceClientCommands
 	ConnectionClientCommands
+	ReplicationSlotClientCommands
 	ExtensionClientCommands
 	SettingClientCommands
 }
@@ -65,6 +66,13 @@ type ConnectionClientCommands struct {
 	ConnectionList   ConnectionListCmd   `cmd:"" name:"connections" help:"List connections." group:"CONNECTION"`
 	ConnectionGet    ConnectionGetCmd    `cmd:"" name:"connection" help:"Get connection details." group:"CONNECTION"`
 	ConnectionDelete ConnectionDeleteCmd `cmd:"" name:"connection-delete" help:"Delete a connection." group:"CONNECTION"`
+}
+
+type ReplicationSlotClientCommands struct {
+	ReplicationSlotList   ReplicationSlotListCmd   `cmd:"" name:"replication-slots" help:"List replication slots." group:"REPLICATION SLOT"`
+	ReplicationSlotGet    ReplicationSlotGetCmd    `cmd:"" name:"replication-slot" help:"Get replication slot details." group:"REPLICATION SLOT"`
+	ReplicationSlotCreate ReplicationSlotCreateCmd `cmd:"" name:"replication-slot-create" help:"Create a new replication slot." group:"REPLICATION SLOT"`
+	ReplicationSlotDelete ReplicationSlotDeleteCmd `cmd:"" name:"replication-slot-delete" help:"Delete a replication slot." group:"REPLICATION SLOT"`
 }
 
 type ExtensionClientCommands struct {
@@ -181,6 +189,22 @@ type ConnectionGetCmd struct {
 
 type ConnectionDeleteCmd struct {
 	Pid uint64 `arg:"" name:"pid" help:"PID of the connection."`
+}
+
+type ReplicationSlotListCmd struct {
+	schema.ReplicationSlotListRequest
+}
+
+type ReplicationSlotGetCmd struct {
+	Name string `arg:"" name:"name" help:"Name of the replication slot."`
+}
+
+type ReplicationSlotCreateCmd struct {
+	schema.ReplicationSlotMeta
+}
+
+type ReplicationSlotDeleteCmd struct {
+	Name string `arg:"" name:"name" help:"Name of the replication slot."`
 }
 
 type ExtensionListCmd struct {
@@ -600,6 +624,66 @@ func (cmd *ConnectionGetCmd) Run(ctx server.Cmd) error {
 func (cmd *ConnectionDeleteCmd) Run(ctx server.Cmd) error {
 	return withClient(ctx, "connection-delete", func(ctx context.Context, client *httpclient.Client) error {
 		return client.DeleteConnection(ctx, cmd.Pid)
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// REPLICATION SLOT COMMANDS
+
+func (cmd *ReplicationSlotListCmd) Run(ctx server.Cmd) error {
+	// Set the width of the terminal
+	width := ctx.IsTerm()
+
+	// Perform the request
+	return withClient(ctx, "replication-slots", func(ctx context.Context, client *httpclient.Client) error {
+		slots, err := client.ListReplicationSlots(ctx, cmd.ReplicationSlotListRequest)
+		if err != nil {
+			return err
+		}
+
+		// Replication slots list table
+		table := tui.TableFor[schema.ReplicationSlot](tui.SetWidth(width))
+		if _, err := table.Write(os.Stdout, slots.Body...); err != nil {
+			return err
+		}
+
+		// Replication slots list summary
+		summary := tui.TableSummary("replication slots", uint(slots.Count), slots.Offset, slots.Limit)
+		if _, err := summary.Write(os.Stdout); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func (cmd *ReplicationSlotGetCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "replication-slot", func(ctx context.Context, client *httpclient.Client) error {
+		slot, err := client.GetReplicationSlot(ctx, cmd.Name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(slot)
+		return nil
+	})
+}
+
+func (cmd *ReplicationSlotCreateCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "replication-slot-create", func(ctx context.Context, client *httpclient.Client) error {
+		slot, err := client.CreateReplicationSlot(ctx, cmd.ReplicationSlotMeta)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(slot)
+		return nil
+	})
+}
+
+func (cmd *ReplicationSlotDeleteCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "replication-slot-delete", func(ctx context.Context, client *httpclient.Client) error {
+		return client.DeleteReplicationSlot(ctx, cmd.Name)
 	})
 }
 

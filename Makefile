@@ -21,7 +21,7 @@ BUILD_FLAGS = -ldflags "-s -w ${BUILD_LD_FLAGS}"
 # Docker
 DOCKER_REPO ?= ghcr.io/mutablelogic/pgmanager
 DOCKER_SOURCE ?= $(shell cat go.mod | head -1 | cut -d ' ' -f 2)
-DOCKER_TAG = ${DOCKER_REPO}-${OS}-${ARCH}:${VERSION}
+DOCKER_TAG = ${DOCKER_REPO}:${VERSION}-${OS}-${ARCH}
 
 ###############################################################################
 # ALL

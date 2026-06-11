@@ -68,16 +68,16 @@ jobs:
             - name: Create
               run: |
                   docker manifest create ${DOCKER_REPO}:${{ matrix.tag }} \
-                    --amend ${DOCKER_REPO}-linux-amd64:${{ needs.build.outputs.tag }} \
-                    --amend ${DOCKER_REPO}-linux-arm64:${{ needs.build.outputs.tag }}
+                                        --amend ${DOCKER_REPO}:${{ needs.build.outputs.tag }}-linux-amd64 \
+                                        --amend ${DOCKER_REPO}:${{ needs.build.outputs.tag }}-linux-arm64
             - name: Annotate
               run: |
                   docker manifest annotate --arch amd64 --os linux \
                     ${DOCKER_REPO}:${{ matrix.tag }} \
-                    ${DOCKER_REPO}-linux-amd64:${{ needs.build.outputs.tag }}
+                                        ${DOCKER_REPO}:${{ needs.build.outputs.tag }}-linux-amd64
                   docker manifest annotate --arch arm64 --os linux \
                     ${DOCKER_REPO}:${{ matrix.tag }} \
-                    ${DOCKER_REPO}-linux-arm64:${{ needs.build.outputs.tag }}
+                                        ${DOCKER_REPO}:${{ needs.build.outputs.tag }}-linux-arm64
             - name: Push
               run: |
                   docker manifest push ${DOCKER_REPO}:${{ matrix.tag }}

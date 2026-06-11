@@ -63,12 +63,17 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 			)
 		})
 
+		// Run the manager
+		errgroup.Go(func() error {
+			return pgmanager.Run(errctx)
+		})
+
 		// Run the server - if any co-routine in the error group returns an error, the server will be shutdown
 		errgroup.Go(func() error {
 			return runner.RunServer.Run(ctx.WithContext(errctx))
 		})
 
-		// Run the server
+		// Wait for the server and manager to exit, and return any error
 		return errgroup.Wait()
 	})
 }

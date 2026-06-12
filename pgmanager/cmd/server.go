@@ -9,7 +9,7 @@ import (
 	pg "github.com/mutablelogic/go-pg"
 	httphandlers "github.com/mutablelogic/go-pg/pgmanager/httphandlers"
 	manager "github.com/mutablelogic/go-pg/pgmanager/manager"
-	"github.com/mutablelogic/go-pg/pgmanager/mcp"
+	mcp "github.com/mutablelogic/go-pg/pgmanager/mcp"
 	pgpkg "github.com/mutablelogic/go-pg/pkg/cmd"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"

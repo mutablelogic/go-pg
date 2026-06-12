@@ -6,7 +6,6 @@ import (
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	manager "github.com/mutablelogic/go-pg/pgqueue/manager"
-	queue "github.com/mutablelogic/go-pg/pgqueue/manager"
 	pgpkg "github.com/mutablelogic/go-pg/pkg/cmd"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
@@ -64,21 +63,21 @@ func (runner RunServer) Run(ctx server.Cmd) error {
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (runner RunServer) WithManager(globals server.Cmd, conn pg.PoolConn, fn func(manager *queue.Manager) error) error {
-	opts := []queue.Opt{
-		queue.WithMeter(globals.Meter()),
-		queue.WithTracer(globals.Tracer()),
+func (runner RunServer) WithManager(globals server.Cmd, conn pg.PoolConn, fn func(mgr *manager.Manager) error) error {
+	opts := []manager.Opt{
+		manager.WithMeter(globals.Meter()),
+		manager.WithTracer(globals.Tracer()),
 	}
 	if runner.Schema != "" {
-		opts = append(opts, queue.WithSchema(runner.Schema))
+		opts = append(opts, manager.WithSchema(runner.Schema))
 	}
 
 	// Create a queue
-	manager, err := queue.New(globals.Context(), conn, opts...)
+	mgr, err := manager.New(globals.Context(), conn, opts...)
 	if err != nil {
 		return err
 	}
 
 	// Call the function with the manager
-	return fn(manager)
+	return fn(mgr)
 }

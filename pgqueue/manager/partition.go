@@ -76,8 +76,14 @@ func (manager *Manager) DropDrainedPartition(ctx context.Context) (result string
 	if len(partitions) <= 1 {
 		return "", nil
 	}
-	// Oldest is first (ORDER BY relname ASC)
+
+	// Determine the oldest partition by lower bound, independent of name order.
 	oldest := partitions[0]
+	for _, partition := range partitions[1:] {
+		if partition.Start < oldest.Start || (partition.Start == oldest.Start && (partition.End < oldest.End || (partition.End == oldest.End && partition.Partition < oldest.Partition))) {
+			oldest = partition
+		}
+	}
 	if oldest.Count > 0 {
 		return "", nil
 	}

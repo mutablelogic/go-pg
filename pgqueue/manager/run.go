@@ -133,6 +133,9 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 				continue
 			}
 			if payload := decodeNotification(notification); payload != nil {
+				if payload.Schema != "" && payload.Schema != manager.schema {
+					continue
+				}
 				if more, err := queue(payload.Queue); err != nil {
 					log.ErrorContext(ctx, "RunQueueTask failed", "queue", payload.Queue, "error", err.Error())
 				} else if more {

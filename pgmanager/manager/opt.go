@@ -1,10 +1,10 @@
 package manager
 
 import (
-	// Packages
 	"errors"
 	"strings"
 
+	// Packages
 	metric "go.opentelemetry.io/otel/metric"
 	trace "go.opentelemetry.io/otel/trace"
 )

@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -194,7 +195,7 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 				// Completed ticker task
 				if result.Error != nil {
 					log.ErrorContext(resultCtx, "RunTickerTask result failed", "ticker", result.Ticker, "error", result.Error.Error())
-				} else {
+				} else if len(result.Result) > 0 && !bytes.Equal(result.Result, []byte("null")) {
 					log.InfoContext(resultCtx, "RunTickerTask result", "ticker", result.Ticker, "result", result)
 				}
 			}

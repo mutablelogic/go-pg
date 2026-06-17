@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -198,7 +196,6 @@ func run(ctx context.Context, fn schema.TaskFunc, payload json.RawMessage) (resp
 			default:
 				err = fmt.Errorf("panic: %v", value)
 			}
-			fmt.Fprintf(os.Stderr, "RunQueueTask panic: %v\n%s\n", err, debug.Stack())
 			resp = types.Ptr(Result{Error: err})
 		}
 	}()

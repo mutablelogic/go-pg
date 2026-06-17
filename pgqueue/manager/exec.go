@@ -189,6 +189,43 @@ func (exec *exec) RunQueueTask(ctx context.Context, task *schema.Task, result ch
 }
 
 func run(ctx context.Context, fn schema.TaskFunc, payload json.RawMessage) (resp *Result) {
+	return runWithGrace(ctx, fn, payload, time.Minute)
+}
+
+func runWithGrace(ctx context.Context, fn schema.TaskFunc, payload json.RawMessage, grace time.Duration) (resp *Result) {
+	result := make(chan *Result, 1)
+	go func() {
+		result <- runCallback(ctx, fn, payload)
+	}()
+
+	select {
+	case resp := <-result:
+		return resp
+	case <-ctx.Done():
+		cancelErr := ctx.Err()
+		if cancelErr == nil {
+			cancelErr = context.Canceled
+		}
+
+		// TTL is cooperative via context cancellation. Give callbacks an
+		// additional grace window to exit before force-failing the task.
+		if grace <= 0 {
+			return types.Ptr(Result{Error: cancelErr})
+		}
+
+		timer := time.NewTimer(grace)
+		defer timer.Stop()
+
+		select {
+		case resp := <-result:
+			return resp
+		case <-timer.C:
+			return types.Ptr(Result{Error: fmt.Errorf("task did not stop after %s grace period following context cancellation: %w", grace, cancelErr)})
+		}
+	}
+}
+
+func runCallback(ctx context.Context, fn schema.TaskFunc, payload json.RawMessage) (resp *Result) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			var err error

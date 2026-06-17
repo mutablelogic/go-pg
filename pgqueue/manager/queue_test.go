@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -322,6 +323,94 @@ func TestNextTaskWithZeroConcurrencyKeepsUnlimitedBehavior(t *testing.T) {
 	}
 
 	releaseOnce.Do(func() { close(release) })
+}
+
+func TestNextTaskReclaimsExpiredRunningTask(t *testing.T) {
+	mgr, ctx := test.Begin(t)
+	defer test.End(t)
+
+	beforeSeq, err := mgr.GetPartitionSeq(ctx)
+	require.NoError(t, err)
+
+	nextID := beforeSeq + 1
+	partitions, err := mgr.ListPartitions(ctx)
+	require.NoError(t, err)
+
+	createdPartition := ""
+	if !partitionContains(partitions, nextID) {
+		meta := schema.PartitionMeta{
+			Partition: "task_partition_queue_reclaim_expired",
+			Start:     1,
+			End:       1000000,
+		}
+		require.NoError(t, mgr.DeletePartition(ctx, meta.Partition))
+		require.NoError(t, mgr.CreatePartition(ctx, meta))
+		createdPartition = meta.Partition
+	}
+
+	ttl := 100 * time.Millisecond
+	concurrency := uint64(1)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+	})
+	started := make(chan struct{}, 2)
+	var calls atomic.Uint32
+
+	queue, err := mgr.RegisterQueue(ctx, "queue_reclaim_expired", schema.QueueMeta{
+		TTL:         &ttl,
+		Concurrency: &concurrency,
+	}, func(context.Context, json.RawMessage) (any, error) {
+		started <- struct{}{}
+		if calls.Add(1) == 1 {
+			<-release
+		}
+		return nil, nil
+	})
+	require.NoError(t, err)
+	defer func() {
+		releaseOnce.Do(func() { close(release) })
+		_, _ = mgr.DeleteQueue(ctx, queue.Queue)
+		if createdPartition != "" {
+			_ = mgr.DeletePartition(ctx, createdPartition)
+		}
+	}()
+
+	firstTask, err := mgr.CreateTask(ctx, queue.Queue, schema.TaskMeta{Payload: json.RawMessage(`{"task":1}`)})
+	require.NoError(t, err)
+	_, err = mgr.CreateTask(ctx, queue.Queue, schema.TaskMeta{Payload: json.RawMessage(`{"task":2}`)})
+	require.NoError(t, err)
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first queue task to start")
+	}
+
+	require.Eventually(t, func() bool {
+		list, err := mgr.ListTasks(ctx, schema.TaskListRequest{Status: "expired"})
+		if err != nil {
+			return false
+		}
+		for _, item := range list.Body {
+			if item.Id == firstTask.Id {
+				return true
+			}
+		}
+		return false
+	}, 3*time.Second, 25*time.Millisecond, "timed out waiting for first task to expire")
+
+	_, err = mgr.CreateTask(ctx, queue.Queue, schema.TaskMeta{Payload: json.RawMessage(`{"task":3}`)})
+	require.NoError(t, err)
+
+	// With the fix, the expired running task no longer blocks queue progress,
+	// so another task attempt can start after TTL expiry.
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for queue progress after expired running task")
+	}
 }
 
 func TestRunQueueTaskResultIsReleasedDone(t *testing.T) {

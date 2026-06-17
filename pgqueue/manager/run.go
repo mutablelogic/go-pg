@@ -1,8 +1,10 @@
 package manager
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"runtime"
 	"strings"
@@ -169,7 +171,12 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 				}
 				status := ""
 				if _, err := manager.ReleaseTask(resultCtx, result.Task.Id, success, releaseResult, &status); err != nil {
-					log.ErrorContext(resultCtx, "ReleaseTask failed", "queue", result.Queue, "task", result.Task.Id, "error", err.Error())
+					if errors.Is(err, pg.ErrNotFound) {
+						log.WarnContext(resultCtx, "Late queue task result ignored", "queue", result.Queue, "task", result.Task.Id)
+						queueTimer.Reset(0)
+					} else {
+						log.ErrorContext(resultCtx, "ReleaseTask failed", "queue", result.Queue, "task", result.Task.Id, "error", err.Error())
+					}
 					continue
 				}
 				if result.Error != nil {
@@ -188,7 +195,7 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 				// Completed ticker task
 				if result.Error != nil {
 					log.ErrorContext(resultCtx, "RunTickerTask result failed", "ticker", result.Ticker, "error", result.Error.Error())
-				} else {
+				} else if len(result.Result) > 0 && !bytes.Equal(result.Result, []byte("null")) {
 					log.InfoContext(resultCtx, "RunTickerTask result", "ticker", result.Ticker, "result", result)
 				}
 			}

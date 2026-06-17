@@ -202,10 +202,15 @@ func runWithGrace(ctx context.Context, fn schema.TaskFunc, payload json.RawMessa
 	case resp := <-result:
 		return resp
 	case <-ctx.Done():
+		cancelErr := ctx.Err()
+		if cancelErr == nil {
+			cancelErr = context.Canceled
+		}
+
 		// TTL is cooperative via context cancellation. Give callbacks an
 		// additional grace window to exit before force-failing the task.
 		if grace <= 0 {
-			return types.Ptr(Result{Error: context.DeadlineExceeded})
+			return types.Ptr(Result{Error: cancelErr})
 		}
 
 		timer := time.NewTimer(grace)
@@ -215,7 +220,7 @@ func runWithGrace(ctx context.Context, fn schema.TaskFunc, payload json.RawMessa
 		case resp := <-result:
 			return resp
 		case <-timer.C:
-			return types.Ptr(Result{Error: fmt.Errorf("task exceeded TTL and did not stop after %s grace period: %w", grace, context.DeadlineExceeded)})
+			return types.Ptr(Result{Error: fmt.Errorf("task did not stop after %s grace period following context cancellation: %w", grace, cancelErr)})
 		}
 	}
 }

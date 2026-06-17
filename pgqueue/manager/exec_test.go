@@ -190,3 +190,26 @@ func TestRunReturnsCallbackErrorIfItExitsDuringGrace(t *testing.T) {
 	assert.True(t, errors.Is(result.Error, context.DeadlineExceeded))
 	assert.Less(t, elapsed, 500*time.Millisecond)
 }
+
+func TestRunWithGracePreservesCanceledCause(t *testing.T) {
+	unblock := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+
+	start := time.Now()
+	go func() {
+		time.Sleep(25 * time.Millisecond)
+		cancel()
+	}()
+
+	result := runWithGrace(ctx, func(context.Context, json.RawMessage) (any, error) {
+		<-unblock
+		return map[string]bool{"ok": true}, nil
+	}, nil, 20*time.Millisecond)
+	elapsed := time.Since(start)
+	close(unblock)
+
+	require.NotNil(t, result)
+	require.Error(t, result.Error)
+	assert.True(t, errors.Is(result.Error, context.Canceled))
+	assert.Less(t, elapsed, 500*time.Millisecond)
+}

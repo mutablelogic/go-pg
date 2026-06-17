@@ -377,7 +377,7 @@ func TestNextTaskReclaimsExpiredRunningTask(t *testing.T) {
 		}
 	}()
 
-	_, err = mgr.CreateTask(ctx, queue.Queue, schema.TaskMeta{Payload: json.RawMessage(`{"task":1}`)})
+	firstTask, err := mgr.CreateTask(ctx, queue.Queue, schema.TaskMeta{Payload: json.RawMessage(`{"task":1}`)})
 	require.NoError(t, err)
 	_, err = mgr.CreateTask(ctx, queue.Queue, schema.TaskMeta{Payload: json.RawMessage(`{"task":2}`)})
 	require.NoError(t, err)
@@ -388,7 +388,19 @@ func TestNextTaskReclaimsExpiredRunningTask(t *testing.T) {
 		t.Fatal("timed out waiting for first queue task to start")
 	}
 
-	time.Sleep(ttl + 75*time.Millisecond)
+	require.Eventually(t, func() bool {
+		list, err := mgr.ListTasks(ctx, schema.TaskListRequest{Status: "expired"})
+		if err != nil {
+			return false
+		}
+		for _, item := range list.Body {
+			if item.Id == firstTask.Id {
+				return true
+			}
+		}
+		return false
+	}, 3*time.Second, 25*time.Millisecond, "timed out waiting for first task to expire")
+
 	_, err = mgr.CreateTask(ctx, queue.Queue, schema.TaskMeta{Payload: json.RawMessage(`{"task":3}`)})
 	require.NoError(t, err)
 

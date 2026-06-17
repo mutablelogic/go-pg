@@ -99,7 +99,7 @@ func TestRunQueueTaskUsesTaskTTLDeadline(t *testing.T) {
 	exec := NewExec(nil)
 	results := make(chan *Result, 1)
 	diesAt := time.Now().Add(2 * time.Second)
-	task := &schema.Task{Id: 42, Queue: "queue_deadline", DiesAt: diesAt}
+	task := &schema.Task{Id: 42, Queue: "queue_deadline", DiesAt: &diesAt}
 
 	require.NoError(t, exec.RegisterTask(task.Queue, func(ctx context.Context, _ json.RawMessage) (any, error) {
 		deadline, ok := ctx.Deadline()

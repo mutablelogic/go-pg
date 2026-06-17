@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -84,7 +83,7 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 		// Process as many tasks as we have capacity for, until there are
 		// no more tasks or an error occurs.
 		processed := false
-		for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+		for {
 			// Get next task for the queue
 			var task *schema.Task
 			if name == "" {
@@ -106,9 +105,6 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 			manager.queues.RunQueueTask(child, task, results)
 			processed = true
 		}
-
-		// Return success
-		return true, nil
 	}
 
 	// The run loop
@@ -176,6 +172,8 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 				} else {
 					log.InfoContext(resultCtx, "RunQueueTask result", "queue", result.Queue, "task", result.Task.Id, "status", status, "result", result)
 				}
+				// A slot just freed up — immediately try to pick up another task.
+				queueTimer.Reset(0)
 				continue
 			case result != nil && result.Ticker != "":
 				resultCtx := ctx

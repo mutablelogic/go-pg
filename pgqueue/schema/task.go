@@ -42,7 +42,7 @@ type Task struct {
 	CreatedAt  *time.Time `json:"created_at,omitempty"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	DiesAt     time.Time  `json:"dies_at,omitempty"`
+	DiesAt     *time.Time `json:"dies_at,omitempty"`
 	Retries    *uint64    `json:"retries,omitempty"`
 }
 

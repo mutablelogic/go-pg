@@ -196,14 +196,15 @@ UPDATE ${"schema"}."task" SET
     "dies_at" = NOW() + selected."ttl"
 FROM selected
 WHERE ${"schema"}."task"."id" = selected."id"
-RETURNING "id";
+RETURNING ${"schema"}."task"."id";
 $$ LANGUAGE SQL;
 
 -- pgqueue.queue_unlock_func
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_unlock(tid BIGINT, r JSONB) RETURNS BIGINT AS $$
     UPDATE ${"schema"}."task" SET
         "finished_at" = NOW(),
-        "result" = r
+        "result" = r,
+        "dies_at" = NULL
     WHERE
         "id" = tid
     AND

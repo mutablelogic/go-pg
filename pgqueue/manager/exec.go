@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -150,7 +152,7 @@ func (exec *exec) RunQueueTask(ctx context.Context, task *schema.Task, result ch
 	exec.RLock()
 	defer exec.RUnlock()
 
-	if task.DiesAt.IsZero() {
+	if task.DiesAt == nil {
 		result <- &Result{Queue: task.Queue, Task: task, Error: httpresponse.ErrBadRequest.With("missing task deadline")}
 		return
 	}
@@ -165,7 +167,7 @@ func (exec *exec) RunQueueTask(ctx context.Context, task *schema.Task, result ch
 	}
 
 	// Run the task function with the provided payload and deadline
-	child, cancel := context.WithDeadline(ctx, task.DiesAt.UTC())
+	child, cancel := context.WithDeadline(ctx, (*task.DiesAt).UTC())
 	exec.wg.Go(func() {
 		defer cancel()
 
@@ -196,6 +198,7 @@ func run(ctx context.Context, fn schema.TaskFunc, payload json.RawMessage) (resp
 			default:
 				err = fmt.Errorf("panic: %v", value)
 			}
+			fmt.Fprintf(os.Stderr, "RunQueueTask panic: %v\n%s\n", err, debug.Stack())
 			resp = types.Ptr(Result{Error: err})
 		}
 	}()

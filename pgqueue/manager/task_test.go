@@ -50,5 +50,5 @@ func TestCreateTask(t *testing.T) {
 	assert.Equal(t, queue.Queue, task.Queue)
 	assert.JSONEq(t, string(payload), string(task.Payload))
 	assert.NotZero(t, task.Id)
-	assert.False(t, task.DiesAt.IsZero())
+	assert.Nil(t, task.DiesAt) // dies_at is only set when a worker locks the task
 }

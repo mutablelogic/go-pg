@@ -82,7 +82,8 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 		defer func() { endSpan(err) }()
 
 		// Process as many tasks as we have capacity for, until there are
-		// no more tasks or an error occurs.
+		// no more tasks or an error occurs. Cap at GOMAXPROCS per round so
+		// we don't starve the event loop when concurrency=0 (unlimited).
 		processed := false
 		for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 			// Get next task for the queue
@@ -107,7 +108,7 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 			processed = true
 		}
 
-		// Return success
+		// Return success — more tasks may still be waiting.
 		return true, nil
 	}
 
@@ -176,6 +177,8 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 				} else {
 					log.InfoContext(resultCtx, "RunQueueTask result", "queue", result.Queue, "task", result.Task.Id, "status", status, "result", result)
 				}
+				// A slot just freed up — immediately try to pick up another task.
+				queueTimer.Reset(0)
 				continue
 			case result != nil && result.Ticker != "":
 				resultCtx := ctx

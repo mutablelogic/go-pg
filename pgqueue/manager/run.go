@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"runtime"
 	"strings"
@@ -169,7 +170,12 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 				}
 				status := ""
 				if _, err := manager.ReleaseTask(resultCtx, result.Task.Id, success, releaseResult, &status); err != nil {
-					log.ErrorContext(resultCtx, "ReleaseTask failed", "queue", result.Queue, "task", result.Task.Id, "error", err.Error())
+					if errors.Is(err, pg.ErrNotFound) {
+						log.WarnContext(resultCtx, "Late queue task result ignored", "queue", result.Queue, "task", result.Task.Id)
+						queueTimer.Reset(0)
+					} else {
+						log.ErrorContext(resultCtx, "ReleaseTask failed", "queue", result.Queue, "task", result.Task.Id, "error", err.Error())
+					}
 					continue
 				}
 				if result.Error != nil {

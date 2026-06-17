@@ -43,21 +43,12 @@ CREATE TABLE IF NOT EXISTS ${"schema"}."task" (
     "delayed_at"        TIMESTAMPTZ,
     "started_at"        TIMESTAMPTZ,
     "finished_at"       TIMESTAMPTZ,
-    "dies_at"           TIMESTAMPTZ NOT NULL,
+    "dies_at"           TIMESTAMPTZ,
     "retries"           INTEGER NOT NULL CHECK ("retries" >= 0),
     "initial_retries"   INTEGER NOT NULL CHECK ("initial_retries" >= 0),
     PRIMARY KEY ("id"),
     FOREIGN KEY ("queue") REFERENCES ${"schema"}."queue" ("queue") ON DELETE CASCADE
 ) PARTITION BY RANGE (id);
-
-UPDATE ${"schema"}."task" t
-SET "dies_at" = COALESCE(t."finished_at", t."delayed_at", t."created_at", NOW()) + q."ttl"
-FROM ${"schema"}."queue" q
-WHERE t."queue" = q."queue"
-AND t."dies_at" IS NULL;
-
-ALTER TABLE ${"schema"}."task"
-    ALTER COLUMN "dies_at" SET NOT NULL;
 
 -- pgqueue.queue_status_index
 -- Covers 'new' and 'retry' states
@@ -97,7 +88,7 @@ CREATE OR REPLACE FUNCTION ${"schema"}.queue_task_status(
 ) RETURNS ${"schema"}.task_status AS $$
     SELECT CASE
         WHEN started_at IS NOT NULL AND finished_at IS NOT NULL                THEN 'done'::${"schema"}.task_status
-        WHEN dies_at < NOW()                                                   THEN 'expired'::${"schema"}.task_status
+        WHEN started_at IS NOT NULL AND finished_at IS NULL AND dies_at IS NOT NULL AND dies_at < NOW() THEN 'expired'::${"schema"}.task_status
         WHEN started_at IS NULL AND finished_at IS NULL AND retries = 0        THEN 'failed'::${"schema"}.task_status
         WHEN started_at IS NULL AND finished_at IS NULL AND retries = initial_retries
                                                                             THEN 'new'::${"schema"}.task_status
@@ -111,30 +102,26 @@ $$ LANGUAGE SQL STABLE;
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert(q TEXT, p JSONB, delayed_at TIMESTAMPTZ) RETURNS BIGINT AS $$
 DECLARE
     v_retries       INTEGER;
-    v_dies_at       TIMESTAMPTZ;
     v_id            BIGINT;
 BEGIN
     -- Get queue defaults, raise if queue doesn't exist
     SELECT
-        "retries", CASE
-            WHEN delayed_at IS NULL OR delayed_at < NOW() THEN NOW() + "ttl"
-            ELSE delayed_at + "ttl"
-        END
+        "retries"
     INTO STRICT
-        v_retries, v_dies_at
+        v_retries
     FROM
         ${"schema"}."queue"
     WHERE
         "queue" = q;
 
     -- Insert the task
-    INSERT INTO ${"schema"}."task" ("queue", "payload", "delayed_at", "retries", "initial_retries", "dies_at")
+    INSERT INTO ${"schema"}."task" ("queue", "payload", "delayed_at", "retries", "initial_retries")
     VALUES (
         q, p, CASE
             WHEN delayed_at IS NULL THEN NULL
             WHEN delayed_at < NOW() THEN NOW()
             ELSE delayed_at
-        END, v_retries, v_retries, v_dies_at
+        END, v_retries, v_retries
     )
     RETURNING "id" INTO v_id;
 
@@ -163,13 +150,10 @@ CREATE OR REPLACE TRIGGER queue_insert_trigger
 
 -- pgqueue.queue_lock_func
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_lock(q TEXT[], w TEXT) RETURNS BIGINT AS $$
-UPDATE ${"schema"}."task" SET
-    "started_at" = NOW(),
-    "worker" = w,
-    "result" = 'null'
-WHERE "id" = (
+WITH selected AS (
     SELECT
-        t."id"
+        t."id",
+        queue."ttl"
     FROM
         ${"schema"}."task" t
     JOIN
@@ -196,8 +180,6 @@ WHERE "id" = (
     AND
         (t."started_at" IS NULL AND t."finished_at" IS NULL)
     AND
-        t."dies_at" > NOW()
-    AND
         (t."delayed_at" IS NULL OR t."delayed_at" <= NOW())
     AND
         t."retries" > 0
@@ -207,6 +189,13 @@ WHERE "id" = (
         t."created_at"
     FOR UPDATE OF t SKIP LOCKED LIMIT 1
 )
+UPDATE ${"schema"}."task" SET
+    "started_at" = NOW(),
+    "worker" = w,
+    "result" = 'null',
+    "dies_at" = NOW() + selected."ttl"
+FROM selected
+WHERE ${"schema"}."task"."id" = selected."id"
 RETURNING "id";
 $$ LANGUAGE SQL;
 
@@ -246,7 +235,8 @@ CREATE OR REPLACE FUNCTION ${"schema"}.queue_fail(tid BIGINT, r JSONB) RETURNS B
         "result" = r,
         "started_at" = NULL,
         "finished_at" = NULL,
-        "delayed_at" = ${"schema"}.queue_backoff(tid)
+        "delayed_at" = ${"schema"}.queue_backoff(tid),
+        "dies_at" = NULL
     WHERE
         "id" = tid
     AND

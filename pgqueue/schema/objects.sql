@@ -170,6 +170,8 @@ WITH selected AS (
             "started_at" IS NOT NULL
         AND
             "finished_at" IS NULL
+        AND
+            ("dies_at" IS NULL OR "dies_at" >= NOW())
         GROUP BY
             "queue"
     ) retained
@@ -178,7 +180,11 @@ WITH selected AS (
     WHERE
         (CARDINALITY(q) = 0 OR t."queue" = ANY(q))
     AND
-        (t."started_at" IS NULL AND t."finished_at" IS NULL)
+        (
+            (t."started_at" IS NULL AND t."finished_at" IS NULL)
+            OR
+            (t."started_at" IS NOT NULL AND t."finished_at" IS NULL AND t."dies_at" IS NOT NULL AND t."dies_at" < NOW())
+        )
     AND
         (t."delayed_at" IS NULL OR t."delayed_at" <= NOW())
     AND

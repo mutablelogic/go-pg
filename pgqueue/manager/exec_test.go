@@ -154,3 +154,39 @@ func TestRunQueueTaskRequiresTaskDeadline(t *testing.T) {
 
 	exec.Close()
 }
+
+func TestRunReturnsOnContextDeadlineWhenCallbackBlocks(t *testing.T) {
+	unblock := make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	result := runWithGrace(ctx, func(context.Context, json.RawMessage) (any, error) {
+		<-unblock
+		return map[string]bool{"ok": true}, nil
+	}, nil, 20*time.Millisecond)
+	elapsed := time.Since(start)
+	close(unblock)
+
+	require.NotNil(t, result)
+	require.Error(t, result.Error)
+	assert.True(t, errors.Is(result.Error, context.DeadlineExceeded))
+	assert.Less(t, elapsed, 500*time.Millisecond)
+}
+
+func TestRunReturnsCallbackErrorIfItExitsDuringGrace(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	result := runWithGrace(ctx, func(ctx context.Context, _ json.RawMessage) (any, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}, nil, 100*time.Millisecond)
+	elapsed := time.Since(start)
+
+	require.NotNil(t, result)
+	require.Error(t, result.Error)
+	assert.True(t, errors.Is(result.Error, context.DeadlineExceeded))
+	assert.Less(t, elapsed, 500*time.Millisecond)
+}

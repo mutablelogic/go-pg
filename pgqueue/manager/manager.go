@@ -71,6 +71,12 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 		self.PoolConn = pool
 	}
 
+	// Ensure at least one task partition exists before any task inserts happen.
+	if _, err := self.CreateNextPartition(bootstrapCtx); err != nil {
+		endBootstrapSpan(err)
+		return nil, err
+	}
+
 	// Register a maintenance ticker
 	if _, err := self.RegisterTicker(bootstrapCtx, schema.DefaultMaintenanceTickerName, schema.TickerMeta{
 		Interval: types.Ptr(schema.DefaultMaintenancePeriod),

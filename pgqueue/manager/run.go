@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -81,9 +82,10 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 		defer func() { endSpan(err) }()
 
 		// Process as many tasks as we have capacity for, until there are
-		// no more tasks or an error occurs.
+		// no more tasks or an error occurs. Cap at GOMAXPROCS per round so
+		// we don't starve the event loop when concurrency=0 (unlimited).
 		processed := false
-		for {
+		for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 			// Get next task for the queue
 			var task *schema.Task
 			if name == "" {
@@ -105,6 +107,9 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 			manager.queues.RunQueueTask(child, task, results)
 			processed = true
 		}
+
+		// Return success — more tasks may still be waiting.
+		return true, nil
 	}
 
 	// The run loop

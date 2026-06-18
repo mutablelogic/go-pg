@@ -38,26 +38,41 @@ func (manager *Manager) CreateNextPartition(ctx context.Context) (result string,
 		}
 	}
 
-	// Create next partition if no partitions exist, or seq is within 80% of upper bound
-	if maxEnd == 0 || seq >= uint64(float64(maxEnd)*0.8) {
-		start := maxEnd
-		if start == 0 {
-			start = 1
-		}
-		end := start + schema.DefaultPartitionSize
-		name := fmt.Sprintf("task_%08d_%08d", start, end)
-		if err := manager.CreatePartition(ctx, schema.PartitionMeta{
-			Partition: name,
-			Start:     start,
-			End:       end,
-		}); err != nil {
-			return "", err
+	// Create partition(s) if no partitions exist, or sequence has crossed threshold.
+	if maxEnd == 0 || seq >= uint64(float64(maxEnd)*manager.partitionThreshold) {
+		count := manager.partitionAhead
+		if count == 0 {
+			count = 1
 		}
 
-		// Reset the connection
+		created := make([]string, 0, count)
+		for i := uint64(0); i < count; i++ {
+			start := maxEnd
+			if start == 0 {
+				start = 1
+			}
+			end := start + manager.partitionSize
+			name := fmt.Sprintf("task_%08d_%08d", start, end)
+			if err := manager.CreatePartition(ctx, schema.PartitionMeta{
+				Partition: name,
+				Start:     start,
+				End:       end,
+			}); err != nil {
+				return "", err
+			}
+
+			created = append(created, name)
+			maxEnd = end
+		}
+
+		// Reset the connection to refresh partition metadata.
 		manager.PoolConn.Reset()
 
-		return name, nil
+		if len(created) == 1 {
+			return created[0], nil
+		}
+
+		return fmt.Sprintf("%s (+%d more)", created[0], len(created)-1), nil
 	}
 
 	return "", nil

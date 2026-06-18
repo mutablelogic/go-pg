@@ -79,7 +79,7 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 
 	// Register a maintenance ticker
 	if _, err := self.RegisterTicker(bootstrapCtx, schema.DefaultMaintenanceTickerName, schema.TickerMeta{
-		Interval: types.Ptr(schema.DefaultMaintenancePeriod),
+		Interval: types.Ptr(self.maintenancePeriod),
 	}, self.maintenance); err != nil {
 		endBootstrapSpan(err)
 		return nil, err

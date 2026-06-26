@@ -83,6 +83,11 @@ func NewQueries(r io.Reader) (*Queries, error) {
 		self.keys = append(self.keys, key)
 	}
 
+	// Remove any ; at the end of each SQL statement
+	for k, v := range self.queries {
+		self.queries[k] = strings.TrimSuffix(v, ";")
+	}
+
 	// Check for scanner errors
 	if err := scanner.Err(); err != nil {
 		return nil, err

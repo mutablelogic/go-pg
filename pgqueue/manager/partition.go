@@ -102,6 +102,16 @@ func (manager *Manager) DropDrainedPartition(ctx context.Context) (result string
 	if oldest.Count > 0 {
 		return "", nil
 	}
+
+	// Don't drop a partition if the sequence hasn't advanced past its end — new
+	// inserts could still land in this range.
+	seq, err := manager.GetPartitionSeq(ctx)
+	if err != nil {
+		return "", err
+	}
+	if seq < oldest.End {
+		return "", nil
+	}
 	if err := manager.DeletePartition(ctx, oldest.Partition); err != nil {
 		return "", err
 	} else {

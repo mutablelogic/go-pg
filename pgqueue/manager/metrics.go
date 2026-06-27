@@ -30,6 +30,7 @@ func (manager *Manager) registerMetrics() error {
 				metric.WithAttributes(
 					attribute.String("queue", status.Queue),
 					attribute.String("status", status.Status),
+					attribute.String("worker", manager.opt.worker),
 				),
 			)
 		}

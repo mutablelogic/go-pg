@@ -182,7 +182,7 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 				if result.Error != nil {
 					log.ErrorContext(resultCtx, "RunQueueTask result failed", "queue", result.Queue, "task", result.Task.Id, "status", status, "error", result.Error.Error())
 				} else {
-					log.InfoContext(resultCtx, "RunQueueTask result", "queue", result.Queue, "task", result.Task.Id, "status", status, "result", result)
+					log.DebugContext(resultCtx, "RunQueueTask result", "queue", result.Queue, "task", result.Task.Id, "status", status, "result", result)
 				}
 				// A slot just freed up — immediately try to pick up another task.
 				queueTimer.Reset(0)
@@ -196,7 +196,7 @@ func (manager *Manager) Run(ctx context.Context, log *slog.Logger) error {
 				if result.Error != nil {
 					log.ErrorContext(resultCtx, "RunTickerTask result failed", "ticker", result.Ticker, "error", result.Error.Error())
 				} else if len(result.Result) > 0 && !bytes.Equal(result.Result, []byte("null")) {
-					log.InfoContext(resultCtx, "RunTickerTask result", "ticker", result.Ticker, "result", result)
+					log.DebugContext(resultCtx, "RunTickerTask result", "ticker", result.Ticker, "result", result)
 				}
 			}
 		case <-timerC:

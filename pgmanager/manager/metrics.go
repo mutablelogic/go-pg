@@ -5,9 +5,8 @@ import (
 	"strings"
 
 	// Packages
-
 	otel "github.com/mutablelogic/go-client/pkg/otel"
-	"github.com/mutablelogic/go-pg"
+	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgmanager/schema"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"

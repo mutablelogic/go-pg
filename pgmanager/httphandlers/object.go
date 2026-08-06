@@ -11,7 +11,6 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -30,25 +29,27 @@ func RegisterObjectHandlers(manager *manager.Manager, router *httprouter.Router)
 	router.Spec().AddTag("Objects", "Object Operations")
 
 	return errors.Join(
-		router.RegisterPath("object", nil, httprequest.NewPathItem("Objects", "Manage PostgreSQL objects").
+		router.RegisterPath("object", nil, httprequest.NewPathItem("Objects", "Manage PostgreSQL objects").Tag("Objects").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListObjects(w, r, manager)
 				},
-				"List objects",
-				openapi.WithTags("Objects"),
-				openapi.WithQuery(jsonschema.MustFor[schema.ObjectListRequest]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.ObjectList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List objects")
+					op.Query(jsonschema.MustFor[schema.ObjectListRequest]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.ObjectList]())
+				},
 			),
 		),
-		router.RegisterPath("object/{database}/{schema}/{name}", jsonschema.MustFor[ObjectPathParams](), httprequest.NewPathItem("Objects", "Manage PostgreSQL objects").
+		router.RegisterPath("object/{database}/{schema}/{name}", jsonschema.MustFor[ObjectPathParams](), httprequest.NewPathItem("Objects", "Manage PostgreSQL objects").Tag("Objects").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = GetObject(w, r, manager, r.PathValue("database"), r.PathValue("schema"), r.PathValue("name"))
 				},
-				"Get object",
-				openapi.WithTags("Objects"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Object]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("Get object")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Object]())
+				},
 			),
 		),
 	)

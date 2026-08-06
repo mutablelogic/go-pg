@@ -10,7 +10,6 @@ import (
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -21,14 +20,14 @@ func RegisterStatusHandlers(manager *manager.Manager, router *httprouter.Router)
 
 	return errors.Join(
 		// Register Ping Handler
-		router.RegisterPath("health", nil, httprequest.NewPathItem("Health", "Determine the health of the PostgreSQL server").
+		router.RegisterPath("health", nil, httprequest.NewPathItem("Health", "Determine the health of the PostgreSQL server").Tag("Status").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = Ping(w, r, manager)
 				},
-				"Ping the postgresql server",
-				openapi.WithTags("Status"),
-				openapi.WithNoContentResponse(http.StatusNoContent, "PostgreSQL server is healthy"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Ping the postgresql server")
+				},
 			),
 		),
 	)

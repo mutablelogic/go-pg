@@ -12,10 +12,9 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
 type DatabasePathParams struct {
@@ -26,68 +25,73 @@ type ForceQueryParams struct {
 	Force bool `json:"force" query:"force" help:"Force the operation, even when there are active connections to the database."`
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
 func RegisterDatabaseHandlers(manager *manager.Manager, router *httprouter.Router) error {
 	router.Spec().AddTag("Databases", "Database Operations")
 
 	return errors.Join(
-		router.RegisterPath("database", nil, httprequest.NewPathItem("Databases", "Manage PostgreSQL databases").
+		router.RegisterPath("database", nil, httprequest.NewPathItem("Databases", "Manage PostgreSQL databases").Tag("Databases").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListDatabases(w, r, manager)
 				},
-				"List databases",
-				openapi.WithTags("Databases"),
-				openapi.WithQuery(jsonschema.MustFor[schema.DatabaseListRequest]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.DatabaseList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List databases")
+					op.Query(jsonschema.MustFor[schema.DatabaseListRequest]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.DatabaseList]())
+				},
 			).
 			Post(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = CreateDatabase(w, r, manager)
 				},
-				"Create database",
-				openapi.WithTags("Databases"),
-				openapi.WithJSONRequest(jsonschema.MustFor[schema.DatabaseMeta]()),
-				openapi.WithJSONResponse(http.StatusCreated, jsonschema.MustFor[schema.Database]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("Create database")
+					op.RequestBody(jsonschema.MustFor[schema.DatabaseMeta]())
+					op.JSONResponse(http.StatusCreated, jsonschema.MustFor[schema.Database]())
+				},
 			),
 		),
-		router.RegisterPath("database/{database}", jsonschema.MustFor[DatabasePathParams](), httprequest.NewPathItem("Database", "Manage a PostgreSQL database").
+		router.RegisterPath("database/{database}", jsonschema.MustFor[DatabasePathParams](), httprequest.NewPathItem("Database", "Manage a PostgreSQL database").Tag("Databases").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = GetDatabase(w, r, manager, r.PathValue("database"))
 				},
-				"Get database",
-				openapi.WithTags("Databases"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Database]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Database not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Get database")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Database]())
+					op.ErrorResponse(http.StatusNotFound, "Database not found")
+				},
 			).
 			Delete(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = DeleteDatabase(w, r, manager, r.PathValue("database"))
 				},
-				"Delete database",
-				openapi.WithTags("Databases"),
-				openapi.WithQuery(jsonschema.MustFor[ForceQueryParams]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Database]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Database not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Delete database")
+					op.Query(jsonschema.MustFor[ForceQueryParams]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Database]())
+					op.ErrorResponse(http.StatusNotFound, "Database not found")
+				},
 			).
 			Patch(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = UpdateDatabase(w, r, manager, r.PathValue("database"))
 				},
-				"Update database",
-				openapi.WithTags("Databases"),
-				openapi.WithJSONRequest(jsonschema.MustFor[schema.DatabaseMeta]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Database]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Database not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Update database")
+					op.RequestBody(jsonschema.MustFor[schema.DatabaseMeta]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Database]())
+					op.ErrorResponse(http.StatusNotFound, "Database not found")
+				},
 			),
 		),
 	)
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
 func ListDatabases(w http.ResponseWriter, r *http.Request, manager *manager.Manager) error {

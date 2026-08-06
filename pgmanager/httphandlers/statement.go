@@ -12,7 +12,6 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -22,22 +21,24 @@ func RegisterStatementHandlers(manager *manager.Manager, router *httprouter.Rout
 	router.Spec().AddTag("Statements", "Observe PostgreSQL statement execution statistics")
 
 	return errors.Join(
-		router.RegisterPath("statement", nil, httprequest.NewPathItem("Statements", "Observe PostgreSQL statement execution statistics").
+		router.RegisterPath("statement", nil, httprequest.NewPathItem("Statements", "Observe PostgreSQL statement execution statistics").Tag("Statements").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListStatements(w, r, manager)
 				},
-				"List statements",
-				openapi.WithTags("Statements"),
-				openapi.WithQuery(jsonschema.MustFor[schema.StatementListRequest]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.StatementList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List statements")
+					op.Query(jsonschema.MustFor[schema.StatementListRequest]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.StatementList]())
+				},
 			).
 			Delete(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ResetStatementStats(w, r, manager)
 				},
-				"Reset statement statistics",
-				openapi.WithTags("Statements"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Reset statement statistics")
+				},
 			),
 		),
 	)

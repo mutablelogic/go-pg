@@ -12,7 +12,6 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -34,42 +33,47 @@ func RegisterExtensionHandlers(manager *manager.Manager, router *httprouter.Rout
 	router.Spec().AddTag("Extensions", "Database Extension Operations")
 
 	return errors.Join(
-		router.RegisterPath("extension", nil, httprequest.NewPathItem("Extensions", "Manage PostgreSQL extensions").
+		router.RegisterPath("extension", nil, httprequest.NewPathItem("Extensions", "Manage PostgreSQL extensions").Tag("Extensions").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListExtensions(w, r, manager)
 				},
-				"List extensions",
-				openapi.WithTags("Extensions"),
-				openapi.WithQuery(jsonschema.MustFor[schema.ExtensionListRequest]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.ExtensionList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List extensions")
+					op.Query(jsonschema.MustFor[schema.ExtensionListRequest]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.ExtensionList]())
+				},
 			).
 			Post(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = CreateExtension(w, r, manager)
 				},
-				"Install extension into a database",
-				openapi.WithTags("Extensions"),
-				openapi.WithJSONRequest(jsonschema.MustFor[schema.ExtensionMeta]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Extension]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("Install extension into a database")
+					op.RequestBody(jsonschema.MustFor[schema.ExtensionMeta]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Extension]())
+				},
 			),
 		),
-		router.RegisterPath("extension/{extension}", jsonschema.MustFor[ExtensionPathParams](), httprequest.NewPathItem("Extension", "Manage a PostgreSQL extension").
+		router.RegisterPath("extension/{extension}", jsonschema.MustFor[ExtensionPathParams](), httprequest.NewPathItem("Extension", "Manage a PostgreSQL extension").Tag("Extensions").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = GetExtension(w, r, manager, r.PathValue("extension"))
 				},
-				"Get extension",
-				openapi.WithTags("Extensions"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Extension]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("Get extension")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Extension]())
+				},
 			).
 			Delete(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = DeleteExtension(w, r, manager, r.PathValue("extension"))
 				},
-				"Uninstall extension from one or more databases",
-				openapi.WithTags("Extensions"),
-				openapi.WithQuery(jsonschema.MustFor[ExtensionDeleteQueryParams]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("Uninstall extension from one or more databases")
+					op.Query(jsonschema.MustFor[ExtensionDeleteQueryParams]())
+					op.Description("Delete an extension from the specified databases")
+				},
 			),
 		),
 	)

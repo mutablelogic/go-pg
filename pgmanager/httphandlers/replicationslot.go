@@ -13,7 +13,6 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -30,44 +29,48 @@ func RegisterReplicationSlotHandlers(manager *manager.Manager, router *httproute
 	router.Spec().AddTag("Replication Slots", "Manage PostgreSQL replication slots")
 
 	return errors.Join(
-		router.RegisterPath("replication-slot", nil, httprequest.NewPathItem("Replication Slots", "Manage PostgreSQL replication slots").
+		router.RegisterPath("replication-slot", nil, httprequest.NewPathItem("Replication Slots", "Manage PostgreSQL replication slots").Tag("Replication Slots").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListReplicationSlots(w, r, manager)
 				},
-				"List replication slots",
-				openapi.WithTags("Replication Slots"),
-				openapi.WithQuery(jsonschema.MustFor[schema.ReplicationSlotListRequest]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.ReplicationSlotList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List replication slots")
+					op.Query(jsonschema.MustFor[schema.ReplicationSlotListRequest]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.ReplicationSlotList]())
+				},
 			).
 			Post(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = CreateReplicationSlot(w, r, manager)
 				},
-				"Create replication slot",
-				openapi.WithTags("Replication Slots"),
-				openapi.WithJSONRequest(jsonschema.MustFor[schema.ReplicationSlotMeta]()),
-				openapi.WithJSONResponse(http.StatusCreated, jsonschema.MustFor[schema.ReplicationSlot]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("Create replication slot")
+					op.RequestBody(jsonschema.MustFor[schema.ReplicationSlotMeta]())
+					op.JSONResponse(http.StatusCreated, jsonschema.MustFor[schema.ReplicationSlot]())
+				},
 			),
 		),
-		router.RegisterPath("replication-slot/{name}", jsonschema.MustFor[ReplicationSlotPathParams](), httprequest.NewPathItem("Replication Slot", "Manage a PostgreSQL replication slot").
+		router.RegisterPath("replication-slot/{name}", jsonschema.MustFor[ReplicationSlotPathParams](), httprequest.NewPathItem("Replication Slot", "Manage a PostgreSQL replication slot").Tag("Replication Slots").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = GetReplicationSlot(w, r, manager, r.PathValue("name"))
 				},
-				"Get replication slot",
-				openapi.WithTags("Replication Slots"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.ReplicationSlot]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Replication slot not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Get replication slot")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.ReplicationSlot]())
+					op.ErrorResponse(http.StatusNotFound, "Replication slot not found")
+				},
 			).
 			Delete(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = DeleteReplicationSlot(w, r, manager, r.PathValue("name"))
 				},
-				"Drop a replication slot",
-				openapi.WithTags("Replication Slots"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.ReplicationSlot]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Replication slot not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Drop a replication slot")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.ReplicationSlot]())
+					op.ErrorResponse(http.StatusNotFound, "Replication slot not found")
+				},
 			),
 		),
 	)

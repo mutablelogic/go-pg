@@ -89,9 +89,13 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 
 			// Serve the MCP endpoint
 			handler := mcpServer.Handler()
-			return router.RegisterPath("/mcp", nil, httprequest.NewPathItem("MCP", "Management Control Protocol endpoint").
-				Post(handler.ServeHTTP, "Send a message to the MCP server").
-				Delete(handler.ServeHTTP, "Close an MCP session"),
+			return router.RegisterPath("/mcp", nil, httprequest.NewPathItem("MCP", "Management Control Protocol endpoint").Tag("MCP").
+				Post(handler.ServeHTTP, func(op httprequest.PathOperation) {
+					op.Summary("Send a message to the MCP server")
+				}).
+				Delete(handler.ServeHTTP, func(op httprequest.PathOperation) {
+					op.Summary("Close an MCP session")
+				}),
 			)
 		})
 

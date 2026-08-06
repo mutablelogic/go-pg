@@ -12,10 +12,9 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
 type TablespacePathParams struct {
@@ -27,67 +26,72 @@ type TablespaceCreateMeta struct {
 	Location string `json:"location" validate:"required" help:"Location for the tablespace"`
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
 func RegisterTablespaceHandlers(manager *manager.Manager, router *httprouter.Router) error {
 	router.Spec().AddTag("Tablespaces", "Cluster Tablespace Operations")
 
 	return errors.Join(
-		router.RegisterPath("tablespace", nil, httprequest.NewPathItem("Tablespaces", "Manage PostgreSQL tablespaces").
+		router.RegisterPath("tablespace", nil, httprequest.NewPathItem("Tablespaces", "Manage PostgreSQL tablespaces").Tag("Tablespaces").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListTablespaces(w, r, manager)
 				},
-				"List tablespaces",
-				openapi.WithTags("Tablespaces"),
-				openapi.WithQuery(jsonschema.MustFor[schema.TablespaceListRequest]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.TablespaceList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List tablespaces")
+					op.Query(jsonschema.MustFor[schema.TablespaceListRequest]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.TablespaceList]())
+				},
 			).
 			Post(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = CreateTablespace(w, r, manager)
 				},
-				"Create tablespace",
-				openapi.WithTags("Tablespaces"),
-				openapi.WithJSONRequest(jsonschema.MustFor[TablespaceCreateMeta]()),
-				openapi.WithJSONResponse(http.StatusCreated, jsonschema.MustFor[schema.Tablespace]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("Create tablespace")
+					op.RequestBody(jsonschema.MustFor[TablespaceCreateMeta]())
+					op.JSONResponse(http.StatusCreated, jsonschema.MustFor[schema.Tablespace]())
+				},
 			),
 		),
-		router.RegisterPath("tablespace/{name}", jsonschema.MustFor[TablespacePathParams](), httprequest.NewPathItem("Tablespace", "Manage a PostgreSQL tablespace").
+		router.RegisterPath("tablespace/{name}", jsonschema.MustFor[TablespacePathParams](), httprequest.NewPathItem("Tablespace", "Manage a PostgreSQL tablespace").Tag("Tablespaces").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = GetTablespace(w, r, manager, r.PathValue("name"))
 				},
-				"Get tablespace",
-				openapi.WithTags("Tablespaces"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Tablespace]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Tablespace not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Get tablespace")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Tablespace]())
+					op.ErrorResponse(http.StatusNotFound, "Tablespace not found")
+				},
 			).
 			Delete(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = DeleteTablespace(w, r, manager, r.PathValue("name"))
 				},
-				"Drop a tablespace",
-				openapi.WithTags("Tablespaces"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Tablespace]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Tablespace not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Drop a tablespace")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Tablespace]())
+					op.ErrorResponse(http.StatusNotFound, "Tablespace not found")
+				},
 			).
 			Patch(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = UpdateTablespace(w, r, manager, r.PathValue("name"))
 				},
-				"Update a tablespace",
-				openapi.WithTags("Tablespaces"),
-				openapi.WithJSONRequest(jsonschema.MustFor[schema.TablespaceMeta]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Tablespace]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Tablespace not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Update a tablespace")
+					op.RequestBody(jsonschema.MustFor[schema.TablespaceMeta]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Tablespace]())
+					op.ErrorResponse(http.StatusNotFound, "Tablespace not found")
+				},
 			),
 		),
 	)
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
 func ListTablespaces(w http.ResponseWriter, r *http.Request, manager *manager.Manager) error {

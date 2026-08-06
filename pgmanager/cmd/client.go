@@ -318,7 +318,7 @@ func (cmd *RoleListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Roles list summary
-		summary := tui.TableSummary("roles", uint(roles.Count), roles.Offset, roles.Limit)
+		summary := tui.TableSummary("roles", uint(roles.Count), uint(len(roles.Body)), roles.Offset, roles.Limit)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}
@@ -397,7 +397,7 @@ func (cmd *DatabaseListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Databases list summary
-		summary := tui.TableSummary("databases", uint(databases.Count), databases.Offset, databases.Limit)
+		summary := tui.TableSummary("databases", uint(databases.Count), uint(len(databases.Body)), databases.Offset, databases.Limit)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}
@@ -473,7 +473,7 @@ func (cmd *SchemaListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Schemas list summary
-		summary := tui.TableSummary("schemas", uint(schemas.Count), schemas.Offset, schemas.Limit)
+		summary := tui.TableSummary("schemas", uint(schemas.Count), uint(len(schemas.Body)), schemas.Offset, schemas.Limit)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}
@@ -552,7 +552,7 @@ func (cmd *ObjectListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Objects list summary
-		summary := tui.TableSummary("objects", uint(objects.Count), objects.Offset, objects.Limit)
+		summary := tui.TableSummary("objects", uint(objects.Count), uint(len(objects.Body)), objects.Offset, objects.Limit)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}
@@ -593,7 +593,7 @@ func (cmd *StatementListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Statements list summary
-		summary := tui.TableSummary("statements", uint(statements.Count), statements.Offset, statements.Limit)
+		summary := tui.TableSummary("statements", uint(statements.Count), uint(len(statements.Body)), statements.Offset, statements.Limit)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}
@@ -629,7 +629,7 @@ func (cmd *TablespaceListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Tablespaces list summary
-		summary := tui.TableSummary("tablespaces", uint(tablespaces.Count), tablespaces.Offset, tablespaces.Limit)
+		summary := tui.TableSummary("tablespaces", uint(tablespaces.Count), uint(len(tablespaces.Body)), tablespaces.Offset, tablespaces.Limit)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}
@@ -705,7 +705,7 @@ func (cmd *ConnectionListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Connections list summary
-		summary := tui.TableSummary("connections", uint(connections.Count), connections.Offset, connections.Limit)
+		summary := tui.TableSummary("connections", uint(connections.Count), uint(len(connections.Body)), connections.Offset, connections.Limit)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}
@@ -753,7 +753,7 @@ func (cmd *ReplicationSlotListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Replication slots list summary
-		summary := tui.TableSummary("replication slots", uint(slots.Count), slots.Offset, slots.Limit)
+		summary := tui.TableSummary("replication slots", uint(slots.Count), uint(len(slots.Body)), slots.Offset, slots.Limit)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}
@@ -813,7 +813,7 @@ func (cmd *ExtensionListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Extensions list summary
-		summary := tui.TableSummary("extensions", uint(extensions.Count), extensions.Offset, extensions.Limit)
+		summary := tui.TableSummary("extensions", uint(extensions.Count), uint(len(extensions.Body)), extensions.Offset, extensions.Limit)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}
@@ -867,7 +867,7 @@ func (cmd *SettingListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Settings list summary
-		summary := tui.TableSummary("settings", uint(settings.Count), settings.Offset, settings.Limit)
+		summary := tui.TableSummary("settings", uint(settings.Count), uint(len(settings.Body)), settings.Offset, settings.Limit)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}
@@ -900,7 +900,7 @@ func (cmd *SettingCategoryListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Categories list summary
-		summary := tui.TableSummary("categories", uint(categories.Count), 0, nil)
+		summary := tui.TableSummary("categories", uint(categories.Count), uint(len(categoryNames)), 0, nil)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}

@@ -25,8 +25,8 @@ type Container struct {
 
 // NewContainer creates a new container with the given name and image.
 func NewContainer(ctx context.Context, name, image string, opt ...Opt) (*Container, error) {
-	// The name has _unixtime appended to it
-	name = fmt.Sprintf("%s_%v", name, time.Now().Unix())
+	// The name has a high-resolution timestamp appended to reduce collisions between test runs.
+	name = fmt.Sprintf("%s_%v", name, time.Now().UnixNano())
 
 	// Apply the options
 	var o opts

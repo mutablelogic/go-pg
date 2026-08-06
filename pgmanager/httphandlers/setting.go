@@ -12,7 +12,6 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -22,45 +21,49 @@ func RegisterSettingHandlers(manager *manager.Manager, router *httprouter.Router
 	router.Spec().AddTag("Settings", "Settings Operations")
 
 	return errors.Join(
-		router.RegisterPath("setting", nil, httprequest.NewPathItem("Settings", "Manage PostgreSQL settings").
+		router.RegisterPath("setting", nil, httprequest.NewPathItem("Settings", "Manage PostgreSQL settings").Tag("Settings").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListSettings(w, r, manager)
 				},
-				"List settings",
-				openapi.WithTags("Settings"),
-				openapi.WithQuery(jsonschema.MustFor[schema.SettingListRequest]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.SettingList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List settings")
+					op.Query(jsonschema.MustFor[schema.SettingListRequest]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.SettingList]())
+				},
 			),
 		),
-		router.RegisterPath("setting/category", nil, httprequest.NewPathItem("Settings", "Manage PostgreSQL setting categories").
+		router.RegisterPath("setting/category", nil, httprequest.NewPathItem("Settings", "Manage PostgreSQL setting categories").Tag("Settings").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListSettingCategories(w, r, manager)
 				},
-				"List setting categories",
-				openapi.WithTags("Settings"),
-				openapi.WithQuery(jsonschema.MustFor[schema.SettingCategoryListRequest]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.SettingCategoryList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List setting categories")
+					op.Query(jsonschema.MustFor[schema.SettingCategoryListRequest]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.SettingCategoryList]())
+				},
 			),
 		),
-		router.RegisterPath("setting/{setting}", nil, httprequest.NewPathItem("Settings", "Manage a PostgreSQL setting").
+		router.RegisterPath("setting/{setting}", nil, httprequest.NewPathItem("Settings", "Manage a PostgreSQL setting").Tag("Settings").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = GetSetting(w, r, manager, r.PathValue("setting"))
 				},
-				"Get a setting by name",
-				openapi.WithTags("Settings"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Setting]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("Get a setting by name")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Setting]())
+				},
 			).
 			Patch(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = UpdateSetting(w, r, manager, r.PathValue("setting"))
 				},
-				"Update a setting by name",
-				openapi.WithTags("Settings"),
-				openapi.WithJSONRequest(jsonschema.MustFor[schema.SettingMeta]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Setting]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("Update a setting by name")
+					op.RequestBody(jsonschema.MustFor[schema.SettingMeta]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Setting]())
+				},
 			),
 		),
 	)

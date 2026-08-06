@@ -12,77 +12,81 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
 type RolePathParams struct {
 	Role string `json:"role"`
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
 func RegisterRoleHandlers(manager *manager.Manager, router *httprouter.Router) error {
 	router.Spec().AddTag("Roles", "Role Operations")
 
 	return errors.Join(
-		router.RegisterPath("role", nil, httprequest.NewPathItem("Roles", "Manage PostgreSQL roles").
+		router.RegisterPath("role", nil, httprequest.NewPathItem("Roles", "Manage PostgreSQL roles").Tag("Roles").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListRoles(w, r, manager)
 				},
-				"List roles",
-				openapi.WithTags("Roles"),
-				openapi.WithQuery(jsonschema.MustFor[schema.RoleListRequest]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.RoleList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List roles")
+					op.Query(jsonschema.MustFor[schema.RoleListRequest]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.RoleList]())
+				},
 			).
 			Post(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = CreateRole(w, r, manager)
 				},
-				"Create role",
-				openapi.WithTags("Roles"),
-				openapi.WithJSONRequest(jsonschema.MustFor[schema.RoleMeta]()),
-				openapi.WithJSONResponse(http.StatusCreated, jsonschema.MustFor[schema.Role]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("Create role")
+					op.RequestBody(jsonschema.MustFor[schema.RoleMeta]())
+					op.JSONResponse(http.StatusCreated, jsonschema.MustFor[schema.Role]())
+				},
 			),
 		),
-		router.RegisterPath("role/{role}", jsonschema.MustFor[RolePathParams](), httprequest.NewPathItem("Role", "Manage a PostgreSQL role").
+		router.RegisterPath("role/{role}", jsonschema.MustFor[RolePathParams](), httprequest.NewPathItem("Role", "Manage a PostgreSQL role").Tag("Roles").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = GetRole(w, r, manager, r.PathValue("role"))
 				},
-				"Get role",
-				openapi.WithTags("Roles"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Role]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Role not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Get role")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Role]())
+					op.ErrorResponse(http.StatusNotFound, "Role not found")
+				},
 			).
 			Delete(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = DeleteRole(w, r, manager, r.PathValue("role"))
 				},
-				"Delete role",
-				openapi.WithTags("Roles"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Role]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Role not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Delete role")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Role]())
+					op.ErrorResponse(http.StatusNotFound, "Role not found")
+				},
 			).
 			Patch(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = UpdateRole(w, r, manager, r.PathValue("role"))
 				},
-				"Update role",
-				openapi.WithTags("Roles"),
-				openapi.WithJSONRequest(jsonschema.MustFor[schema.RoleMeta]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Role]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Role not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Update role")
+					op.RequestBody(jsonschema.MustFor[schema.RoleMeta]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Role]())
+					op.ErrorResponse(http.StatusNotFound, "Role not found")
+				},
 			),
 		),
 	)
 }
 
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
 func ListRoles(w http.ResponseWriter, r *http.Request, manager *manager.Manager) error {

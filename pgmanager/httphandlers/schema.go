@@ -12,7 +12,6 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
@@ -31,72 +30,78 @@ func RegisterSchemaHandlers(manager *manager.Manager, router *httprouter.Router)
 	router.Spec().AddTag("Schemas", "Schema Operations")
 
 	return errors.Join(
-		router.RegisterPath("schema", nil, httprequest.NewPathItem("Schemas", "Manage PostgreSQL schemas").
+		router.RegisterPath("schema", nil, httprequest.NewPathItem("Schemas", "Manage PostgreSQL schemas").Tag("Schemas").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListSchemas(w, r, manager, nil)
 				},
-				"List all schemas",
-				openapi.WithTags("Schemas"),
-				openapi.WithQuery(jsonschema.MustFor[pg.OffsetLimit]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.SchemaList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List all schemas")
+					op.Query(jsonschema.MustFor[pg.OffsetLimit]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.SchemaList]())
+				},
 			),
 		),
-		router.RegisterPath("schema/{database}", nil, httprequest.NewPathItem("Schemas", "Manage PostgreSQL schemas").
+		router.RegisterPath("schema/{database}", nil, httprequest.NewPathItem("Schemas", "Manage PostgreSQL schemas").Tag("Schemas").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListSchemas(w, r, manager, types.Ptr(r.PathValue("database")))
 				},
-				"List schemas in a specific database",
-				openapi.WithTags("Schemas"),
-				openapi.WithQuery(jsonschema.MustFor[pg.OffsetLimit]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.SchemaList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List schemas in a specific database")
+					op.Query(jsonschema.MustFor[pg.OffsetLimit]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.SchemaList]())
+				},
 			).
 			Post(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = CreateSchema(w, r, manager, r.PathValue("database"))
 				},
-				"Create a new schema in a specific database",
-				openapi.WithTags("Schemas"),
-				openapi.WithJSONRequest(jsonschema.MustFor[schema.SchemaMeta]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Schema]()),
-				openapi.WithErrorResponse(http.StatusBadRequest, "Invalid request body"),
-				openapi.WithErrorResponse(http.StatusNotFound, "Database not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Create a new schema in a specific database")
+					op.RequestBody(jsonschema.MustFor[schema.SchemaMeta]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Schema]())
+					op.ErrorResponse(http.StatusBadRequest, "Invalid request body")
+					op.ErrorResponse(http.StatusNotFound, "Database not found")
+				},
 			),
 		),
-		router.RegisterPath("schema/{database}/{namespace}", nil, httprequest.NewPathItem("Schema", "Manage a specific PostgreSQL schema").
+		router.RegisterPath("schema/{database}/{namespace}", nil, httprequest.NewPathItem("Schema", "Manage a specific PostgreSQL schema").Tag("Schemas").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = GetSchema(w, r, manager, r.PathValue("database"), r.PathValue("namespace"))
 				},
-				"Get a schema in a specific database",
-				openapi.WithTags("Schemas"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Schema]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("Get a schema in a specific database")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Schema]())
+				},
 			).
 			Delete(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = DeleteSchema(w, r, manager, r.PathValue("database"), r.PathValue("namespace"))
 				},
-				"Delete a schema in a specific database",
-				openapi.WithTags("Schemas"),
-				openapi.WithQuery(jsonschema.MustFor[ForceQueryParams]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Schema]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Schema not found"),
-				openapi.WithErrorResponse(http.StatusBadRequest, "Invalid query parameters"),
-				openapi.WithErrorResponse(http.StatusConflict, "Schema has dependent objects"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Delete a schema in a specific database")
+					op.Query(jsonschema.MustFor[ForceQueryParams]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Schema]())
+					op.ErrorResponse(http.StatusNotFound, "Schema not found")
+					op.ErrorResponse(http.StatusBadRequest, "Invalid query parameters")
+					op.ErrorResponse(http.StatusConflict, "Schema has dependent objects")
+				},
 			).
 			Patch(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = UpdateSchema(w, r, manager, r.PathValue("database"), r.PathValue("namespace"))
 				},
-				"Update a schema in a specific database",
-				openapi.WithTags("Schemas"),
-				openapi.WithJSONRequest(jsonschema.MustFor[schema.SchemaMeta]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Schema]()),
-				openapi.WithErrorResponse(http.StatusBadRequest, "Invalid request body"),
-				openapi.WithErrorResponse(http.StatusNotFound, "Schema not found"),
-				openapi.WithErrorResponse(http.StatusBadRequest, "Invalid query parameters"),
-				openapi.WithErrorResponse(http.StatusConflict, "Schema has dependent objects"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Update a schema in a specific database")
+					op.RequestBody(jsonschema.MustFor[schema.SchemaMeta]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Schema]())
+					op.ErrorResponse(http.StatusBadRequest, "Invalid request body")
+					op.ErrorResponse(http.StatusNotFound, "Schema not found")
+					op.ErrorResponse(http.StatusBadRequest, "Invalid query parameters")
+					op.ErrorResponse(http.StatusConflict, "Schema has dependent objects")
+				},
 			),
 		),
 	)

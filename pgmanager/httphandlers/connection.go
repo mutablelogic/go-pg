@@ -13,7 +13,6 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -30,35 +29,38 @@ func RegisterConnectionHandlers(manager *manager.Manager, router *httprouter.Rou
 	router.Spec().AddTag("Connections", "Cluster Connection Operations")
 
 	return errors.Join(
-		router.RegisterPath("connection", nil, httprequest.NewPathItem("Connections", "Manage PostgreSQL connections").
+		router.RegisterPath("connection", nil, httprequest.NewPathItem("Connections", "Manage PostgreSQL connections").Tag("Connections").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = ListConnections(w, r, manager)
 				},
-				"List connections",
-				openapi.WithTags("Connections"),
-				openapi.WithQuery(jsonschema.MustFor[schema.ConnectionListRequest]()),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.ConnectionList]()),
+				func(op httprequest.PathOperation) {
+					op.Summary("List connections")
+					op.Query(jsonschema.MustFor[schema.ConnectionListRequest]())
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.ConnectionList]())
+				},
 			),
 		),
-		router.RegisterPath("connection/{pid}", jsonschema.MustFor[ConnectionPathParams](), httprequest.NewPathItem("Connection", "Manage a PostgreSQL connection").
+		router.RegisterPath("connection/{pid}", jsonschema.MustFor[ConnectionPathParams](), httprequest.NewPathItem("Connection", "Manage a PostgreSQL connection").Tag("Connections").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = GetConnection(w, r, manager, r.PathValue("pid"))
 				},
-				"Get connection",
-				openapi.WithTags("Connections"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Connection]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Process not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Get connection")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Connection]())
+					op.ErrorResponse(http.StatusNotFound, "Process not found")
+				},
 			).
 			Delete(
 				func(w http.ResponseWriter, r *http.Request) {
 					_ = DeleteConnection(w, r, manager, r.PathValue("pid"))
 				},
-				"Drop a connection",
-				openapi.WithTags("Connections"),
-				openapi.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.Connection]()),
-				openapi.WithErrorResponse(http.StatusNotFound, "Process not found"),
+				func(op httprequest.PathOperation) {
+					op.Summary("Drop a connection")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Connection]())
+					op.ErrorResponse(http.StatusNotFound, "Process not found")
+				},
 			),
 		),
 	)

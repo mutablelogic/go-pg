@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	// Packages
+	network "github.com/moby/moby/api/types/network"
 	testcontainers "github.com/testcontainers/testcontainers-go"
 	wait "github.com/testcontainers/testcontainers-go/wait"
 
@@ -107,8 +108,8 @@ func OptPostgres(user, password, database string) Opt {
 		if err := OptPorts(pgxPort)(o); err != nil {
 			return err
 		}
-		o.appendWaitStrategy(wait.ForSQL(pgxPort, "pgx", func(host string, port string) string {
-			return postgresURL(user, password, database, host, port)
+		o.appendWaitStrategy(wait.ForSQL(pgxPort, "pgx", func(host string, port network.Port) string {
+			return postgresURL(user, password, database, host, port.Port())
 		}))
 		return nil
 	}

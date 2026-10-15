@@ -191,9 +191,9 @@ func (r *runner) runQueues(ctx context.Context) time.Duration {
 	return period
 }
 
-// runTasks retains tasks from the queues, and runs them, at most GOMAXPROCS
-// each time, so the loop isn't held up. Returns true if there may be more
-// tasks to run.
+// runTasks retains tasks from the queues with callbacks in this process, and
+// runs them, at most GOMAXPROCS each time, so the loop isn't held up. Returns
+// true if there may be more tasks to run.
 func (r *runner) runTasks(ctx context.Context, queues []string) (more bool, err error) {
 	ctx, endSpan := otel.StartSpan(r.tracer, ctx, "pgqueue.runTasks",
 		attribute.StringSlice("queues", queues),
@@ -201,18 +201,34 @@ func (r *runner) runTasks(ctx context.Context, queues []string) (more bool, err 
 	defer func() { endSpan(err) }()
 
 	for range runtime.GOMAXPROCS(0) {
-		task, err := r.NextTask(ctx, r.worker, queues...)
-		if err != nil {
+		if ran, err := r.runTask(ctx); err != nil || !ran {
 			return false, err
-		} else if task == nil {
-			return false, nil
 		}
-
-		// The result is released when the task finishes
-		r.queues.RunQueueTask(ctx, task, r.results)
 	}
 
 	// Return success: there may be more tasks
+	return true, nil
+}
+
+// runTask retains a task from the queues with callbacks in this process, and
+// runs it, and returns true if there was a task to run. A queue's callback
+// isn't unregistered while a task is retained and run, so a task retained
+// from a queue is run with its callback.
+func (r *runner) runTask(ctx context.Context) (bool, error) {
+	r.dispatch.RLock()
+	defer r.dispatch.RUnlock()
+
+	queues := r.queues.Names()
+	if len(queues) == 0 {
+		return false, nil
+	}
+	task, err := r.NextTask(ctx, r.worker, queues...)
+	if err != nil || task == nil {
+		return false, err
+	}
+
+	// The result is released when the task finishes
+	r.queues.RunQueueTask(ctx, task, r.results)
 	return true, nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	// Packages
@@ -25,6 +26,11 @@ type Manager struct {
 	// The task callbacks for the queues and tickers, by name
 	queues  *exec
 	tickers *exec
+
+	// Held for reading while a task is retained and run, and for writing
+	// while a queue's callback is removed, so a task isn't retained from a
+	// queue whose callback is then missing
+	dispatch sync.RWMutex
 
 	// Set while the event loop is running, and once it's ready, which is
 	// when it's listening for new tasks

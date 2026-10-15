@@ -65,9 +65,6 @@ func (self *Manager) CreateNextPartition(ctx context.Context) (result string, er
 			maxEnd = end
 		}
 
-		// Reset the connection to refresh partition metadata.
-		self.PoolConn.Reset()
-
 		if len(created) == 1 {
 			return created[0], nil
 		}
@@ -114,9 +111,6 @@ func (self *Manager) DropDrainedPartition(ctx context.Context) (result string, e
 	}
 	if err := self.DeletePartition(ctx, oldest.Partition); err != nil {
 		return "", err
-	} else {
-		// Reset the connection
-		self.PoolConn.Reset()
 	}
 	return oldest.Partition, nil
 }

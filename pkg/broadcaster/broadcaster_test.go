@@ -274,3 +274,43 @@ func TestBroadcaster_Integration_IgnoresInvalidJSON(t *testing.T) {
 	case <-ctx.Done():
 	}
 }
+
+func TestBroadcaster_Integration_Resubscribes(t *testing.T) {
+	require := require.New(t)
+	conn := conn.Begin(t)
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	channel := fmt.Sprintf("test_broadcaster_resubscribes_%d", time.Now().UnixNano())
+	b, err := NewBroadcaster(conn, channel)
+	require.NoError(err)
+	defer b.Close()
+
+	changes := make(chan ChangeNotification, 10)
+	require.NoError(b.Subscribe(ctx, func(change ChangeNotification) {
+		select {
+		case changes <- change:
+		default:
+		}
+	}))
+
+	// Resetting the pool closes the subscription, and the broadcaster
+	// subscribes again, so notifications are delivered after a while
+	conn.Reset()
+	payload := `{"schema":"auth","table":"user","action":"UPDATE"}`
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		require.NoError(conn.Exec(context.Background(), fmt.Sprintf("SELECT pg_notify('%s', '%s')", channel, payload)))
+		select {
+		case change := <-changes:
+			require.Equal("UPDATE", change.Action)
+			return
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for a notification after the pool was reset")
+		case <-ticker.C:
+		}
+	}
+}

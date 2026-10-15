@@ -34,15 +34,13 @@ func (self *Manager) RegisterTicker(ctx context.Context, name string, meta schem
 
 	// Persist the ticker
 	err = self.Tx(ctx, func(conn pg.Conn) error {
-		err := conn.Get(ctx, &result, schema.TickerName(name))
-		switch {
-		case err == nil:
-			// Ticker already exists, update below.
-		case errors.Is(err, pg.ErrNotFound):
-			if err := conn.With("id", name).Insert(ctx, &result, meta); err != nil {
+		// Insert the ticker, unless it exists, such as when another process
+		// sharing the database registers it at the same time, and then get it
+		if err := conn.With("id", name).Insert(ctx, &result, meta); errors.Is(err, pg.ErrNotFound) {
+			if err := conn.Get(ctx, &result, schema.TickerName(name)); err != nil {
 				return err
 			}
-		default:
+		} else if err != nil {
 			return err
 		}
 

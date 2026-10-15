@@ -1,6 +1,9 @@
 package pgqueue_test
 
 import (
+	"encoding/json"
+	"strconv"
+	"sync"
 	"testing"
 
 	// Packages
@@ -114,4 +117,68 @@ func findPartition(partitions []schema.Partition, name string) (schema.Partition
 		}
 	}
 	return schema.Partition{}, false
+}
+
+// Tasks are inserted, retained, released and listed across partitions which
+// are created and dropped, without resetting the pool, as the statements
+// cached on its connections stay valid
+func TestPartitionStatements(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	manager := test.IsolatedManager(t, pgqueue.WithPartitionSize(10))
+	_, err := manager.RegisterQueue(ctx, "partitions", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+
+	// run inserts tasks, from several connections at once, so the statements
+	// are cached on them, and then retains and releases them, and lists them
+	run := func(t *testing.T, n int) {
+		t.Helper()
+		var wg sync.WaitGroup
+		for i := range n {
+			wg.Go(func() {
+				_, err := manager.CreateTask(ctx, "partitions", schema.TaskMeta{Payload: json.RawMessage(`{"n":` + strconv.Itoa(i) + `}`)})
+				assert.NoError(t, err)
+			})
+		}
+		wg.Wait()
+		for {
+			task, err := manager.NextTask(ctx, "worker", "partitions")
+			require.NoError(t, err)
+			if task == nil {
+				break
+			}
+			_, err = manager.ReleaseTask(ctx, task.Id, true, nil, nil)
+			require.NoError(t, err)
+		}
+		_, err := manager.ListTasks(ctx, schema.TaskListRequest{Queue: []string{"partitions"}})
+		require.NoError(t, err)
+	}
+
+	// Fill the first partition, and create partitions until the tasks go
+	// into new ones
+	run(t, 8)
+	for range 3 {
+		_, err := manager.CreateNextPartition(ctx)
+		require.NoError(t, err)
+		run(t, 8)
+	}
+	partitions, err := manager.ListPartitions(ctx)
+	require.NoError(t, err)
+	assert.Greater(t, len(partitions), 1)
+
+	// Drop the drained partitions, and the tasks still go into the others
+	_, err = manager.CleanQueue(ctx, "partitions")
+	require.NoError(t, err)
+	require.NoError(t, manager.Exec(ctx, `DELETE FROM ${"schema"}."task"`))
+	for {
+		dropped, err := manager.DropDrainedPartition(ctx)
+		require.NoError(t, err)
+		if dropped == "" {
+			break
+		}
+	}
+	run(t, 8)
+	list, err := manager.ListTasks(ctx, schema.TaskListRequest{Queue: []string{"partitions"}})
+	require.NoError(t, err)
+	assert.EqualValues(t, 8, list.Count)
 }

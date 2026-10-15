@@ -33,15 +33,13 @@ func (self *Manager) RegisterQueue(ctx context.Context, name string, meta schema
 	}
 
 	err = self.Tx(ctx, func(conn pg.Conn) error {
-		err := conn.Get(ctx, &queue, schema.QueueName(name))
-		switch {
-		case err == nil:
-			// Queue already exists, optionally patch below.
-		case errors.Is(err, pg.ErrNotFound):
-			if err := conn.Insert(ctx, &queue, schema.Queue{Queue: name}); err != nil {
+		// Insert the queue, unless it exists, such as when another process
+		// sharing the database registers it at the same time, and then get it
+		if err := conn.Insert(ctx, &queue, schema.Queue{Queue: name}); errors.Is(err, pg.ErrNotFound) {
+			if err := conn.Get(ctx, &queue, schema.QueueName(name)); err != nil {
 				return err
 			}
-		default:
+		} else if err != nil {
 			return err
 		}
 
@@ -96,15 +94,37 @@ func (self *Manager) DeleteQueue(ctx context.Context, name string) (result *sche
 	)
 	defer func() { endSpan(err) }()
 
-	// Delete the queue, and its task callback. A queue registered by another
-	// process sharing the database has no callback in this one.
+	// Delete the queue. When it can't be deleted, it's returned, and its
+	// callback is kept, as the queue and its tasks may still exist.
 	var queue schema.Queue
-	if err := self.Delete(ctx, &queue, schema.QueueName(name)); err != nil {
-		return nil, err
-	} else if err := self.queues.RemoveTask(name); err != nil && !errors.Is(err, httpresponse.ErrNotFound) {
-		return nil, err
+	deleteErr := self.Delete(ctx, &queue, schema.QueueName(name))
+	if deleteErr != nil && !errors.Is(deleteErr, pg.ErrNotFound) {
+		return nil, deleteErr
+	}
+
+	// Remove its task callback, also when another process sharing the
+	// database deleted the queue first, so it can be registered again. A
+	// queue registered by another process has no callback in this one.
+	if err := self.removeCallback(name); err != nil && !errors.Is(err, httpresponse.ErrNotFound) {
+		return nil, errors.Join(deleteErr, err)
+	} else if deleteErr != nil {
+		return nil, deleteErr
 	}
 	return types.Ptr(queue), nil
+}
+
+// UnregisterQueue removes the task callback of the queue in this process, so
+// this process stops running its tasks, but keeps the queue and its tasks,
+// for other processes, or for when the queue is registered again. Tasks which
+// are running are released when they finish. Returns ErrNotFound if the
+// queue has no callback in this process.
+func (self *Manager) UnregisterQueue(ctx context.Context, name string) (err error) {
+	_, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.UnregisterQueue",
+		attribute.String("name", name),
+	)
+	defer func() { endSpan(err) }()
+
+	return self.removeCallback(name)
 }
 
 // UpdateQueue updates an existing queue, and returns it.
@@ -155,4 +175,13 @@ func (self *Manager) ListQueueStatuses(ctx context.Context) (result []schema.Que
 
 func hasQueueMetaPatch(meta schema.QueueMeta) bool {
 	return meta.TTL != nil || meta.Retries != nil || meta.RetryDelay != nil || meta.Concurrency != nil || meta.Dedupe != nil
+}
+
+// removeCallback removes the task callback of the queue, once no task is
+// being retained and run, so the run loop doesn't retain a task from the
+// queue without its callback
+func (self *Manager) removeCallback(name string) error {
+	self.dispatch.Lock()
+	defer self.dispatch.Unlock()
+	return self.queues.RemoveTask(name)
 }

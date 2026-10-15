@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 	"sync"
+	"time"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
@@ -36,6 +37,13 @@ type broadcaster struct {
 
 var _ Broadcaster = (*broadcaster)(nil)
 
+const (
+	// The delay before subscribing again when the subscription closes, which
+	// doubles, up to the maximum, while subscribing fails
+	minResubscribeDelay = 100 * time.Millisecond
+	maxResubscribeDelay = 10 * time.Second
+)
+
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
@@ -55,17 +63,23 @@ func NewBroadcaster(conn pg.Conn, channel string) (*broadcaster, error) {
 		return nil, err
 	}
 
-	// Respond to notifications in a separate goroutine
+	// Respond to notifications in a separate goroutine. The subscription is
+	// closed when its connection fails, or the pool is reset, so it subscribes
+	// again, until the broadcaster is closed. Notifications sent before it has
+	// subscribed again are missed.
 	self.wg.Add(1)
 	go func() {
 		defer self.wg.Done()
-		for notification := range notifications {
-			var change ChangeNotification
-			// Skip any bad JSON
-			if err := json.Unmarshal(notification.Payload, &change); err != nil {
-				continue
+		for notifications != nil {
+			for notification := range notifications {
+				var change ChangeNotification
+				// Skip any bad JSON
+				if err := json.Unmarshal(notification.Payload, &change); err != nil {
+					continue
+				}
+				self.broadcast(change)
 			}
-			self.broadcast(change)
+			notifications = self.resubscribe(conn, channel)
 		}
 	}()
 
@@ -135,6 +149,23 @@ func (b *broadcaster) broadcast(change ChangeNotification) {
 		case <-b.ctx.Done():
 			return
 		}
+	}
+}
+
+// resubscribe subscribes to the channel again, retrying with a backoff, and
+// returns the notifications, or nil when the broadcaster is closed
+func (b *broadcaster) resubscribe(conn pg.Conn, channel string) <-chan pg.Notification {
+	delay := minResubscribeDelay
+	for {
+		select {
+		case <-b.ctx.Done():
+			return nil
+		case <-time.After(delay):
+		}
+		if notifications, err := conn.Subscribe(b.ctx, channel); err == nil {
+			return notifications
+		}
+		delay = min(delay*2, maxResubscribeDelay)
 	}
 }
 

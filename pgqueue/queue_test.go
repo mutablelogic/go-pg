@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -311,6 +312,25 @@ func TestUnregisterQueue(t *testing.T) {
 	})
 }
 
+func TestDeleteQueueFails(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+
+	// A queue which can't be deleted keeps its callback, as the queue and its
+	// tasks still exist
+	manager := test.IsolatedManager(t)
+	_, err := manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = manager.DeleteQueue(cancelled, "queue")
+	require.ErrorIs(t, err, context.Canceled)
+
+	_, err = manager.GetQueue(ctx, "queue")
+	require.NoError(t, err)
+	assert.NoError(t, manager.UnregisterQueue(ctx, "queue"), "the callback was removed")
+}
+
 func TestDeleteQueueAlreadyDeleted(t *testing.T) {
 	_, ctx := test.Begin(t)
 	defer test.End(t)
@@ -364,4 +384,59 @@ func TestRegisterConcurrently(t *testing.T) {
 	ticker, err := manager.GetTicker(ctx, name)
 	require.NoError(t, err)
 	assert.Equal(t, time.Hour, *ticker.Interval)
+}
+
+func TestUnregisterQueueWhileRunning(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+
+	// A running loop works through tasks, while the queue is unregistered
+	// and registered again, so its callback is sometimes missing when tasks
+	// are taken
+	manager := test.IsolatedManager(t)
+	_, err := manager.RegisterQueue(ctx, "toggle", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+	runIsolated(t, manager)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if err := manager.UnregisterQueue(ctx, "toggle"); err == nil {
+				_, err := manager.RegisterQueue(ctx, "toggle", schema.QueueMeta{}, noopTask)
+				assert.NoError(t, err)
+			}
+		}
+	})
+	for i := range 200 {
+		_, err := manager.CreateTask(ctx, "toggle", schema.TaskMeta{Payload: json.RawMessage(`{"n":` + strconv.Itoa(i) + `}`)})
+		require.NoError(t, err)
+	}
+	require.Eventually(t, func() bool {
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Queue: []string{"toggle"}, Status: "done"})
+		return err == nil && list.Count == 200 || hasRetried(t, ctx, manager)
+	}, 30*time.Second, 50*time.Millisecond)
+	close(stop)
+	wg.Wait()
+
+	// No task failed, or used a retry, because its callback was missing
+	assert.False(t, hasRetried(t, ctx, manager), "a task failed because its callback was unregistered")
+}
+
+// hasRetried returns true if a task in the queue failed, or used a retry
+func hasRetried(t *testing.T, ctx context.Context, manager *pgqueue.Manager) bool {
+	t.Helper()
+	for _, status := range []string{"retry", "failed"} {
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Queue: []string{"toggle"}, Status: status})
+		require.NoError(t, err)
+		if list.Count > 0 {
+			return true
+		}
+	}
+	return false
 }

@@ -94,13 +94,18 @@ func (self *Manager) DeleteQueue(ctx context.Context, name string) (result *sche
 	)
 	defer func() { endSpan(err) }()
 
-	// Delete the queue, and its task callback. A queue registered by another
-	// process sharing the database has no callback in this one, and a queue
-	// already deleted by another process still has its callback removed, so
-	// it can be registered again.
+	// Delete the queue. When it can't be deleted, it's returned, and its
+	// callback is kept, as the queue and its tasks may still exist.
 	var queue schema.Queue
 	deleteErr := self.Delete(ctx, &queue, schema.QueueName(name))
-	if err := self.queues.RemoveTask(name); err != nil && !errors.Is(err, httpresponse.ErrNotFound) {
+	if deleteErr != nil && !errors.Is(deleteErr, pg.ErrNotFound) {
+		return nil, deleteErr
+	}
+
+	// Remove its task callback, also when another process sharing the
+	// database deleted the queue first, so it can be registered again. A
+	// queue registered by another process has no callback in this one.
+	if err := self.removeCallback(name); err != nil && !errors.Is(err, httpresponse.ErrNotFound) {
 		return nil, errors.Join(deleteErr, err)
 	} else if deleteErr != nil {
 		return nil, deleteErr
@@ -119,7 +124,7 @@ func (self *Manager) UnregisterQueue(ctx context.Context, name string) (err erro
 	)
 	defer func() { endSpan(err) }()
 
-	return self.queues.RemoveTask(name)
+	return self.removeCallback(name)
 }
 
 // UpdateQueue updates an existing queue, and returns it.
@@ -170,4 +175,13 @@ func (self *Manager) ListQueueStatuses(ctx context.Context) (result []schema.Que
 
 func hasQueueMetaPatch(meta schema.QueueMeta) bool {
 	return meta.TTL != nil || meta.Retries != nil || meta.RetryDelay != nil || meta.Concurrency != nil || meta.Dedupe != nil
+}
+
+// removeCallback removes the task callback of the queue, once no task is
+// being retained and run, so the run loop doesn't retain a task from the
+// queue without its callback
+func (self *Manager) removeCallback(name string) error {
+	self.dispatch.Lock()
+	defer self.dispatch.Unlock()
+	return self.queues.RemoveTask(name)
 }

@@ -227,14 +227,18 @@ BEGIN
     END IF;
 
     -- Run a new task at the earlier of the two delays, where no delay is the
-    -- earliest, and notify the workers, as it may be ready to run now
+    -- earliest
     IF v_untried AND COALESCE(v_delayed_at, '-infinity') < COALESCE(v_existing_at, '-infinity') THEN
         UPDATE ${"schema"}."task" T SET "delayed_at" = v_delayed_at WHERE T."id" = v_id;
-        PERFORM pg_notify(${'channel'}, json_build_object(
-            'schema', ${'schema'},
-            'queue', q
-        )::TEXT);
     END IF;
+
+    -- Notify the workers, as the task may be ready to run. A worker which
+    -- polled while the task was locked here skipped it, and the notification
+    -- is sent when the lock is released.
+    PERFORM pg_notify(${'channel'}, json_build_object(
+        'schema', ${'schema'},
+        'queue', q
+    )::TEXT);
 
     RETURN v_id;
 EXCEPTION

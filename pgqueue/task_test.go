@@ -1,6 +1,7 @@
 package pgqueue_test
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"testing"
@@ -65,6 +66,39 @@ func TestCreateTask(t *testing.T) {
 		second, err := manager.CreateTask(ctx, "dedupe", payload(`{"kind":"dedupe"}`))
 		require.NoError(t, err)
 		assert.Equal(t, first.Id, second.Id)
+	})
+
+	t.Run("DedupeNotify", func(t *testing.T) {
+		// Returning the same pending task notifies the workers, as a worker
+		// which polled while the task was locked skipped it
+		manager := taskManager(t, "notify", schema.QueueMeta{Dedupe: types.Ptr(true)})
+		_, err := manager.CreateTask(ctx, "notify", payload(`{"kind":"notify"}`))
+		require.NoError(t, err)
+
+		notifyCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		notifications, err := manager.Subscribe(notifyCtx, schema.DefaultNotifyChannel)
+		require.NoError(t, err)
+		_, err = manager.CreateTask(ctx, "notify", payload(`{"kind":"notify"}`))
+		require.NoError(t, err)
+
+		timeout := time.After(10 * time.Second)
+		for {
+			select {
+			case notification, ok := <-notifications:
+				require.True(t, ok, "notifications closed")
+				var payload struct {
+					Schema string `json:"schema"`
+					Queue  string `json:"queue"`
+				}
+				require.NoError(t, json.Unmarshal(notification.Payload, &payload))
+				if payload.Queue == "notify" {
+					return
+				}
+			case <-timeout:
+				t.Fatal("timed out waiting for a notification")
+			}
+		}
 	})
 
 	t.Run("Invalid", func(t *testing.T) {

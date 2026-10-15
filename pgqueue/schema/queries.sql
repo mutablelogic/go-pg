@@ -179,10 +179,6 @@ SELECT
 SELECT
     ${"schema"}.queue_fail(@tid, CAST(@result AS JSONB)) AS "id";
 
--- pgqueue.requeue
-SELECT
-    ${"schema"}.queue_requeue(@tid, @worker, CAST(@started_at AS TIMESTAMPTZ)) AS "id";
-
 -- pgqueue.ticker_get
 SELECT
     "ticker",

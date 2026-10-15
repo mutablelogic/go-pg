@@ -370,27 +370,6 @@ CREATE OR REPLACE FUNCTION ${"schema"}.queue_fail(tid BIGINT, r JSONB) RETURNS B
         "id";
 $$ LANGUAGE SQL;
 
--- pgqueue.queue_requeue_func
--- Puts a running task back, as if it hadn't started, without using a retry,
--- such as when its worker stops before it finishes. Only the attempt with the
--- worker and start time is put back, so a task which ran past its TTL, and
--- was retained by another worker, isn't. The function without the attempt,
--- from before, is dropped.
-DROP FUNCTION IF EXISTS ${"schema"}.queue_requeue(BIGINT);
-CREATE OR REPLACE FUNCTION ${"schema"}.queue_requeue(tid BIGINT, w TEXT, started TIMESTAMPTZ) RETURNS BIGINT AS $$
-    UPDATE ${"schema"}."task" SET
-        "started_at" = NULL,
-        "worker" = NULL,
-        "result" = 'null',
-        "dies_at" = NULL
-    WHERE
-        "id" = tid
-    AND
-        "worker" = w AND "started_at" = started AND "finished_at" IS NULL
-    RETURNING
-        "id";
-$$ LANGUAGE SQL;
-
 -- pgqueue.queue_clean_func
 -- Deletes up to 100 of the queue's finished tasks, which are done, failed or
 -- expired, and finished longer ago than the retention period, oldest first,

@@ -182,8 +182,8 @@ func TestRunQueues(t *testing.T) {
 	})
 
 	t.Run("Stop", func(t *testing.T) {
-		// A running task is put back when the loop stops, without using a
-		// retry
+		// A running task is released as failed when the loop stops, so it's
+		// retried
 		manager := test.IsolatedManager(t)
 		started := make(chan struct{}, 1)
 		_, err := manager.RegisterQueue(ctx, "stop", schema.QueueMeta{}, func(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -203,11 +203,9 @@ func TestRunQueues(t *testing.T) {
 		}
 		stop()
 
-		requeued := waitStatus(t, ctx, manager, task.Id, "new")
-		assert.Equal(t, types.Ptr(uint64(3)), requeued.Retries)
-		assert.Nil(t, requeued.Worker)
-		assert.Nil(t, requeued.StartedAt)
-		assert.Nil(t, requeued.DiesAt)
+		retried := waitStatus(t, ctx, manager, task.Id, "retry")
+		assert.Equal(t, types.Ptr(uint64(2)), retried.Retries)
+		assert.JSONEq(t, `"context canceled"`, string(retried.Result))
 	})
 }
 
@@ -332,43 +330,4 @@ func TestRunResubscribe(t *testing.T) {
 	start := time.Now()
 	waitStatus(t, ctx, manager, task.Id, "done")
 	assert.Less(t, time.Since(start), 2*time.Second)
-}
-
-func TestRunDeadline(t *testing.T) {
-	_, ctx := test.Begin(t)
-	defer test.End(t)
-
-	// A running task is put back, without using a retry, when the loop's
-	// deadline passes before the task's
-	manager := test.IsolatedManager(t)
-	started := make(chan struct{}, 1)
-	_, err := manager.RegisterQueue(ctx, "deadline", schema.QueueMeta{}, func(ctx context.Context, _ json.RawMessage) (any, error) {
-		started <- struct{}{}
-		<-ctx.Done()
-		return nil, ctx.Err()
-	})
-	require.NoError(t, err)
-	task, err := manager.CreateTask(ctx, "deadline", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
-	require.NoError(t, err)
-
-	runCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		done <- manager.Run(runCtx, slog.New(slog.DiscardHandler))
-	}()
-	select {
-	case <-started:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the task didn't start")
-	}
-	select {
-	case err := <-done:
-		require.NoError(t, err)
-	case <-time.After(10 * time.Second):
-		t.Fatal("the loop didn't stop")
-	}
-
-	requeued := waitStatus(t, ctx, manager, task.Id, "new")
-	assert.Equal(t, types.Ptr(uint64(3)), requeued.Retries)
 }

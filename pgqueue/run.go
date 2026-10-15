@@ -66,9 +66,9 @@ const (
 // Run runs the event loop until the context is cancelled, running the tasks
 // of the queues, and the tickers, which have callbacks in this process. The
 // queues and tickers of another process sharing the database are left to
-// that process. When the context is
-// cancelled, the running tasks are cancelled, and put back without using a
-// retry. Only one event loop can run at a time.
+// that process. When the context is cancelled, the running tasks are
+// cancelled, and released as failed, so they're retried, if they have retries
+// left. Only one event loop can run at a time.
 func (self *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 	// Only one event loop can run at a time
 	if !self.running.CompareAndSwap(false, true) {
@@ -253,8 +253,8 @@ func (r *runner) runDueTickers(ctx context.Context) (err error) {
 
 // release the result of a task, as done or failed, and returns
 // true, or logs the result of a ticker, and returns false. A task which was
-// cancelled because the event loop is stopping is put back, without using a
-// retry, so another worker runs it.
+// cancelled because the event loop is stopping is released as failed, so it's
+// retried, if it has retries left.
 func (r *runner) release(ctx context.Context, result *Result) bool {
 	if result == nil {
 		return false
@@ -270,18 +270,6 @@ func (r *runner) release(ctx context.Context, result *Result) bool {
 		releaseCtx = trace.ContextWithSpanContext(releaseCtx, result.Trace)
 	}
 	task := result.Task
-
-	// Put back a task which was stopped because the loop is stopping
-	if stoppedByLoop(ctx, result) {
-		if err := r.requeueTask(releaseCtx, task); errors.Is(err, pg.ErrNotFound) {
-			r.logger.WarnContext(releaseCtx, "Task retained by another worker, not put back", "queue", result.Queue, "task", task.Id)
-		} else if err != nil {
-			r.logger.ErrorContext(releaseCtx, "Failed to put back task", "queue", result.Queue, "task", task.Id, "error", err.Error())
-		} else {
-			r.logger.DebugContext(releaseCtx, "Put back task", "queue", result.Queue, "task", task.Id)
-		}
-		return true
-	}
 
 	// A failed task's result is its error
 	success := result.Error == nil
@@ -322,22 +310,6 @@ func (r *runner) logTicker(ctx context.Context, result *Result) {
 		r.logger.ErrorContext(ctx, "Ticker failed", "ticker", result.Ticker, "error", result.Error.Error())
 	} else if len(result.Result) > 0 && !bytes.Equal(result.Result, []byte("null")) {
 		r.logger.DebugContext(ctx, "Ticker done", "ticker", result.Ticker, "result", string(result.Result))
-	}
-}
-
-// stoppedByLoop returns true if the task was stopped because the loop is
-// stopping, which cancels it, or because the loop's deadline passed before the
-// task's own deadline, rather than failing
-func stoppedByLoop(ctx context.Context, result *Result) bool {
-	switch {
-	case ctx.Err() == nil || result.Error == nil:
-		return false
-	case errors.Is(result.Error, context.Canceled):
-		return true
-	case errors.Is(result.Error, context.DeadlineExceeded) && errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return result.Task.DiesAt == nil || time.Now().Before(*result.Task.DiesAt)
-	default:
-		return false
 	}
 }
 

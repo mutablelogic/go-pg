@@ -123,28 +123,3 @@ func (self *Manager) ReleaseTask(ctx context.Context, taskId uint64, success boo
 
 	return types.Ptr(task.Task), nil
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// PRIVATE METHODS
-
-// requeueTask puts a running task back, without using a retry, such as when
-// the event loop stops before it finishes. Only the attempt in the task, by
-// its worker and start time, is put back, so returns ErrNotFound if another
-// worker has retained it since.
-func (self *Manager) requeueTask(ctx context.Context, task *schema.Task) (err error) {
-	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.requeueTask",
-		attribute.Int64("task", int64(task.Id)),
-	)
-	defer func() { endSpan(err) }()
-
-	if task.Worker == nil || task.StartedAt == nil {
-		return pg.ErrBadParameter.With("task isn't running")
-	}
-	var requeued schema.TaskId
-	if err := self.Get(ctx, &requeued, schema.TaskRequeue{Id: task.Id, Worker: *task.Worker, StartedAt: *task.StartedAt}); err != nil {
-		return err
-	} else if requeued == 0 {
-		return pg.ErrNotFound
-	}
-	return nil
-}

@@ -212,3 +212,30 @@ func TestNextTicker(t *testing.T) {
 	require.NotNil(t, next)
 	assert.Equal(t, "hourly", next.Ticker)
 }
+
+func TestTickerInterval(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	manager := test.IsolatedManager(t)
+
+	// A ticker's interval must be positive
+	for _, interval := range []time.Duration{0, -time.Minute} {
+		_, err := manager.RegisterTicker(ctx, "invalid", schema.TickerMeta{Interval: types.Ptr(interval)}, noopTask)
+		assert.ErrorIs(t, err, httpresponse.ErrBadRequest, interval)
+	}
+	_, err := manager.RegisterTicker(ctx, "zero", schema.TickerMeta{}, noopTask)
+	require.NoError(t, err)
+	_, err = manager.UpdateTicker(ctx, "zero", schema.TickerMeta{Interval: types.Ptr(time.Duration(0))})
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+
+	// A ticker stored without a positive interval is never due, as it would
+	// always be due
+	require.NoError(t, manager.Exec(ctx, `UPDATE ${"schema"}."ticker" SET "interval" = INTERVAL '0' WHERE "ticker" = 'zero'`))
+	for range 3 {
+		next, err := manager.NextTicker(ctx)
+		require.NoError(t, err)
+		if next != nil {
+			assert.NotEqual(t, "zero", next.Ticker)
+		}
+	}
+}

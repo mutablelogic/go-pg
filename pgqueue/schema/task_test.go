@@ -212,3 +212,68 @@ func TestTaskDedupe(t *testing.T) {
 		}
 	})
 }
+
+func TestTaskRequeue(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	manager := test.IsolatedManager(t)
+	var queue schema.Queue
+	require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Queue: "requeue"}))
+
+	// A running task
+	var id schema.TaskId
+	require.NoError(t, manager.With("id", "requeue").Insert(ctx, &id, schema.TaskMeta{Payload: json.RawMessage(`{}`)}))
+	var retained schema.TaskId
+	require.NoError(t, manager.Get(ctx, &retained, schema.TaskRetain{Worker: "first"}))
+	require.Equal(t, id, retained)
+	var task schema.TaskWithStatus
+	require.NoError(t, manager.Get(ctx, &task, id))
+	require.Equal(t, "running", task.Status)
+
+	// Another worker's attempt, or another attempt by the same worker, isn't
+	// put back
+	for _, attempt := range []schema.TaskRequeue{
+		{Id: uint64(id), Worker: "second", StartedAt: *task.StartedAt},
+		{Id: uint64(id), Worker: "first", StartedAt: task.StartedAt.Add(time.Second)},
+	} {
+		var requeued schema.TaskId
+		require.NoError(t, manager.Get(ctx, &requeued, attempt))
+		assert.Zero(t, requeued, attempt.Worker)
+	}
+
+	// The attempt is put back, without using a retry
+	var requeued schema.TaskId
+	require.NoError(t, manager.Get(ctx, &requeued, schema.TaskRequeue{Id: uint64(id), Worker: "first", StartedAt: *task.StartedAt}))
+	assert.Equal(t, id, requeued)
+	require.NoError(t, manager.Get(ctx, &task, id))
+	assert.Equal(t, "new", task.Status)
+	assert.Nil(t, task.Worker)
+}
+
+func TestTaskFailed(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	manager := test.IsolatedManager(t)
+	var queue schema.Queue
+	require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Queue: "failed"}))
+	require.NoError(t, manager.Update(ctx, &queue, schema.QueueName("failed"), schema.Queue{QueueMeta: schema.QueueMeta{
+		Retries:    types.Ptr(uint64(1)),
+		RetryDelay: types.Ptr(24 * time.Hour),
+	}}))
+
+	// A task which fails with no retries left is delayed until now, when it
+	// failed, rather than for a backoff, so its retention starts now
+	var id schema.TaskId
+	require.NoError(t, manager.With("id", "failed").Insert(ctx, &id, schema.TaskMeta{Payload: json.RawMessage(`{}`)}))
+	var retained schema.TaskId
+	require.NoError(t, manager.Get(ctx, &retained, schema.TaskRetain{Worker: "worker"}))
+	var failed schema.TaskId
+	require.NoError(t, manager.Get(ctx, &failed, schema.TaskRelease{Id: uint64(id), Fail: true}))
+	require.Equal(t, id, failed)
+
+	var task schema.TaskWithStatus
+	require.NoError(t, manager.Get(ctx, &task, id))
+	assert.Equal(t, "failed", task.Status)
+	require.NotNil(t, task.DelayedAt)
+	assert.WithinDuration(t, time.Now(), *task.DelayedAt, time.Minute)
+}

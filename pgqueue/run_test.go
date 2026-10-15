@@ -308,3 +308,67 @@ func TestRunCleanup(t *testing.T) {
 		return err == nil && list.Count == 0
 	}, 10*time.Second, 10*time.Millisecond)
 }
+
+func TestRunResubscribe(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+
+	// The loop listens again after the pool is reset, such as when partitions
+	// are created, which closes its subscription, so new tasks are still run
+	// straight away
+	manager := test.IsolatedManager(t)
+	_, err := manager.RegisterQueue(ctx, "resubscribe", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+	runIsolated(t, manager)
+
+	// After the poll which follows the reset, the queues aren't polled again
+	// for a while, so a new task is only run straight away if the loop is
+	// listening again
+	manager.PoolConn.Reset()
+	time.Sleep(2 * time.Second)
+	require.True(t, manager.Running())
+	task, err := manager.CreateTask(ctx, "resubscribe", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
+	require.NoError(t, err)
+	start := time.Now()
+	waitStatus(t, ctx, manager, task.Id, "done")
+	assert.Less(t, time.Since(start), 2*time.Second)
+}
+
+func TestRunDeadline(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+
+	// A running task is put back, without using a retry, when the loop's
+	// deadline passes before the task's
+	manager := test.IsolatedManager(t)
+	started := make(chan struct{}, 1)
+	_, err := manager.RegisterQueue(ctx, "deadline", schema.QueueMeta{}, func(ctx context.Context, _ json.RawMessage) (any, error) {
+		started <- struct{}{}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	require.NoError(t, err)
+	task, err := manager.CreateTask(ctx, "deadline", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
+	require.NoError(t, err)
+
+	runCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- manager.Run(runCtx, slog.New(slog.DiscardHandler))
+	}()
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the task didn't start")
+	}
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the loop didn't stop")
+	}
+
+	requeued := waitStatus(t, ctx, manager, task.Id, "new")
+	assert.Equal(t, types.Ptr(uint64(3)), requeued.Retries)
+}

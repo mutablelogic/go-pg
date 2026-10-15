@@ -353,7 +353,12 @@ CREATE OR REPLACE FUNCTION ${"schema"}.queue_fail(tid BIGINT, r JSONB) RETURNS B
         "result" = r,
         "started_at" = NULL,
         "finished_at" = NULL,
-        "delayed_at" = ${"schema"}.queue_backoff(tid),
+        "delayed_at" = CASE
+            -- The last failure is when the task failed, which is when its
+            -- retention starts, rather than a backoff
+            WHEN "retries" = 1 THEN NOW()
+            ELSE ${"schema"}.queue_backoff(tid)
+        END,
         "dies_at" = NULL
     WHERE
         "id" = tid
@@ -367,8 +372,12 @@ $$ LANGUAGE SQL;
 
 -- pgqueue.queue_requeue_func
 -- Puts a running task back, as if it hadn't started, without using a retry,
--- such as when its worker stops before it finishes
-CREATE OR REPLACE FUNCTION ${"schema"}.queue_requeue(tid BIGINT) RETURNS BIGINT AS $$
+-- such as when its worker stops before it finishes. Only the attempt with the
+-- worker and start time is put back, so a task which ran past its TTL, and
+-- was retained by another worker, isn't. The function without the attempt,
+-- from before, is dropped.
+DROP FUNCTION IF EXISTS ${"schema"}.queue_requeue(BIGINT);
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_requeue(tid BIGINT, w TEXT, started TIMESTAMPTZ) RETURNS BIGINT AS $$
     UPDATE ${"schema"}."task" SET
         "started_at" = NULL,
         "worker" = NULL,
@@ -377,7 +386,7 @@ CREATE OR REPLACE FUNCTION ${"schema"}.queue_requeue(tid BIGINT) RETURNS BIGINT 
     WHERE
         "id" = tid
     AND
-        "started_at" IS NOT NULL AND "finished_at" IS NULL
+        "worker" = w AND "started_at" = started AND "finished_at" IS NULL
     RETURNING
         "id";
 $$ LANGUAGE SQL;
@@ -386,7 +395,7 @@ $$ LANGUAGE SQL;
 -- Deletes up to 100 of the queue's finished tasks, which are done, failed or
 -- expired, and finished longer ago than the retention period, oldest first,
 -- and returns them. A task's finish is when it was done, or expired, or else
--- when it was last delayed or created, as a failed task has no finish time.
+-- when it was last delayed, which is when it failed, or created.
 -- The function without a retention period, from before, is dropped.
 DROP FUNCTION IF EXISTS ${"schema"}."queue_clean"(TEXT);
 CREATE OR REPLACE FUNCTION ${"schema"}."queue_clean"(q TEXT, retention INTERVAL) RETURNS TABLE (
@@ -470,7 +479,8 @@ GROUP BY
 
 -- pgqueue.ticker_next_func
 -- Returns the ticker, of the tickers with the names, which is most overdue,
--- and marks it as run now. Only the tickers a process has callbacks for are
+-- and marks it as run now. A ticker without a positive interval, which would
+-- always be due, isn't returned. Only the tickers a process has callbacks for are
 -- returned, so a process doesn't claim the tickers of another process sharing
 -- the database. The function without names, from before, is dropped.
 DROP FUNCTION IF EXISTS ${"schema"}.ticker_next();
@@ -491,7 +501,7 @@ CREATE OR REPLACE FUNCTION ${"schema"}.ticker_next(names TEXT[]) RETURNS TABLE (
             WHERE
                 "ticker" = ANY(names)
             AND
-                "interval" IS NOT NULL
+                "interval" > INTERVAL '0'
             AND
                 ("last_at" IS NULL OR "last_at" + "interval" <= NOW())
             ORDER BY

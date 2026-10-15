@@ -120,11 +120,16 @@ func (r *runner) run(ctx context.Context) error {
 			return nil
 		case notification, ok := <-notifications:
 			if !ok {
-				// The queues are still polled, but new tasks wait until then
-				if ctx.Err() == nil {
-					r.logger.WarnContext(ctx, "Stopped listening for new tasks", "channel", schema.DefaultNotifyChannel)
-				}
+				// The subscription is closed when the listener fails, or the
+				// pool is reset, such as when partitions are created, so the
+				// loop isn't ready until it subscribes again, when the queues
+				// are next polled, soon
+				r.ready.Store(false)
 				notifications = nil
+				if ctx.Err() == nil {
+					r.logger.DebugContext(ctx, "Stopped listening for new tasks", "channel", schema.DefaultNotifyChannel)
+					queueTimer.Reset(morePeriod)
+				}
 			} else if r.notified(notification) {
 				queueTimer.Reset(0)
 			}
@@ -134,6 +139,16 @@ func (r *runner) run(ctx context.Context) error {
 				queueTimer.Reset(0)
 			}
 		case <-queueTimer.C:
+			// Subscribe again, before the queues are polled, so no new tasks
+			// are missed
+			if notifications == nil {
+				if notifications, err = r.Subscribe(notifyCtx, schema.DefaultNotifyChannel); err != nil {
+					notifications = nil
+					r.logger.WarnContext(ctx, "Failed to listen for new tasks", "channel", schema.DefaultNotifyChannel, "error", err.Error())
+				} else {
+					r.ready.Store(true)
+				}
+			}
 			queueTimer.Reset(r.runQueues(ctx))
 		case <-tickerTimer.C:
 			tickerTimer.Reset(r.runTickers(ctx))
@@ -256,9 +271,11 @@ func (r *runner) release(ctx context.Context, result *Result) bool {
 	}
 	task := result.Task
 
-	// Put back a task which was cancelled because the loop is stopping
-	if ctx.Err() != nil && errors.Is(result.Error, context.Canceled) {
-		if err := r.requeueTask(releaseCtx, task.Id); err != nil {
+	// Put back a task which was stopped because the loop is stopping
+	if stoppedByLoop(ctx, result) {
+		if err := r.requeueTask(releaseCtx, task); errors.Is(err, pg.ErrNotFound) {
+			r.logger.WarnContext(releaseCtx, "Task retained by another worker, not put back", "queue", result.Queue, "task", task.Id)
+		} else if err != nil {
 			r.logger.ErrorContext(releaseCtx, "Failed to put back task", "queue", result.Queue, "task", task.Id, "error", err.Error())
 		} else {
 			r.logger.DebugContext(releaseCtx, "Put back task", "queue", result.Queue, "task", task.Id)
@@ -305,6 +322,22 @@ func (r *runner) logTicker(ctx context.Context, result *Result) {
 		r.logger.ErrorContext(ctx, "Ticker failed", "ticker", result.Ticker, "error", result.Error.Error())
 	} else if len(result.Result) > 0 && !bytes.Equal(result.Result, []byte("null")) {
 		r.logger.DebugContext(ctx, "Ticker done", "ticker", result.Ticker, "result", string(result.Result))
+	}
+}
+
+// stoppedByLoop returns true if the task was stopped because the loop is
+// stopping, which cancels it, or because the loop's deadline passed before the
+// task's own deadline, rather than failing
+func stoppedByLoop(ctx context.Context, result *Result) bool {
+	switch {
+	case ctx.Err() == nil || result.Error == nil:
+		return false
+	case errors.Is(result.Error, context.Canceled):
+		return true
+	case errors.Is(result.Error, context.DeadlineExceeded) && errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return result.Task.DiesAt == nil || time.Now().Before(*result.Task.DiesAt)
+	default:
+		return false
 	}
 }
 

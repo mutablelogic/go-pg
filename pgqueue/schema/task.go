@@ -25,9 +25,12 @@ type TaskRetain struct {
 	Worker string   `json:"worker,omitempty"`
 }
 
-// TaskRequeue puts a running task back, without using a retry
+// TaskRequeue puts a running task back, without using a retry, when it's the
+// attempt by the worker which started at the time
 type TaskRequeue struct {
-	Id uint64 `json:"id,omitempty"`
+	Id        uint64    `json:"id,omitempty"`
+	Worker    string    `json:"worker,omitempty"`
+	StartedAt time.Time `json:"started_at,omitzero"`
 }
 
 type TaskRelease struct {
@@ -367,8 +370,12 @@ func (t TaskRetain) Select(bind *pg.Bind, op pg.Op) (string, error) {
 func (t TaskRequeue) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	if t.Id == 0 {
 		return "", httpresponse.ErrBadRequest.With("missing task id")
+	} else if t.Worker == "" || t.StartedAt.IsZero() {
+		return "", httpresponse.ErrBadRequest.With("missing task worker or start time")
 	}
 	bind.Set("tid", t.Id)
+	bind.Set("worker", t.Worker)
+	bind.Set("started_at", t.StartedAt)
 
 	switch op {
 	case pg.Get:

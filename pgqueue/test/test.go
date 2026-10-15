@@ -80,11 +80,11 @@ func Main(m *testing.M, setup func(*pgqueue.Manager) (func(), error), opts ...pg
 func startManager(pool pg.PoolConn, setup func(*pgqueue.Manager) (func(), error), opts ...pgqueue.Opt) (func(), error) {
 	// Use a new database schema for each test process. Test packages can run
 	// at the same time against the same database, and would otherwise share
-	// queues and tasks. Options passed by the caller come afterwards, so can
-	// still set the schema.
+	// queues and tasks. It comes after the caller's options, so the schema is
+	// always the one which Schema returns, and which is dropped afterwards.
 	sharedSchema = "test_" + strings.ToLower(rand.Text())
 	schemaName := sharedSchema
-	opts = append([]pgqueue.Opt{pgqueue.WithSchema(schemaName)}, opts...)
+	opts = append(opts, pgqueue.WithSchema(schemaName))
 
 	// Drop the schema after the tests have run
 	cleanup := func() error {

@@ -27,7 +27,8 @@ func TestNew(t *testing.T) {
 		exists, err := pg.SchemaExists(ctx, manager, test.Schema())
 		require.NoError(t, err)
 		assert.True(t, exists)
-		assert.True(t, manager.Running())
+		// The loop may be listening again, after another test resets the pool
+		assert.Eventually(t, manager.Running, 10*time.Second, 10*time.Millisecond)
 	})
 
 	t.Run("Isolated", func(t *testing.T) {

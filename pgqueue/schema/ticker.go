@@ -197,6 +197,10 @@ func (t TickerMeta) Update(bind *pg.Bind) error {
 	bind.Del("patch")
 
 	if t.Interval != nil {
+		// A ticker with no interval would always be due
+		if *t.Interval <= 0 {
+			return httpresponse.ErrBadRequest.Withf("ticker interval must be positive: %v", *t.Interval)
+		}
 		bind.Append("patch", `"interval" = `+bind.Set("interval", t.Interval))
 	}
 	if len(t.Payload) > 0 {

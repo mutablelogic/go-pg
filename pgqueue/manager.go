@@ -1,10 +1,11 @@
-package manager
+package pgqueue
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	// Packages
 	otel "github.com/mutablelogic/go-client/pkg/otel"
@@ -20,39 +21,47 @@ import (
 type Manager struct {
 	opt
 	pg.PoolConn
+
+	// The task callbacks for the queues and tickers, by name
 	queues  *exec
 	tickers *exec
+
+	// Set while the event loop is running, and once it's ready, which is
+	// when it's listening for new tasks
+	running atomic.Bool
+	ready   atomic.Bool
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
+func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (_ *Manager, err error) {
 	self := new(Manager)
 
-	// Check arguments
+	// Check parameters
 	if pool == nil {
-		return nil, fmt.Errorf("pool is required")
-	}
-
-	// Set default values
-	if err := self.defaults(); err != nil {
-		return nil, err
+		return nil, pg.ErrBadParameter.With("pg pool is required")
 	}
 
 	// Apply options
-	if err := self.apply(opts...); err != nil {
+	if err := self.opt.apply(opts); err != nil {
 		return nil, err
 	}
 
-	// Create execution objects after options are applied so they inherit the configured tracer.
-	self.queues = NewExec(self.tracer)
-	self.tickers = NewExec(self.tracer)
+	// The task callbacks, which are traced with the tracer from the options
+	self.queues = newExec(self.tracer)
+	self.tickers = newExec(self.tracer)
+
+	// Trace creating the manager, which needs the tracer from the options
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.New",
+		attribute.String("schema", self.schema),
+	)
+	defer func() { endSpan(err) }()
 
 	// Parse and register named queries so bind.Query(...) can resolve them.
 	queries, err := pg.NewQueries(strings.NewReader(schema.Queries))
 	if err != nil {
-		return nil, fmt.Errorf("parse queries.sql: %w", err)
+		return nil, pg.ErrInternalServerError.Withf("queries.sql: %v", err)
 	} else {
 		pool = pool.WithQueries(queries).With(
 			"schema", self.schema,
@@ -60,48 +69,48 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 		).(pg.PoolConn)
 	}
 
-	// Create objects in the database schema. This is not done in a transaction
-	bootstrapCtx, endBootstrapSpan := otel.StartSpan(self.tracer, ctx, "bootstrap",
-		attribute.String("schema", self.schema),
-	)
-	if err := bootstrap(bootstrapCtx, pool, self.schema); err != nil {
-		endBootstrapSpan(err)
+	// Create the schema and the objects in it
+	if err := bootstrap(ctx, pool, self.schema); err != nil {
 		return nil, err
 	} else {
 		self.PoolConn = pool
 	}
 
 	// Ensure at least one task partition exists before any task inserts happen.
-	if _, err := self.CreateNextPartition(bootstrapCtx); err != nil {
-		endBootstrapSpan(err)
+	if _, err := self.CreateNextPartition(ctx); err != nil {
 		return nil, err
 	}
 
 	// Register a maintenance ticker
-	if _, err := self.RegisterTicker(bootstrapCtx, schema.DefaultMaintenanceTickerName, schema.TickerMeta{
+	if _, err := self.RegisterTicker(ctx, schema.DefaultMaintenanceTickerName, schema.TickerMeta{
 		Interval: types.Ptr(self.maintenancePeriod),
 	}, self.maintenance); err != nil {
-		endBootstrapSpan(err)
 		return nil, err
 	}
 
 	// Register a cleanup ticker
-	if _, err := self.RegisterTicker(bootstrapCtx, schema.DefaultCleanupTickerName, schema.TickerMeta{
+	if _, err := self.RegisterTicker(ctx, schema.DefaultCleanupTickerName, schema.TickerMeta{
 		Interval: types.Ptr(schema.DefaultCleanupPeriod),
 	}, self.cleanup); err != nil {
-		endBootstrapSpan(err)
 		return nil, err
 	}
 
 	// Register the metrics
 	if err := self.registerMetrics(); err != nil {
-		endBootstrapSpan(err)
 		return nil, err
 	}
 
 	// Return success
-	endBootstrapSpan(nil)
 	return self, nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS
+
+// Running reports whether the event loop is running, and listening for new
+// tasks, so a task created afterwards is run straight away
+func (self *Manager) Running() bool {
+	return self.ready.Load()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -130,11 +139,11 @@ func bootstrap(ctx context.Context, conn pg.Conn, schemaName string) error {
 	return nil
 }
 
-func (manager *Manager) maintenance(ctx context.Context, _ json.RawMessage) (any, error) {
+func (self *Manager) maintenance(ctx context.Context, _ json.RawMessage) (any, error) {
 	messages := []string{}
 
 	// Create next partition if needed
-	created, err := manager.CreateNextPartition(ctx)
+	created, err := self.CreateNextPartition(ctx)
 	if err != nil {
 		return nil, err
 	} else if created != "" {
@@ -142,7 +151,7 @@ func (manager *Manager) maintenance(ctx context.Context, _ json.RawMessage) (any
 	}
 
 	// Drop old drained partitions
-	dropped, err := manager.DropDrainedPartition(ctx)
+	dropped, err := self.DropDrainedPartition(ctx)
 	if err != nil {
 		return nil, err
 	} else if dropped != "" {
@@ -153,7 +162,7 @@ func (manager *Manager) maintenance(ctx context.Context, _ json.RawMessage) (any
 	return messages, nil
 }
 
-func (manager *Manager) cleanup(ctx context.Context, _ json.RawMessage) (any, error) {
+func (self *Manager) cleanup(ctx context.Context, _ json.RawMessage) (any, error) {
 	messages := make([]string, 0)
 	pageSize := uint64(schema.QueueListLimit)
 	offset := uint64(0)
@@ -162,18 +171,27 @@ func (manager *Manager) cleanup(ctx context.Context, _ json.RawMessage) (any, er
 		pageLimit := pageSize
 		request := schema.QueueListRequest{OffsetLimit: pg.OffsetLimit{Offset: offset, Limit: &pageLimit}}
 
-		queues, err := manager.ListQueues(ctx, request)
+		queues, err := self.ListQueues(ctx, request)
 		if err != nil {
 			return nil, err
 		}
 
+		// Clean each queue in batches, until a batch isn't full, so a busy
+		// queue is fully cleaned
 		for _, queue := range queues.Body {
-			removed, err := manager.CleanQueue(ctx, queue.Queue)
-			if err != nil {
-				return nil, err
+			var count int
+			for {
+				removed, err := self.CleanQueue(ctx, queue.Queue)
+				if err != nil {
+					return nil, err
+				}
+				count += len(removed)
+				if len(removed) < schema.QueueCleanLimit {
+					break
+				}
 			}
-			if len(removed) > 0 {
-				messages = append(messages, fmt.Sprintf("cleaned queue %q removed %d tasks", queue.Queue, len(removed)))
+			if count > 0 {
+				messages = append(messages, fmt.Sprintf("cleaned queue %q removed %d tasks", queue.Queue, count))
 			}
 		}
 

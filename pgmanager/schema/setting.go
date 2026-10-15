@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	pg "github.com/mutablelogic/go-pg"
+	tui "github.com/mutablelogic/go-server/pkg/tui"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
@@ -83,7 +84,7 @@ func (r Setting) Width(col int) int {
 	return 0
 }
 
-func (r Setting) Cell(col int) string {
+func (r Setting) Cell(col int) tui.CellText {
 	switch col {
 	case 0:
 		return r.Name
@@ -118,7 +119,7 @@ func (r CategoryName) Width(col int) int {
 	return 0
 }
 
-func (r CategoryName) Cell(col int) string {
+func (r CategoryName) Cell(col int) tui.CellText {
 	switch col {
 	case 0:
 		return string(r)

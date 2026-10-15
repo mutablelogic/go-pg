@@ -1,4 +1,4 @@
-package manager
+package pgqueue
 
 import (
 	"context"
@@ -8,20 +8,25 @@ import (
 	metric "go.opentelemetry.io/otel/metric"
 )
 
-func (manager *Manager) registerMetrics() error {
-	if manager.opt.metrics == nil {
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
+// registerMetrics registers the pgqueue_tasks gauge, which is the number of
+// tasks in each queue with each status, when the manager has a meter
+func (self *Manager) registerMetrics() error {
+	if self.opt.metrics == nil {
 		return nil
 	}
 
-	queueTasks, err := manager.opt.metrics.Int64ObservableGauge(
+	queueTasks, err := self.opt.metrics.Int64ObservableGauge(
 		"pgqueue_tasks",
 		metric.WithDescription("Current number of queue tasks by queue and status"),
 	)
 	if err != nil {
 		return err
 	}
-	if _, err := manager.opt.metrics.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
-		statuses, err := manager.ListQueueStatuses(ctx)
+	if _, err := self.opt.metrics.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
+		statuses, err := self.ListQueueStatuses(ctx)
 		if err != nil {
 			return err
 		}
@@ -30,7 +35,7 @@ func (manager *Manager) registerMetrics() error {
 				metric.WithAttributes(
 					attribute.String("queue", status.Queue),
 					attribute.String("status", status.Status),
-					attribute.String("worker", manager.opt.worker),
+					attribute.String("worker", self.opt.worker),
 				),
 			)
 		}

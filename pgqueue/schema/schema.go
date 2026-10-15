@@ -28,4 +28,6 @@ const (
 	DefaultQueuePeriod           = 10 * time.Second // how often to poll queues for retries and missed notifications
 	DefaultCleanupPeriod         = 15 * time.Minute // how often to delete expired tasks
 	DefaultMaintenancePeriod     = 10 * time.Minute // create and drop partitions
+	DefaultRetention             = 24 * time.Hour   // how long finished tasks are kept before they're cleaned
+	QueueCleanLimit              = 100              // the most tasks cleaned from a queue at once, as in queue_clean
 )

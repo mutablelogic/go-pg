@@ -2,6 +2,10 @@ package pg
 
 import (
 	"fmt"
+	"net/url"
+
+	// Packages
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -28,6 +32,16 @@ func (r *OffsetLimit) Bind(bind *Bind, max uint64) {
 		bind.Set("offsetlimit", fmt.Sprintf("OFFSET %v", r.Offset))
 	} else {
 		bind.Set("offsetlimit", "")
+	}
+}
+
+// Query sets offset and limit query parameters on the provided map.
+func (r *OffsetLimit) Query(params url.Values) {
+	if r.Limit != nil {
+		params.Set("limit", fmt.Sprintf("%v", types.Value(r.Limit)))
+	}
+	if r.Offset != 0 {
+		params.Set("offset", fmt.Sprintf("%v", r.Offset))
 	}
 }
 

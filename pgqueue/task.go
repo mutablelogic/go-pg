@@ -1,4 +1,4 @@
-package manager
+package pgqueue
 
 import (
 	"context"
@@ -17,8 +17,8 @@ import (
 // PUBLIC METHODS - TASK
 
 // CreateTask creates a new task in a queue, and returns it.
-func (manager *Manager) CreateTask(ctx context.Context, queue string, meta schema.TaskMeta) (result *schema.Task, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "CreateTask",
+func (self *Manager) CreateTask(ctx context.Context, queue string, meta schema.TaskMeta) (result *schema.Task, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.CreateTask",
 		attribute.String("queue", queue),
 		attribute.String("meta", types.Stringify(meta)),
 	)
@@ -27,7 +27,7 @@ func (manager *Manager) CreateTask(ctx context.Context, queue string, meta schem
 	var taskId schema.TaskId
 	var task schema.TaskWithStatus
 
-	if err := manager.Tx(ctx, func(conn pg.Conn) error {
+	if err := self.Tx(ctx, func(conn pg.Conn) error {
 		if err := conn.With("id", queue).Insert(ctx, &taskId, meta); err != nil {
 			return err
 		}
@@ -40,14 +40,14 @@ func (manager *Manager) CreateTask(ctx context.Context, queue string, meta schem
 }
 
 // ListTasks returns all tasks with optional queue and status filtering.
-func (manager *Manager) ListTasks(ctx context.Context, req schema.TaskListRequest) (result *schema.TaskList, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ListTasks",
+func (self *Manager) ListTasks(ctx context.Context, req schema.TaskListRequest) (result *schema.TaskList, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.ListTasks",
 		attribute.String("req", types.Stringify(req)),
 	)
 	defer func() { endSpan(err) }()
 
 	resp := schema.TaskList{TaskListRequest: req}
-	if err := manager.List(ctx, &resp, req); err != nil {
+	if err := self.List(ctx, &resp, req); err != nil {
 		return nil, err
 	} else {
 		resp.OffsetLimit.Clamp(resp.Count)
@@ -57,8 +57,8 @@ func (manager *Manager) ListTasks(ctx context.Context, req schema.TaskListReques
 
 // NextTask retains a task from any of the specified queues, and returns it.
 // If no task is available, nil is returned.
-func (manager *Manager) NextTask(ctx context.Context, worker string, queues ...string) (result *schema.Task, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "NextTask",
+func (self *Manager) NextTask(ctx context.Context, worker string, queues ...string) (result *schema.Task, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.NextTask",
 		attribute.String("worker", worker),
 		attribute.StringSlice("queues", queues),
 	)
@@ -67,7 +67,7 @@ func (manager *Manager) NextTask(ctx context.Context, worker string, queues ...s
 	var taskId schema.TaskId
 	var task schema.TaskWithStatus
 
-	if err := manager.Tx(ctx, func(conn pg.Conn) error {
+	if err := self.Tx(ctx, func(conn pg.Conn) error {
 		if err := conn.Get(ctx, &taskId, schema.TaskRetain{Queues: queues, Worker: worker}); errors.Is(err, pg.ErrNotFound) {
 			return nil
 		} else if err != nil {
@@ -91,8 +91,8 @@ func (manager *Manager) NextTask(ctx context.Context, worker string, queues ...s
 }
 
 // ReleaseTask releases a task, optionally marking it as failed, and returns it.
-func (manager *Manager) ReleaseTask(ctx context.Context, taskId uint64, success bool, result json.RawMessage, status *string) (resp *schema.Task, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ReleaseTask",
+func (self *Manager) ReleaseTask(ctx context.Context, taskId uint64, success bool, result json.RawMessage, status *string) (resp *schema.Task, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.ReleaseTask",
 		attribute.Int64("task", int64(taskId)),
 		attribute.Bool("success", success),
 		attribute.String("result", string(result)),
@@ -103,7 +103,7 @@ func (manager *Manager) ReleaseTask(ctx context.Context, taskId uint64, success 
 	var released schema.TaskId
 	var task schema.TaskWithStatus
 
-	if err := manager.Tx(ctx, func(conn pg.Conn) error {
+	if err := self.Tx(ctx, func(conn pg.Conn) error {
 		if err := conn.Get(ctx, &released, schema.TaskRelease{Id: taskId, Fail: !success, Result: result}); err != nil {
 			return err
 		}

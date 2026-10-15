@@ -14,14 +14,14 @@ import (
 // TYPES
 
 type CLI struct {
-	pgqueuecmd.ServerCommands // pgqueue run
+	pgqueuecmd.ClientCommands // pgqueue queues, tickers, tasks
 	servercmd.OpenAPICommands // pgqueue openapi
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
-const description = "pgqueue is an application for managing task queues"
+const description = "pgqueue is a client for task queues, on a server with the pgqueue API"
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE

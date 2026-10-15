@@ -2,12 +2,14 @@ package schema
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"time"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
+	tui "github.com/mutablelogic/go-server/pkg/tui"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
@@ -37,7 +39,10 @@ type TickerList struct {
 	Body  []Ticker `json:"body,omitempty"`
 }
 
-type TickerNext struct{}
+// TickerNext gets the next due ticker of the tickers with the names
+type TickerNext struct {
+	Tickers []string `json:"tickers,omitempty"`
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // STRINGIFY
@@ -60,6 +65,42 @@ func (t TickerList) String() string {
 
 func (t TickerNext) String() string {
 	return types.Stringify(t)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (t Ticker) Header() []string {
+	return []string{"Ticker", "Interval", "Last Run", "Payload"}
+}
+
+func (t Ticker) Width(col int) int {
+	return 0
+}
+
+func (t Ticker) Cell(col int) tui.CellText {
+	switch col {
+	case 0:
+		return t.Ticker
+	case 1:
+		return durationCell(t.Interval)
+	case 2:
+		return timeCell(t.LastAt)
+	case 3:
+		return jsonCell(t.Payload)
+	default:
+		return ""
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+// Query returns the request as URL query parameters
+func (t TickerListRequest) Query() url.Values {
+	values := url.Values{}
+	t.OffsetLimit.Query(values)
+	return values
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -96,6 +137,16 @@ func (t TickerListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 }
 
 func (t TickerNext) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	tickers := make([]string, 0, len(t.Tickers))
+	for _, ticker := range t.Tickers {
+		name, err := TickerName(ticker).Validate()
+		if err != nil {
+			return "", err
+		}
+		tickers = append(tickers, name)
+	}
+	bind.Set("tickers", tickers)
+
 	switch op {
 	case pg.Get:
 		return bind.Query("pgqueue.ticker_next"), nil
@@ -146,6 +197,10 @@ func (t TickerMeta) Update(bind *pg.Bind) error {
 	bind.Del("patch")
 
 	if t.Interval != nil {
+		// A ticker with no interval would always be due
+		if *t.Interval <= 0 {
+			return httpresponse.ErrBadRequest.Withf("ticker interval must be positive: %v", *t.Interval)
+		}
 		bind.Append("patch", `"interval" = `+bind.Set("interval", t.Interval))
 	}
 	if len(t.Payload) > 0 {

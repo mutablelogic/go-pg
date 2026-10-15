@@ -1,11 +1,13 @@
-package manager
+package pgqueue
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -41,7 +43,7 @@ type Result struct {
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-func NewExec(tracer trace.Tracer) *exec {
+func newExec(tracer trace.Tracer) *exec {
 	self := new(exec)
 	self.t = make(map[string]schema.TaskFunc)
 	self.tracer = tracer
@@ -80,6 +82,15 @@ func (exec *exec) RegisterTask(name string, fn schema.TaskFunc) error {
 	return nil
 }
 
+// Names returns the names of the task callbacks, in order
+func (exec *exec) Names() []string {
+	exec.RLock()
+	defer exec.RUnlock()
+	names := slices.Collect(maps.Keys(exec.t))
+	slices.Sort(names)
+	return names
+}
+
 // RemoveTask removes a named task callback.
 func (exec *exec) RemoveTask(name string) error {
 	exec.Lock()
@@ -107,7 +118,8 @@ func (exec *exec) RunTickerTask(ctx context.Context, ticker *schema.Ticker, resu
 	exec.RLock()
 	defer exec.RUnlock()
 
-	// TODO: Add the ticker into the context
+	// The ticker is in the callback's context
+	ctx = context.WithValue(ctx, schema.ContextKeyTicker, ticker)
 
 	// Get the task function for the ticker's name
 	fn, exists := exec.t[ticker.Ticker]
@@ -129,7 +141,7 @@ func (exec *exec) RunTickerTask(ctx context.Context, ticker *schema.Ticker, resu
 		defer cancel()
 
 		// Otel span
-		spanCtx, endSpan := otel.StartSpan(exec.tracer, child, strings.Join([]string{"ticker", ticker.Ticker}, "."),
+		spanCtx, endSpan := otel.StartSpan(exec.tracer, child, strings.Join([]string{"pgqueue", "ticker", ticker.Ticker}, "."),
 			attribute.String("ticker", types.Stringify(ticker)),
 		)
 
@@ -152,17 +164,24 @@ func (exec *exec) RunQueueTask(ctx context.Context, task *schema.Task, result ch
 	exec.RLock()
 	defer exec.RUnlock()
 
+	// Errors are sent from a goroutine, as the caller may be the only reader
+	// of the results
 	if task.DiesAt == nil {
-		result <- &Result{Queue: task.Queue, Task: task, Error: httpresponse.ErrBadRequest.With("missing task deadline")}
+		exec.wg.Go(func() {
+			result <- &Result{Queue: task.Queue, Task: task, Error: httpresponse.ErrBadRequest.With("missing task deadline")}
+		})
 		return
 	}
 
-	// TODO: Add the task into the context
+	// The task is in the callback's context
+	ctx = context.WithValue(ctx, schema.ContextKeyTask, task)
 
 	// Get the task function for the ticker's name
 	fn, exists := exec.t[task.Queue]
 	if !exists {
-		result <- &Result{Queue: task.Queue, Task: task, Error: httpresponse.ErrNotFound.Withf("task callback %q not found", task.Queue)}
+		exec.wg.Go(func() {
+			result <- &Result{Queue: task.Queue, Task: task, Error: httpresponse.ErrNotFound.Withf("task callback %q not found", task.Queue)}
+		})
 		return
 	}
 
@@ -172,7 +191,7 @@ func (exec *exec) RunQueueTask(ctx context.Context, task *schema.Task, result ch
 		defer cancel()
 
 		// Otel span
-		spanCtx, endSpan := otel.StartSpan(exec.tracer, child, strings.Join([]string{"queue", task.Queue}, "."),
+		spanCtx, endSpan := otel.StartSpan(exec.tracer, child, strings.Join([]string{"pgqueue", "queue", task.Queue}, "."),
 			attribute.String("task", types.Stringify(task)),
 		)
 

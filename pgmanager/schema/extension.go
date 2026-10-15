@@ -7,6 +7,7 @@ import (
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
+	tui "github.com/mutablelogic/go-server/pkg/tui"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
@@ -95,7 +96,7 @@ func (r Extension) Width(col int) int {
 	return 0
 }
 
-func (r Extension) Cell(col int) string {
+func (r Extension) Cell(col int) tui.CellText {
 	switch col {
 	case 0:
 		if r.Oid != nil {

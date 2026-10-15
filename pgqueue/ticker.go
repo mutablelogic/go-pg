@@ -1,4 +1,4 @@
-package manager
+package pgqueue
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgqueue/schema"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
 )
@@ -16,8 +17,8 @@ import (
 // PUBLIC METHODS - TICKER
 
 // RegisterTicker creates a new ticker, or updates an existing ticker, and returns it.
-func (manager *Manager) RegisterTicker(ctx context.Context, name string, meta schema.TickerMeta, callback schema.TaskFunc) (resultPtr *schema.Ticker, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "RegisterTicker",
+func (self *Manager) RegisterTicker(ctx context.Context, name string, meta schema.TickerMeta, callback schema.TaskFunc) (resultPtr *schema.Ticker, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.RegisterTicker",
 		attribute.String("name", name),
 		attribute.String("meta", types.Stringify(meta)),
 		attribute.Bool("callback", callback != nil),
@@ -27,12 +28,12 @@ func (manager *Manager) RegisterTicker(ctx context.Context, name string, meta sc
 	var result schema.Ticker
 
 	// Register the ticker task
-	if err := manager.tickers.RegisterTask(name, callback); err != nil {
+	if err := self.tickers.RegisterTask(name, callback); err != nil {
 		return nil, err
 	}
 
 	// Persist the ticker
-	err = manager.Tx(ctx, func(conn pg.Conn) error {
+	err = self.Tx(ctx, func(conn pg.Conn) error {
 		err := conn.Get(ctx, &result, schema.TickerName(name))
 		switch {
 		case err == nil:
@@ -52,52 +53,54 @@ func (manager *Manager) RegisterTicker(ctx context.Context, name string, meta sc
 		return conn.Update(ctx, &result, schema.TickerName(name), meta)
 	})
 	if err != nil {
-		return nil, errors.Join(err, manager.tickers.RemoveTask(name))
+		return nil, errors.Join(err, self.tickers.RemoveTask(name))
 	}
 
 	return types.Ptr(result), nil
 }
 
 // UpdateTicker updates an existing ticker, and returns it.
-func (manager *Manager) UpdateTicker(ctx context.Context, name string, meta schema.TickerMeta) (result *schema.Ticker, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "UpdateTicker",
+func (self *Manager) UpdateTicker(ctx context.Context, name string, meta schema.TickerMeta) (result *schema.Ticker, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.UpdateTicker",
 		attribute.String("name", name),
 		attribute.String("meta", types.Stringify(meta)),
 	)
 	defer func() { endSpan(err) }()
 
 	var ticker schema.Ticker
-	if err := manager.Update(ctx, &ticker, schema.TickerName(name), meta); err != nil {
+	if err := self.Update(ctx, &ticker, schema.TickerName(name), meta); err != nil {
 		return nil, err
 	}
 	return types.Ptr(ticker), nil
 }
 
 // GetTicker returns a ticker by name.
-func (manager *Manager) GetTicker(ctx context.Context, name string) (result *schema.Ticker, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "GetTicker",
+func (self *Manager) GetTicker(ctx context.Context, name string) (result *schema.Ticker, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.GetTicker",
 		attribute.String("name", name),
 	)
 	defer func() { endSpan(err) }()
 
 	var ticker schema.Ticker
-	if err := manager.Get(ctx, &ticker, schema.TickerName(name)); err != nil {
+	if err := self.Get(ctx, &ticker, schema.TickerName(name)); err != nil {
 		return nil, err
 	}
 	return types.Ptr(ticker), nil
 }
 
 // DeleteTicker deletes an existing ticker, and returns the deleted ticker.
-func (manager *Manager) DeleteTicker(ctx context.Context, name string) (result *schema.Ticker, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "DeleteTicker",
+func (self *Manager) DeleteTicker(ctx context.Context, name string) (result *schema.Ticker, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.DeleteTicker",
 		attribute.String("name", name),
 	)
 	defer func() { endSpan(err) }()
 
+	// Delete the ticker, and its task callback. A ticker registered by another
+	// process sharing the database has no callback in this one.
 	var ticker schema.Ticker
-	if err := manager.Delete(ctx, &ticker, schema.TickerName(name)); err != nil {
+	if err := self.Delete(ctx, &ticker, schema.TickerName(name)); err != nil {
 		return nil, err
-	} else if err := manager.tickers.RemoveTask(name); err != nil {
+	} else if err := self.tickers.RemoveTask(name); err != nil && !errors.Is(err, httpresponse.ErrNotFound) {
 		return nil, err
 	}
 
@@ -106,14 +109,14 @@ func (manager *Manager) DeleteTicker(ctx context.Context, name string) (result *
 }
 
 // ListTickers returns all tickers as a list.
-func (manager *Manager) ListTickers(ctx context.Context, req schema.TickerListRequest) (result *schema.TickerList, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ListTickers",
+func (self *Manager) ListTickers(ctx context.Context, req schema.TickerListRequest) (result *schema.TickerList, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.ListTickers",
 		attribute.String("req", types.Stringify(req)),
 	)
 	defer func() { endSpan(err) }()
 
 	resp := schema.TickerList{TickerListRequest: req}
-	if err := manager.List(ctx, &resp, req); err != nil {
+	if err := self.List(ctx, &resp, req); err != nil {
 		return nil, err
 	} else {
 		resp.OffsetLimit.Clamp(resp.Count)
@@ -121,13 +124,21 @@ func (manager *Manager) ListTickers(ctx context.Context, req schema.TickerListRe
 	return types.Ptr(resp), nil
 }
 
-// NextTicker returns the next matured ticker, or nil.
-func (manager *Manager) NextTicker(ctx context.Context) (result *schema.Ticker, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "NextTicker")
+// NextTicker returns the next due ticker of the tickers with callbacks in
+// this process, and marks it as run now, or returns nil if none is due. The
+// tickers of another process sharing the database aren't returned.
+func (self *Manager) NextTicker(ctx context.Context) (result *schema.Ticker, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.NextTicker")
 	defer func() { endSpan(err) }()
 
+	// No ticker is due without callbacks
+	names := self.tickers.Names()
+	if len(names) == 0 {
+		return nil, nil
+	}
+
 	var ticker schema.Ticker
-	if err := manager.Get(ctx, &ticker, schema.TickerNext{}); errors.Is(err, pg.ErrNotFound) {
+	if err := self.Get(ctx, &ticker, schema.TickerNext{Tickers: names}); errors.Is(err, pg.ErrNotFound) {
 		return nil, nil
 	} else if err != nil {
 		return nil, err

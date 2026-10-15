@@ -5,7 +5,8 @@ SELECT
     "ttl",
     "retries",
     "retry_delay",
-    "concurrency"
+    "concurrency",
+    "dedupe"
 FROM
     ${"schema"}."queue"
 WHERE
@@ -22,7 +23,8 @@ RETURNING
     "ttl",
     "retries",
     "retry_delay",
-    "concurrency";
+    "concurrency",
+    "dedupe";
 
 -- pgqueue.patch
 UPDATE
@@ -36,7 +38,8 @@ RETURNING
     "ttl",
     "retries",
     "retry_delay",
-    "concurrency";
+    "concurrency",
+    "dedupe";
 
 -- pgqueue.delete
 DELETE FROM
@@ -48,7 +51,8 @@ RETURNING
     "ttl",
     "retries",
     "retry_delay",
-    "concurrency";
+    "concurrency",
+    "dedupe";
 
 -- pgqueue.list
 SELECT
@@ -56,7 +60,8 @@ SELECT
     "ttl",
     "retries",
     "retry_delay",
-    "concurrency"
+    "concurrency",
+    "dedupe"
 FROM
     ${"schema"}."queue"
 ORDER BY
@@ -76,7 +81,7 @@ SELECT
     "dies_at",
     "retries"
 FROM
-    ${"schema"}.queue_clean(@id);
+    ${"schema"}.queue_clean(@id, CAST(@retention AS INTERVAL));
 
 -- pgqueue.task_get
 SELECT
@@ -239,7 +244,7 @@ SELECT
     "interval",
     "last_at"
 FROM
-    ${"schema"}.ticker_next();
+    ${"schema"}.ticker_next(@tickers);
 
 -- pgqueue.stats
 SELECT

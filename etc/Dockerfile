@@ -4,7 +4,7 @@ ARG ARCH=amd64
 # Creates a docker image for pgmanager
 
 # Build stage
-FROM --platform=${OS}/${ARCH} golang:1.25 AS builder
+FROM --platform=${OS}/${ARCH} golang:1.27 AS builder
 WORKDIR /usr/src/app
 COPY . .
 RUN go install github.com/djthorpe/go-wasmbuild/cmd/wasmbuild@latest && \

@@ -1,4 +1,4 @@
-package manager
+package pgqueue
 
 import (
 	"os"
@@ -26,20 +26,23 @@ type opt struct {
 	partitionThreshold float64
 	partitionAhead     uint64
 	maintenancePeriod  time.Duration
+	retention          time.Duration
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-func (o *opt) apply(opts ...Opt) error {
-	for _, opt := range opts {
-		if opt == nil {
-			continue
-		}
-		if err := opt(o); err != nil {
+func (o *opt) apply(opt []Opt) error {
+	o.defaults()
+
+	// Apply options
+	for _, fn := range opt {
+		if err := fn(o); err != nil {
 			return err
 		}
 	}
+
+	// Return success
 	return nil
 }
 
@@ -49,11 +52,16 @@ func (o *opt) defaults() error {
 	o.partitionThreshold = schema.DefaultPartitionThreshold
 	o.partitionAhead = schema.DefaultPartitionAhead
 	o.maintenancePeriod = schema.DefaultMaintenancePeriod
+	o.retention = schema.DefaultRetention
+
+	// Set worker name from hostname
 	if hostname, err := os.Hostname(); err != nil {
 		return err
 	} else {
 		o.worker = hostname
 	}
+
+	// Return success
 	return nil
 }
 
@@ -131,6 +139,18 @@ func WithMaintenancePeriod(period time.Duration) Opt {
 	return func(o *opt) error {
 		if period >= time.Second {
 			o.maintenancePeriod = period
+		}
+		return nil
+	}
+}
+
+// WithRetention sets how long finished tasks are kept, before the cleanup
+// ticker deletes them. Zero deletes them when the ticker next runs, and
+// negative values are ignored.
+func WithRetention(retention time.Duration) Opt {
+	return func(o *opt) error {
+		if retention >= 0 {
+			o.retention = retention
 		}
 		return nil
 	}

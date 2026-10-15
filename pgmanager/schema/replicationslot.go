@@ -7,7 +7,8 @@ import (
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
-	"github.com/mutablelogic/go-server/pkg/types"
+	tui "github.com/mutablelogic/go-server/pkg/tui"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -77,7 +78,7 @@ func (r ReplicationSlot) Width(col int) int {
 	return 0
 }
 
-func (r ReplicationSlot) Cell(col int) string {
+func (r ReplicationSlot) Cell(col int) tui.CellText {
 	switch col {
 	case 0:
 		return r.Name

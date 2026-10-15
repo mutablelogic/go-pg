@@ -1,12 +1,14 @@
 package schema
 
 import (
+	"net/url"
 	"strings"
 	"time"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
+	tui "github.com/mutablelogic/go-server/pkg/tui"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
@@ -20,6 +22,7 @@ type QueueMeta struct {
 	Retries     *uint64        `json:"retries" help:"Number of retries before failing"`
 	RetryDelay  *time.Duration `json:"retry_delay" help:"Backoff delay"`
 	Concurrency *uint64        `json:"concurrency" help:"Number of concurrent workers"`
+	Dedupe      *bool          `json:"dedupe,omitempty" help:"Whether a task is not inserted while the same task is pending"`
 }
 
 type Queue struct {
@@ -38,7 +41,8 @@ type QueueList struct {
 }
 
 type QueueCleanRequest struct {
-	Queue string `json:"queue,omitempty" arg:"" help:"Queue name"`
+	Queue     string        `json:"queue,omitempty" arg:"" help:"Queue name"`
+	Retention time.Duration `json:"retention,omitempty" help:"How long finished tasks are kept"`
 }
 
 type QueueCleanResponse struct {
@@ -74,6 +78,52 @@ func (q QueueListRequest) String() string {
 	return types.Stringify(q)
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (q Queue) Header() []string {
+	return []string{"Queue", "TTL", "Retries", "Retry Delay", "Concurrency", "Dedupe"}
+}
+
+func (q Queue) Width(col int) int {
+	return 0
+}
+
+func (q Queue) Cell(col int) tui.CellText {
+	switch col {
+	case 0:
+		return q.Queue
+	case 1:
+		return durationCell(q.TTL)
+	case 2:
+		return countCell(q.Retries)
+	case 3:
+		return durationCell(q.RetryDelay)
+	case 4:
+		if q.Concurrency != nil && *q.Concurrency == 0 {
+			return "unlimited"
+		}
+		return countCell(q.Concurrency)
+	case 5:
+		if q.Dedupe != nil && *q.Dedupe {
+			return "yes"
+		}
+		return ""
+	default:
+		return ""
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+// Query returns the request as URL query parameters
+func (q QueueListRequest) Query() url.Values {
+	values := url.Values{}
+	q.OffsetLimit.Query(values)
+	return values
+}
+
 func (q QueueList) String() string {
 	return types.Stringify(q)
 }
@@ -98,7 +148,7 @@ func (q QueueStatusResponse) String() string {
 // READER
 
 func (q *Queue) Scan(row pg.Row) error {
-	return row.Scan(&q.Queue, &q.TTL, &q.Retries, &q.RetryDelay, &q.Concurrency)
+	return row.Scan(&q.Queue, &q.TTL, &q.Retries, &q.RetryDelay, &q.Concurrency, &q.Dedupe)
 }
 
 func (l *QueueList) Scan(row pg.Row) error {
@@ -176,6 +226,7 @@ func (q QueueCleanRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 		return "", err
 	}
 	bind.Set("id", name)
+	bind.Set("retention", max(q.Retention, 0))
 
 	switch op {
 	case pg.List:
@@ -252,6 +303,9 @@ func (q Queue) Update(bind *pg.Bind) error {
 	}
 	if q.Concurrency != nil {
 		patch = append(patch, `concurrency=`+bind.Set("concurrency", q.Concurrency))
+	}
+	if q.Dedupe != nil {
+		patch = append(patch, `dedupe=`+bind.Set("dedupe", q.Dedupe))
 	}
 
 	if len(patch) == 0 {

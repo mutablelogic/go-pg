@@ -2,12 +2,16 @@ package pgqueue_test
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
+	pgqueue "github.com/mutablelogic/go-pg/pgqueue"
 	schema "github.com/mutablelogic/go-pg/pgqueue/schema"
 	test "github.com/mutablelogic/go-pg/pgqueue/test"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -256,4 +260,108 @@ func TestCleanQueue(t *testing.T) {
 		}
 		assert.Equal(t, map[string]uint64{"new": 1, "retry": 1, "running": 1, "expired": 0, "failed": 0, "done": 0}, counts)
 	})
+}
+
+func TestUnregisterQueue(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+
+	t.Run("Unregister", func(t *testing.T) {
+		// The queue and its tasks are kept, and it can be registered again
+		manager := test.IsolatedManager(t)
+		_, err := manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+		require.NoError(t, err)
+		task, err := manager.CreateTask(ctx, "queue", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
+		require.NoError(t, err)
+
+		require.NoError(t, manager.UnregisterQueue(ctx, "queue"))
+		_, err = manager.GetQueue(ctx, "queue")
+		require.NoError(t, err)
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Queue: []string{"queue"}})
+		require.NoError(t, err)
+		require.Len(t, list.Body, 1)
+		assert.Equal(t, task.Id, list.Body[0].Id)
+
+		_, err = manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+		require.NoError(t, err)
+	})
+
+	t.Run("NotRegistered", func(t *testing.T) {
+		manager := test.IsolatedManager(t)
+		assert.ErrorIs(t, manager.UnregisterQueue(ctx, "missing"), httpresponse.ErrNotFound)
+	})
+
+	t.Run("NotRun", func(t *testing.T) {
+		// The tasks of an unregistered queue aren't run, while another
+		// queue's are
+		manager := test.IsolatedManager(t)
+		for _, name := range []string{"unregistered", "registered"} {
+			_, err := manager.RegisterQueue(ctx, name, schema.QueueMeta{}, noopTask)
+			require.NoError(t, err)
+		}
+		require.NoError(t, manager.UnregisterQueue(ctx, "unregistered"))
+		runIsolated(t, manager)
+
+		unregistered, err := manager.CreateTask(ctx, "unregistered", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
+		require.NoError(t, err)
+		registered, err := manager.CreateTask(ctx, "registered", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
+		require.NoError(t, err)
+		waitStatus(t, ctx, manager, registered.Id, "done")
+		waitStatus(t, ctx, manager, unregistered.Id, "new")
+	})
+}
+
+func TestDeleteQueueAlreadyDeleted(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+
+	// A queue which another process deleted first is not found, but its
+	// callback is removed, so it can be registered again
+	manager := test.IsolatedManager(t)
+	_, err := manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+	require.NoError(t, manager.Exec(ctx, `DELETE FROM ${"schema"}."queue" WHERE "queue" = 'queue'`))
+
+	_, err = manager.DeleteQueue(ctx, "queue")
+	assert.ErrorIs(t, err, pg.ErrNotFound)
+	_, err = manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+}
+
+func TestRegisterConcurrently(t *testing.T) {
+	manager, ctx := test.Begin(t)
+	defer test.End(t)
+
+	// Several instances sharing the database, each with its own callbacks
+	instances := make([]*pgqueue.Manager, 5)
+	for i := range instances {
+		instance, err := pgqueue.New(ctx, manager.PoolConn, pgqueue.WithSchema(test.Schema()))
+		require.NoError(t, err)
+		instances[i] = instance
+	}
+
+	// They all register the same queue and ticker at once
+	name := "concurrent_" + strings.ToLower(rand.Text()[:8])
+	var wg sync.WaitGroup
+	errs := make([]error, len(instances)*2)
+	for i, instance := range instances {
+		wg.Go(func() {
+			_, errs[i*2] = instance.RegisterQueue(ctx, name, schema.QueueMeta{Retries: types.Ptr(uint64(5))}, noopTask)
+		})
+		wg.Go(func() {
+			_, errs[i*2+1] = instance.RegisterTicker(ctx, name, schema.TickerMeta{Interval: types.Ptr(time.Hour)}, noopTask)
+		})
+	}
+	wg.Wait()
+	for _, err := range errs {
+		assert.NoError(t, err)
+	}
+
+	// And there's one of each
+	queue, err := manager.GetQueue(ctx, name)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(5), *queue.Retries)
+	ticker, err := manager.GetTicker(ctx, name)
+	require.NoError(t, err)
+	assert.Equal(t, time.Hour, *ticker.Interval)
 }

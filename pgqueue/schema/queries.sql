@@ -13,11 +13,13 @@ WHERE
     "queue" = @id;
 
 -- pgqueue.insert
+-- Returns no queue if it exists
 INSERT INTO ${"schema"}."queue" (
     "queue"
 ) VALUES (
     @queue
 )
+ON CONFLICT ("queue") DO NOTHING
 RETURNING
     "queue",
     "ttl",
@@ -191,11 +193,13 @@ WHERE
     "ticker" = @id;
 
 -- pgqueue.ticker_insert
+-- Returns no ticker if it exists
 INSERT INTO ${"schema"}."ticker" (
     "ticker"
 ) VALUES (
     @ticker
 )
+ON CONFLICT ("ticker") DO NOTHING
 RETURNING
     "ticker",
     "payload",

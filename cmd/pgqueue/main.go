@@ -5,6 +5,7 @@ import (
 	"os"
 
 	// Packages
+	pgqueuecmd "github.com/mutablelogic/go-pg/pgqueue/cmd"
 	servercmd "github.com/mutablelogic/go-server/pkg/cmd"
 	version "github.com/mutablelogic/go-server/pkg/version"
 )
@@ -13,6 +14,7 @@ import (
 // TYPES
 
 type CLI struct {
+	pgqueuecmd.ClientCommands // pgqueue queues, tickers, tasks
 	servercmd.OpenAPICommands // pgqueue openapi
 }
 

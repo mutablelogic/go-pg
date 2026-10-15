@@ -5,7 +5,6 @@ import (
 	"os"
 
 	// Packages
-	pgqueuecmd "github.com/mutablelogic/go-pg/pgqueue/cmd"
 	servercmd "github.com/mutablelogic/go-server/pkg/cmd"
 	version "github.com/mutablelogic/go-server/pkg/version"
 )
@@ -14,14 +13,13 @@ import (
 // TYPES
 
 type CLI struct {
-	pgqueuecmd.ServerCommands // pgqueue run
 	servercmd.OpenAPICommands // pgqueue openapi
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
-const description = "pgqueue is an application for managing task queues"
+const description = "pgqueue is a client for task queues, on a server with the pgqueue API"
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE

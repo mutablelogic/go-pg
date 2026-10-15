@@ -1,18 +1,4 @@
-// Copyright 2026 David Thorpe
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-package manager
+package pgqueue
 
 import (
 	"context"
@@ -29,7 +15,7 @@ import (
 )
 
 func TestRegisterTask(t *testing.T) {
-	registry := NewExec(nil)
+	registry := newExec(nil)
 	fn := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
 
 	err := registry.RegisterTask("  Example_Task  ", fn)
@@ -45,7 +31,7 @@ func TestRegisterTask(t *testing.T) {
 }
 
 func TestRemoveTask(t *testing.T) {
-	registry := NewExec(nil)
+	registry := newExec(nil)
 	fn := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
 
 	require.NoError(t, registry.RegisterTask("remove_task", fn))
@@ -68,7 +54,7 @@ func TestRunRecoversPanic(t *testing.T) {
 }
 
 func TestRunTickerTaskKeepsContextAlive(t *testing.T) {
-	exec := NewExec(nil)
+	exec := newExec(nil)
 	results := make(chan *Result, 1)
 	ticker := &schema.Ticker{Ticker: "alive_context"}
 
@@ -96,7 +82,7 @@ func TestRunTickerTaskKeepsContextAlive(t *testing.T) {
 }
 
 func TestRunQueueTaskUsesTaskTTLDeadline(t *testing.T) {
-	exec := NewExec(nil)
+	exec := newExec(nil)
 	results := make(chan *Result, 1)
 	diesAt := time.Now().Add(2 * time.Second)
 	task := &schema.Task{Id: 42, Queue: "queue_deadline", DiesAt: &diesAt}
@@ -126,7 +112,7 @@ func TestRunQueueTaskUsesTaskTTLDeadline(t *testing.T) {
 }
 
 func TestRunQueueTaskRequiresTaskDeadline(t *testing.T) {
-	exec := NewExec(nil)
+	exec := newExec(nil)
 	results := make(chan *Result, 1)
 	task := &schema.Task{Id: 99, Queue: "queue_deadline_required"}
 	called := false
@@ -212,4 +198,40 @@ func TestRunWithGracePreservesCanceledCause(t *testing.T) {
 	require.Error(t, result.Error)
 	assert.True(t, errors.Is(result.Error, context.Canceled))
 	assert.Less(t, elapsed, 500*time.Millisecond)
+}
+
+func TestRunTaskContext(t *testing.T) {
+	t.Run("Ticker", func(t *testing.T) {
+		// A ticker's callback has the ticker in its context
+		exec := newExec(nil)
+		results := make(chan *Result, 1)
+		ticker := &schema.Ticker{Ticker: "context_ticker"}
+		var got *schema.Ticker
+		require.NoError(t, exec.RegisterTask(ticker.Ticker, func(ctx context.Context, _ json.RawMessage) (any, error) {
+			got = schema.TickerFromContext(ctx)
+			return nil, nil
+		}))
+		require.NoError(t, exec.RunTickerTask(context.Background(), ticker, results))
+		<-results
+		exec.Close()
+		assert.Same(t, ticker, got)
+	})
+
+	t.Run("Task", func(t *testing.T) {
+		// A task's callback has the task in its context
+		exec := newExec(nil)
+		results := make(chan *Result, 1)
+		diesAt := time.Now().Add(time.Minute)
+		task := &schema.Task{Id: 42, Queue: "context_queue", DiesAt: &diesAt}
+		var got *schema.Task
+		require.NoError(t, exec.RegisterTask(task.Queue, func(ctx context.Context, _ json.RawMessage) (any, error) {
+			got = schema.TaskFromContext(ctx)
+			return nil, nil
+		}))
+		exec.RunQueueTask(context.Background(), task, results)
+		<-results
+		exec.Close()
+		assert.Same(t, task, got)
+		assert.Nil(t, schema.TickerFromContext(context.Background()))
+	})
 }

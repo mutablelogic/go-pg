@@ -1,4 +1,4 @@
-package manager
+package pgqueue
 
 import (
 	"context"
@@ -14,18 +14,18 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func (manager *Manager) CreateNextPartition(ctx context.Context) (result string, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "CreateNextPartition")
+func (self *Manager) CreateNextPartition(ctx context.Context) (result string, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.CreateNextPartition")
 	defer func() { endSpan(err) }()
 
 	// Get current sequence value
-	seq, err := manager.GetPartitionSeq(ctx)
+	seq, err := self.GetPartitionSeq(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	// Get existing partitions to find the highest upper bound
-	partitions, err := manager.ListPartitions(ctx)
+	partitions, err := self.ListPartitions(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -39,8 +39,8 @@ func (manager *Manager) CreateNextPartition(ctx context.Context) (result string,
 	}
 
 	// Create partition(s) if no partitions exist, or sequence has crossed threshold.
-	if maxEnd == 0 || seq >= uint64(float64(maxEnd)*manager.partitionThreshold) {
-		count := manager.partitionAhead
+	if maxEnd == 0 || seq >= uint64(float64(maxEnd)*self.partitionThreshold) {
+		count := self.partitionAhead
 		if count == 0 {
 			count = 1
 		}
@@ -51,9 +51,9 @@ func (manager *Manager) CreateNextPartition(ctx context.Context) (result string,
 			if start == 0 {
 				start = 1
 			}
-			end := start + manager.partitionSize
+			end := start + self.partitionSize
 			name := fmt.Sprintf("task_%08d_%08d", start, end)
-			if err := manager.CreatePartition(ctx, schema.PartitionMeta{
+			if err := self.CreatePartition(ctx, schema.PartitionMeta{
 				Partition: name,
 				Start:     start,
 				End:       end,
@@ -66,7 +66,7 @@ func (manager *Manager) CreateNextPartition(ctx context.Context) (result string,
 		}
 
 		// Reset the connection to refresh partition metadata.
-		manager.PoolConn.Reset()
+		self.PoolConn.Reset()
 
 		if len(created) == 1 {
 			return created[0], nil
@@ -78,12 +78,12 @@ func (manager *Manager) CreateNextPartition(ctx context.Context) (result string,
 	return "", nil
 }
 
-func (manager *Manager) DropDrainedPartition(ctx context.Context) (result string, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "DropDrainedPartition")
+func (self *Manager) DropDrainedPartition(ctx context.Context) (result string, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.DropDrainedPartition")
 	defer func() { endSpan(err) }()
 
 	// Get all the current partitions, and drop the oldest drained partition if it exists.
-	partitions, err := manager.ListPartitions(ctx)
+	partitions, err := self.ListPartitions(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -105,67 +105,65 @@ func (manager *Manager) DropDrainedPartition(ctx context.Context) (result string
 
 	// Don't drop a partition if the sequence hasn't advanced past its end — new
 	// inserts could still land in this range.
-	seq, err := manager.GetPartitionSeq(ctx)
+	seq, err := self.GetPartitionSeq(ctx)
 	if err != nil {
 		return "", err
 	}
 	if seq < oldest.End {
 		return "", nil
 	}
-	if err := manager.DeletePartition(ctx, oldest.Partition); err != nil {
+	if err := self.DeletePartition(ctx, oldest.Partition); err != nil {
 		return "", err
 	} else {
 		// Reset the connection
-		manager.PoolConn.Reset()
+		self.PoolConn.Reset()
 	}
 	return oldest.Partition, nil
 }
 
-func (manager *Manager) CreatePartition(ctx context.Context, meta schema.PartitionMeta) (err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "CreatePartition",
+func (self *Manager) CreatePartition(ctx context.Context, meta schema.PartitionMeta) (err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.CreatePartition",
 		attribute.String("meta", types.Stringify(meta)),
 	)
 	defer func() { endSpan(err) }()
 
-	if err := manager.PoolConn.Insert(ctx, nil, meta); err != nil {
+	if err := self.PoolConn.Insert(ctx, nil, meta); err != nil {
 		return err
 	}
 	return nil
 
 }
 
-func (manager *Manager) GetPartitionSeq(ctx context.Context) (result uint64, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "GetPartitionSeq")
+func (self *Manager) GetPartitionSeq(ctx context.Context) (result uint64, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.GetPartitionSeq")
 	defer func() { endSpan(err) }()
 
 	var seq schema.PartitionSeq
-	if err := manager.Get(ctx, &seq, schema.PartitionSeqRequest{}); err != nil {
+	if err := self.Get(ctx, &seq, schema.PartitionSeqRequest{}); err != nil {
 		return 0, err
 	}
 	return uint64(seq), nil
 }
 
-func (manager *Manager) ListPartitions(ctx context.Context) (result []schema.Partition, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ListPartitions")
+func (self *Manager) ListPartitions(ctx context.Context) (result []schema.Partition, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.ListPartitions")
 	defer func() { endSpan(err) }()
 
 	var resp schema.PartitionList
-	if err := manager.List(ctx, &resp, schema.PartitionListRequest{}); err != nil {
+	if err := self.List(ctx, &resp, schema.PartitionListRequest{}); err != nil {
 		return nil, err
 	}
 	return resp.Body, nil
 }
 
-func (manager *Manager) DeletePartition(ctx context.Context, name string) (err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "DeletePartition",
+func (self *Manager) DeletePartition(ctx context.Context, name string) (err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.DeletePartition",
 		attribute.String("name", name),
 	)
 	defer func() { endSpan(err) }()
 
-	if err := manager.Delete(ctx, nil, schema.PartitionName(name)); err != nil {
+	if err := self.Delete(ctx, nil, schema.PartitionName(name)); err != nil {
 		return err
 	}
 	return nil
 }
-
-///////////////////////////////////////////////////////////////////////////////

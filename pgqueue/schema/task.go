@@ -3,12 +3,15 @@ package schema
 import (
 	"context"
 	"encoding/json"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
+	tui "github.com/mutablelogic/go-server/pkg/tui"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
@@ -20,6 +23,11 @@ type TaskId uint64
 type TaskRetain struct {
 	Queues []string `json:"queues,omitempty"`
 	Worker string   `json:"worker,omitempty"`
+}
+
+// TaskRequeue puts a running task back, without using a retry
+type TaskRequeue struct {
+	Id uint64 `json:"id,omitempty"`
 }
 
 type TaskRelease struct {
@@ -53,7 +61,8 @@ type TaskWithStatus struct {
 
 type TaskListRequest struct {
 	pg.OffsetLimit
-	Status string `json:"status,omitempty"`
+	Queue  []string `json:"queue,omitempty" help:"Returns only the tasks in these queues, or in any queue" optional:""`
+	Status string   `json:"status,omitempty" help:"Returns only the tasks with this status" enum:"new,running,retry,expired,failed,done" optional:""`
 }
 
 type TaskList struct {
@@ -191,6 +200,58 @@ func (t TaskMeta) Update(bind *pg.Bind) error {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// TABLE
+
+func (t TaskWithStatus) Header() []string {
+	return []string{"ID", "Queue", "Status", "Retries", "Worker", "Created", "Payload", "Result"}
+}
+
+func (t TaskWithStatus) Width(col int) int {
+	return 0
+}
+
+func (t TaskWithStatus) Cell(col int) tui.CellText {
+	switch col {
+	case 0:
+		return strconv.FormatUint(t.Id, 10)
+	case 1:
+		return t.Queue
+	case 2:
+		return t.Status
+	case 3:
+		return countCell(t.Retries)
+	case 4:
+		return types.Value(t.Worker)
+	case 5:
+		return timeCell(t.CreatedAt)
+	case 6:
+		return jsonCell(t.Payload)
+	case 7:
+		return jsonCell(t.Result)
+	default:
+		return ""
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// QUERY
+
+// Query returns the request as URL query parameters
+func (t TaskListRequest) Query() url.Values {
+	values := url.Values{}
+	t.OffsetLimit.Query(values)
+	for _, queue := range t.Queue {
+		if queue = strings.TrimSpace(queue); queue != "" {
+			values.Add("queue", queue)
+		}
+	}
+	if status := strings.TrimSpace(t.Status); status != "" {
+		values.Set("status", status)
+	}
+	return values
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // SELECTOR
 
 func (t TaskId) Select(bind *pg.Bind, op pg.Op) (string, error) {
@@ -213,8 +274,15 @@ func (l TaskListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	if bind.Has("id") {
 		taskWhere = append(taskWhere, `t."queue" = @id`)
 	}
-	if l.Status != "" {
-		where = append(where, `"status" = `+bind.Set("status", l.Status))
+	if queues, err := l.queues(); err != nil {
+		return "", err
+	} else if len(queues) > 0 {
+		taskWhere = append(taskWhere, `t."queue" = ANY(`+bind.Set("queues", queues)+`)`)
+	}
+	if status, err := l.status(); err != nil {
+		return "", err
+	} else if status != "" {
+		where = append(where, `"status" = `+bind.Set("status", status))
 	}
 
 	if len(taskWhere) == 0 {
@@ -235,6 +303,36 @@ func (l TaskListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 		return bind.Query("pgqueue.task_list"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("unsupported TaskListRequest operation %q", op)
+	}
+}
+
+// queues returns the names of the queues to list the tasks of, which are
+// valid queue names, or none for any queue
+func (l TaskListRequest) queues() ([]string, error) {
+	queues := make([]string, 0, len(l.Queue))
+	for _, queue := range l.Queue {
+		if strings.TrimSpace(queue) == "" {
+			continue
+		}
+		name, err := QueueName(queue).queueName()
+		if err != nil {
+			return nil, err
+		}
+		queues = append(queues, name)
+	}
+	return queues, nil
+}
+
+// status returns the status of the tasks to list, or an empty string for any
+// status
+func (l TaskListRequest) status() (string, error) {
+	switch status := strings.ToLower(strings.TrimSpace(l.Status)); status {
+	case "":
+		return "", nil
+	case "new", "running", "retry", "expired", "failed", "done":
+		return status, nil
+	default:
+		return "", httpresponse.ErrBadRequest.Withf("invalid task status: %q", l.Status)
 	}
 }
 
@@ -263,6 +361,20 @@ func (t TaskRetain) Select(bind *pg.Bind, op pg.Op) (string, error) {
 		return bind.Query("pgqueue.retain"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("unsupported TaskRetain operation %q", op)
+	}
+}
+
+func (t TaskRequeue) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	if t.Id == 0 {
+		return "", httpresponse.ErrBadRequest.With("missing task id")
+	}
+	bind.Set("tid", t.Id)
+
+	switch op {
+	case pg.Get:
+		return bind.Query("pgqueue.requeue"), nil
+	default:
+		return "", httpresponse.ErrInternalError.Withf("unsupported TaskRequeue operation %q", op)
 	}
 }
 

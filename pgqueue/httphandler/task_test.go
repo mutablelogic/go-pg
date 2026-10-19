@@ -129,5 +129,10 @@ func TestGetTask(t *testing.T) {
 
 	t.Run("InvalidId", func(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, server.JSON(t, http.MethodGet, "task/abc", nil, nil))
+
+		// An id is a signed BIGINT, so the largest is 2^63-1, which isn't
+		// found, and one more is invalid
+		assert.Equal(t, http.StatusNotFound, server.JSON(t, http.MethodGet, "task/9223372036854775807", nil, nil))
+		assert.Equal(t, http.StatusBadRequest, server.JSON(t, http.MethodGet, "task/9223372036854775808", nil, nil))
 	})
 }

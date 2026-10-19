@@ -63,7 +63,8 @@ func taskGetHandler(manager *pgqueue.Manager, router *httprouter.Router, documen
 
 		// GET
 		path.Get(func(w http.ResponseWriter, r *http.Request) {
-			if id, err := strconv.ParseUint(r.PathValue("id"), 10, 64); err != nil {
+			// An id is a signed BIGINT, so it has at most 63 bits
+			if id, err := strconv.ParseUint(r.PathValue("id"), 10, 63); err != nil {
 				httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("invalid task id %q", r.PathValue("id")))
 			} else if task, err := manager.GetTask(r.Context(), id); err != nil {
 				httpresponse.Error(w, httpErr(err), r.PathValue("id"))

@@ -1,6 +1,7 @@
 package httpclient_test
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -43,7 +44,7 @@ func TestListQueues(t *testing.T) {
 		require.Len(t, list.Body, 3)
 		names := make([]string, len(list.Body))
 		for i, queue := range list.Body {
-			names[i] = queue.Queue
+			names[i] = queue.Name
 		}
 		assert.Equal(t, []string{"one", "three", "two"}, names)
 
@@ -61,9 +62,26 @@ func TestListQueues(t *testing.T) {
 		require.NoError(t, err)
 		assert.EqualValues(t, 3, list.Count)
 		require.Len(t, list.Body, 1)
-		assert.Equal(t, "three", list.Body[0].Queue)
+		assert.Equal(t, "three", list.Body[0].Name)
 		assert.EqualValues(t, 1, list.Offset)
 		require.NotNil(t, list.Limit)
 		assert.EqualValues(t, 1, *list.Limit)
 	})
+}
+
+func TestGetQueue(t *testing.T) {
+	manager, client, ctx := newClient(t)
+	_, err := manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+
+	_, err = manager.CreateTask(ctx, "queue", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
+	require.NoError(t, err)
+
+	queue, err := client.GetQueue(ctx, "queue")
+	require.NoError(t, err)
+	assert.Equal(t, "queue", queue.Name)
+	assert.EqualValues(t, 1, queue.New)
+
+	_, err = client.GetQueue(ctx, "missing")
+	assert.Error(t, err)
 }

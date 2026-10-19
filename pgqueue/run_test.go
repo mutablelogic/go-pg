@@ -167,7 +167,7 @@ func TestRunQueues(t *testing.T) {
 		// one registered by another process, aren't run
 		manager := test.IsolatedManager(t)
 		var other schema.Queue
-		require.NoError(t, manager.Insert(ctx, &other, schema.Queue{Queue: "other"}))
+		require.NoError(t, manager.Insert(ctx, &other, schema.Queue{Name: "other"}))
 		otherTask, err := manager.CreateTask(ctx, "other", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
 		require.NoError(t, err)
 		_, err = manager.RegisterQueue(ctx, "mine", schema.QueueMeta{}, noopTask)

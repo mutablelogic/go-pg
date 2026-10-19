@@ -34,7 +34,7 @@ func TestRegisterQueue(t *testing.T) {
 		manager := test.IsolatedManager(t)
 		queue, err := manager.RegisterQueue(ctx, "defaults", schema.QueueMeta{}, noopTask)
 		require.NoError(t, err)
-		assert.Equal(t, schema.Queue{Queue: "defaults", QueueMeta: schema.QueueMeta{
+		assert.Equal(t, schema.Queue{Name: "defaults", QueueMeta: schema.QueueMeta{
 			TTL:         types.Ptr(time.Hour),
 			Retries:     types.Ptr(uint64(3)),
 			RetryDelay:  types.Ptr(2 * time.Minute),
@@ -54,7 +54,7 @@ func TestRegisterQueue(t *testing.T) {
 		}
 		queue, err := manager.RegisterQueue(ctx, "meta", meta, noopTask)
 		require.NoError(t, err)
-		assert.Equal(t, schema.Queue{Queue: "meta", QueueMeta: meta}, *queue)
+		assert.Equal(t, schema.Queue{Name: "meta", QueueMeta: meta}, *queue)
 	})
 
 	t.Run("Name", func(t *testing.T) {
@@ -62,7 +62,7 @@ func TestRegisterQueue(t *testing.T) {
 		manager := test.IsolatedManager(t)
 		queue, err := manager.RegisterQueue(ctx, "  Mixed_Case  ", schema.QueueMeta{}, noopTask)
 		require.NoError(t, err)
-		assert.Equal(t, "mixed_case", queue.Queue)
+		assert.Equal(t, "mixed_case", queue.Name)
 	})
 
 	t.Run("Existing", func(t *testing.T) {
@@ -70,7 +70,7 @@ func TestRegisterQueue(t *testing.T) {
 		// is updated with the meta
 		manager := test.IsolatedManager(t)
 		var existing schema.Queue
-		require.NoError(t, manager.Insert(ctx, &existing, schema.Queue{Queue: "existing"}))
+		require.NoError(t, manager.Insert(ctx, &existing, schema.Queue{Name: "existing"}))
 		queue, err := manager.RegisterQueue(ctx, "existing", schema.QueueMeta{Retries: types.Ptr(uint64(5))}, noopTask)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(5), *queue.Retries)
@@ -119,9 +119,13 @@ func TestListQueues(t *testing.T) {
 		list, err := manager.ListQueues(ctx, schema.QueueListRequest{})
 		require.NoError(t, err)
 		assert.EqualValues(t, 3, list.Count)
+
+		// The default limit is returned, clamped to the queues available
+		require.NotNil(t, list.Limit)
+		assert.EqualValues(t, 3, *list.Limit)
 		names := make([]string, len(list.Body))
 		for i, queue := range list.Body {
-			names[i] = queue.Queue
+			names[i] = queue.Name
 		}
 		assert.Equal(t, []string{"one", "three", "two"}, names)
 	})
@@ -131,7 +135,7 @@ func TestListQueues(t *testing.T) {
 		require.NoError(t, err)
 		assert.EqualValues(t, 3, list.Count)
 		require.Len(t, list.Body, 2)
-		assert.Equal(t, "three", list.Body[0].Queue)
+		assert.Equal(t, "three", list.Body[0].Name)
 		require.NotNil(t, list.Limit)
 		assert.EqualValues(t, 2, *list.Limit)
 	})
@@ -147,7 +151,8 @@ func TestGetUpdateDeleteQueue(t *testing.T) {
 	t.Run("Get", func(t *testing.T) {
 		queue, err := manager.GetQueue(ctx, "queue")
 		require.NoError(t, err)
-		assert.Equal(t, "queue", queue.Queue)
+		assert.Equal(t, "queue", queue.Name)
+		assert.Zero(t, queue.New)
 
 		_, err = manager.GetQueue(ctx, "missing")
 		assert.ErrorIs(t, err, pg.ErrNotFound)
@@ -166,7 +171,7 @@ func TestGetUpdateDeleteQueue(t *testing.T) {
 	t.Run("Delete", func(t *testing.T) {
 		queue, err := manager.DeleteQueue(ctx, "queue")
 		require.NoError(t, err)
-		assert.Equal(t, "queue", queue.Queue)
+		assert.Equal(t, "queue", queue.Name)
 		_, err = manager.GetQueue(ctx, "queue")
 		assert.ErrorIs(t, err, pg.ErrNotFound)
 
@@ -181,10 +186,10 @@ func TestGetUpdateDeleteQueue(t *testing.T) {
 	t.Run("DeleteWithoutCallback", func(t *testing.T) {
 		// A queue registered by another process has no callback in this one
 		var existing schema.Queue
-		require.NoError(t, manager.Insert(ctx, &existing, schema.Queue{Queue: "other"}))
+		require.NoError(t, manager.Insert(ctx, &existing, schema.Queue{Name: "other"}))
 		queue, err := manager.DeleteQueue(ctx, "other")
 		require.NoError(t, err)
-		assert.Equal(t, "other", queue.Queue)
+		assert.Equal(t, "other", queue.Name)
 	})
 }
 
@@ -217,12 +222,20 @@ func TestCleanQueue(t *testing.T) {
 		// Each queue has a count for every status
 		statuses, err := manager.ListQueueStatuses(ctx)
 		require.NoError(t, err)
-		counts := map[string]uint64{}
-		for _, status := range statuses {
-			assert.Equal(t, "clean", status.Queue)
-			counts[status.Status] = status.Count
-		}
-		assert.Equal(t, map[string]uint64{"new": 1, "retry": 1, "running": 1, "expired": 1, "failed": 1, "done": 1}, counts)
+		require.Len(t, statuses, 1)
+		assert.Equal(t, "clean", statuses[0].Name)
+		assert.Equal(t, map[string]uint64{"new": 1, "retry": 1, "running": 1, "expired": 1, "failed": 1, "done": 1}, counts(statuses[0]))
+
+		// Getting the queue has the same counts
+		queue, err := manager.GetQueue(ctx, "clean")
+		require.NoError(t, err)
+		assert.Equal(t, counts(statuses[0]), counts(*queue))
+
+		// And so does listing the queues
+		list, err := manager.ListQueues(ctx, schema.QueueListRequest{})
+		require.NoError(t, err)
+		require.Len(t, list.Body, 1)
+		assert.Equal(t, counts(statuses[0]), counts(list.Body[0]))
 	})
 
 	t.Run("Retained", func(t *testing.T) {
@@ -255,11 +268,8 @@ func TestCleanQueue(t *testing.T) {
 		// The other tasks are kept
 		statuses, err := manager.ListQueueStatuses(ctx)
 		require.NoError(t, err)
-		counts := map[string]uint64{}
-		for _, status := range statuses {
-			counts[status.Status] = status.Count
-		}
-		assert.Equal(t, map[string]uint64{"new": 1, "retry": 1, "running": 1, "expired": 0, "failed": 0, "done": 0}, counts)
+		require.Len(t, statuses, 1)
+		assert.Equal(t, map[string]uint64{"new": 1, "retry": 1, "running": 1, "expired": 0, "failed": 0, "done": 0}, counts(statuses[0]))
 	})
 }
 
@@ -439,4 +449,41 @@ func hasRetried(t *testing.T, ctx context.Context, manager *pgqueue.Manager) boo
 		}
 	}
 	return false
+}
+
+// counts returns the number of a queue's tasks with each status
+func counts(queue schema.QueueWithStatus) map[string]uint64 {
+	return map[string]uint64{
+		"new":     queue.New,
+		"running": queue.Running,
+		"retry":   queue.Retry,
+		"expired": queue.Expired,
+		"failed":  queue.Failed,
+		"done":    queue.Done,
+	}
+}
+
+func TestQueueStatusViewUpgrade(t *testing.T) {
+	// A database with the view from before, which has a row for each queue
+	// and status, has it replaced when a manager starts
+	shared, ctx := test.Begin(t)
+	defer test.End(t)
+	name := "test_" + strings.ToLower(rand.Text())
+	t.Cleanup(func() { assert.NoError(t, pg.SchemaDrop(context.Background(), shared.PoolConn, name)) })
+
+	manager, err := pgqueue.New(ctx, shared.PoolConn, pgqueue.WithSchema(name))
+	require.NoError(t, err)
+	require.NoError(t, manager.Exec(ctx, `DROP VIEW ${"schema"}."queue_status"`))
+	require.NoError(t, manager.Exec(ctx, `CREATE VIEW ${"schema"}."queue_status" AS
+		SELECT Q."queue", 'new'::${"schema"}.task_status AS "status", 0::BIGINT AS "count" FROM ${"schema"}."queue" Q`))
+
+	manager, err = pgqueue.New(ctx, shared.PoolConn, pgqueue.WithSchema(name))
+	require.NoError(t, err)
+	_, err = manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+	_, err = manager.CreateTask(ctx, "queue", payload(`{}`))
+	require.NoError(t, err)
+	queue, err := manager.GetQueue(ctx, "queue")
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, queue.New)
 }

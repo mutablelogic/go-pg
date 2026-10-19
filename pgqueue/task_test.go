@@ -309,6 +309,41 @@ func TestReleaseTask(t *testing.T) {
 	})
 }
 
+func TestGetTask(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	manager := taskManager(t, "get", schema.QueueMeta{})
+	created, err := manager.CreateTask(ctx, "get", payload(`{"n":1}`))
+	require.NoError(t, err)
+
+	t.Run("New", func(t *testing.T) {
+		task, err := manager.GetTask(ctx, created.Id)
+		require.NoError(t, err)
+		assert.Equal(t, created.Id, task.Id)
+		assert.Equal(t, "get", task.Queue)
+		assert.Equal(t, "new", task.Status)
+		assert.Nil(t, task.Worker)
+	})
+
+	t.Run("NotRetained", func(t *testing.T) {
+		// Getting the task doesn't retain it, so it's still the next task,
+		// and it's then running
+		next, err := manager.NextTask(ctx, "worker")
+		require.NoError(t, err)
+		require.NotNil(t, next)
+		assert.Equal(t, created.Id, next.Id)
+
+		task, err := manager.GetTask(ctx, created.Id)
+		require.NoError(t, err)
+		assert.Equal(t, "running", task.Status)
+	})
+
+	t.Run("NotFound", func(t *testing.T) {
+		_, err := manager.GetTask(ctx, created.Id+1000)
+		assert.ErrorIs(t, err, pg.ErrNotFound)
+	})
+}
+
 func TestListTasks(t *testing.T) {
 	_, ctx := test.Begin(t)
 	defer test.End(t)
@@ -325,6 +360,10 @@ func TestListTasks(t *testing.T) {
 		require.NoError(t, err)
 		assert.EqualValues(t, 3, list.Count)
 		assert.Len(t, list.Body, 3)
+
+		// The default limit is returned, clamped to the tasks available
+		require.NotNil(t, list.Limit)
+		assert.EqualValues(t, 3, *list.Limit)
 	})
 
 	t.Run("Status", func(t *testing.T) {
@@ -341,9 +380,15 @@ func TestListTasks(t *testing.T) {
 	})
 
 	t.Run("Page", func(t *testing.T) {
-		list, err := manager.ListTasks(ctx, schema.TaskListRequest{OffsetLimit: pg.OffsetLimit{Offset: 2, Limit: types.Ptr(uint64(10))}})
+		limit := types.Ptr(uint64(10))
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{OffsetLimit: pg.OffsetLimit{Offset: 2, Limit: limit}})
 		require.NoError(t, err)
 		assert.EqualValues(t, 3, list.Count)
 		assert.Len(t, list.Body, 1)
+		require.NotNil(t, list.Limit)
+		assert.EqualValues(t, 1, *list.Limit)
+
+		// The caller's limit isn't changed
+		assert.EqualValues(t, 10, *limit)
 	})
 }

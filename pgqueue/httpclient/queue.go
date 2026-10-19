@@ -23,3 +23,14 @@ func (c *Client) ListQueues(ctx context.Context, req schema.QueueListRequest) (*
 	// Return the response
 	return types.Ptr(response), nil
 }
+
+// GetQueue returns a queue by name
+func (c *Client) GetQueue(ctx context.Context, name string) (*schema.QueueWithStatus, error) {
+	var response schema.QueueWithStatus
+	if err := c.DoWithContext(ctx, client.MethodGet, &response, client.OptPath("queue", name)); err != nil {
+		return nil, err
+	}
+
+	// Return the response
+	return types.Ptr(response), nil
+}

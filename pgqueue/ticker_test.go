@@ -93,6 +93,10 @@ func TestListTickers(t *testing.T) {
 		list, err := manager.ListTickers(ctx, schema.TickerListRequest{})
 		require.NoError(t, err)
 		assert.EqualValues(t, 5, list.Count)
+
+		// The default limit is returned, clamped to the tickers available
+		require.NotNil(t, list.Limit)
+		assert.EqualValues(t, 5, *list.Limit)
 		names := make([]string, len(list.Body))
 		for i, ticker := range list.Body {
 			names[i] = ticker.Ticker

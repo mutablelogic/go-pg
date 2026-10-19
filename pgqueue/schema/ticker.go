@@ -125,7 +125,7 @@ func (t TickerName) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	}
 }
 
-func (t TickerListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (t *TickerListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	t.OffsetLimit.Bind(bind, TickerListLimit)
 
 	switch op {

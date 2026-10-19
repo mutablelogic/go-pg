@@ -65,3 +65,26 @@ func TestListTickers(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, status, "body: %s", body)
 	})
 }
+
+func TestGetTicker(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	manager := test.IsolatedManager(t)
+	server := test.NewServer(t, manager)
+	_, err := manager.RegisterTicker(ctx, "ticker", schema.TickerMeta{}, noopTask)
+	require.NoError(t, err)
+
+	t.Run("Found", func(t *testing.T) {
+		var ticker schema.Ticker
+		require.Equal(t, http.StatusOK, server.JSON(t, http.MethodGet, "ticker/ticker", nil, &ticker))
+		assert.Equal(t, "ticker", ticker.Ticker)
+	})
+
+	t.Run("NotFound", func(t *testing.T) {
+		assert.Equal(t, http.StatusNotFound, server.JSON(t, http.MethodGet, "ticker/missing", nil, nil))
+	})
+
+	t.Run("InvalidName", func(t *testing.T) {
+		assert.Equal(t, http.StatusBadRequest, server.JSON(t, http.MethodGet, "ticker/not%20a%20name", nil, nil))
+	})
+}

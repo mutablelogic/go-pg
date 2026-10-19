@@ -18,12 +18,17 @@ import (
 
 type TaskCommands struct {
 	TaskList TaskListCmd `cmd:"" name:"tasks" help:"List the tasks, optionally in some queues, or with a status." group:"TASK QUEUES"`
+	TaskGet  TaskGetCmd  `cmd:"" name:"task" help:"Get a task, with its status, without retaining it." group:"TASK QUEUES"`
 }
 
 type TaskListCmd struct {
 	pg.OffsetLimit `embed:""`
 	Queue          []string `name:"queue" help:"Only list the tasks in these queues." optional:""`
 	Status         string   `name:"status" help:"Only list the tasks with this status." enum:"any,new,running,retry,expired,failed,done" default:"any"`
+}
+
+type TaskGetCmd struct {
+	Id uint64 `arg:"" help:"Task id"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -70,6 +75,18 @@ func (cmd *TaskListCmd) Run(ctx server.Cmd) error {
 			return err
 		}
 
+		return nil
+	})
+}
+
+func (cmd *TaskGetCmd) Run(ctx server.Cmd) error {
+	return WithClient(ctx, "pgqueue.TaskGetCmd", func(ctx context.Context, client *httpclient.Client) error {
+		task, err := client.GetTask(ctx, cmd.Id)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(task)
 		return nil
 	})
 }

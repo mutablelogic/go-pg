@@ -66,3 +66,19 @@ func TestListTasks(t *testing.T) {
 		assert.Len(t, list.Body, 1)
 	})
 }
+
+func TestGetTask(t *testing.T) {
+	manager, client, ctx := newClient(t)
+	_, err := manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+	created, err := manager.CreateTask(ctx, "queue", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
+	require.NoError(t, err)
+
+	task, err := client.GetTask(ctx, created.Id)
+	require.NoError(t, err)
+	assert.Equal(t, created.Id, task.Id)
+	assert.Equal(t, "new", task.Status)
+
+	_, err = client.GetTask(ctx, created.Id+1000)
+	assert.Error(t, err)
+}

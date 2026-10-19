@@ -23,3 +23,14 @@ func (c *Client) ListTickers(ctx context.Context, req schema.TickerListRequest) 
 	// Return the response
 	return types.Ptr(response), nil
 }
+
+// GetTicker returns a ticker by name
+func (c *Client) GetTicker(ctx context.Context, name string) (*schema.Ticker, error) {
+	var response schema.Ticker
+	if err := c.DoWithContext(ctx, client.MethodGet, &response, client.OptPath("ticker", name)); err != nil {
+		return nil, err
+	}
+
+	// Return the response
+	return types.Ptr(response), nil
+}

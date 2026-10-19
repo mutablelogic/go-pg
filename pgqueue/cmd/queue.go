@@ -17,10 +17,15 @@ import (
 
 type QueueCommands struct {
 	QueueList QueueListCmd `cmd:"" name:"queues" help:"List the queues." group:"TASK QUEUES"`
+	QueueGet  QueueGetCmd  `cmd:"" name:"queue" help:"Get a queue." group:"TASK QUEUES"`
 }
 
 type QueueListCmd struct {
 	schema.QueueListRequest
+}
+
+type QueueGetCmd struct {
+	Name string `arg:"" help:"Queue name"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -45,7 +50,7 @@ func (cmd *QueueListCmd) Run(ctx server.Cmd) error {
 		}
 
 		// Queues list table
-		table := tui.TableFor[schema.Queue](tui.SetWidth(width))
+		table := tui.TableFor[schema.QueueWithStatus](tui.SetWidth(width))
 		if _, err := table.Write(os.Stdout, queues.Body...); err != nil {
 			return err
 		}
@@ -56,6 +61,18 @@ func (cmd *QueueListCmd) Run(ctx server.Cmd) error {
 			return err
 		}
 
+		return nil
+	})
+}
+
+func (cmd *QueueGetCmd) Run(ctx server.Cmd) error {
+	return WithClient(ctx, "pgqueue.QueueGetCmd", func(ctx context.Context, client *httpclient.Client) error {
+		queue, err := client.GetQueue(ctx, cmd.Name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(queue)
 		return nil
 	})
 }

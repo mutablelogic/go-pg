@@ -1,6 +1,7 @@
 package httphandler
 
 import (
+	"errors"
 	"net/http"
 
 	// Packages
@@ -14,9 +15,24 @@ import (
 )
 
 ///////////////////////////////////////////////////////////////////////////////
+// TYPES
+
+// queueName is the name of a queue in the path
+type queueName struct {
+	Name string `json:"name" help:"Queue name"`
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
 func queueHandlers(manager *pgqueue.Manager, router *httprouter.Router, documentation *openapi.MarkdownDoc) error {
+	return errors.Join(
+		queueListHandler(manager, router, documentation),
+		queueGetHandler(manager, router, documentation),
+	)
+}
+
+func queueListHandler(manager *pgqueue.Manager, router *httprouter.Router, documentation *openapi.MarkdownDoc) error {
 	return router.Register("queue", nil, func(path httprequest.PathItem) {
 		path.Tag("Queue")
 
@@ -36,6 +52,27 @@ func queueHandlers(manager *pgqueue.Manager, router *httprouter.Router, document
 			op.Query(jsonschema.MustFor[schema.QueueListRequest]())
 			op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.QueueList](), "List of queues")
 			op.ErrorResponse(http.StatusBadRequest, "Invalid request")
+		})
+	})
+}
+
+func queueGetHandler(manager *pgqueue.Manager, router *httprouter.Router, documentation *openapi.MarkdownDoc) error {
+	return router.Register("queue/{name}", jsonschema.MustFor[queueName](), func(path httprequest.PathItem) {
+		path.Tag("Queue")
+
+		// GET
+		path.Get(func(w http.ResponseWriter, r *http.Request) {
+			if queue, err := manager.GetQueue(r.Context(), r.PathValue("name")); err != nil {
+				httpresponse.Error(w, httpErr(err), r.PathValue("name"))
+			} else {
+				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), queue)
+			}
+		}, func(op httprequest.PathOperation) {
+			op.Summary("Get Queue")
+			op.Description(documentation.Section(3, "GET /queue/{name}").Body)
+			op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.QueueWithStatus](), "Queue, with the number of its tasks with each status")
+			op.ErrorResponse(http.StatusBadRequest, "Invalid queue name")
+			op.ErrorResponse(http.StatusNotFound, "Queue not found")
 		})
 	})
 }

@@ -262,7 +262,7 @@ func (t TaskId) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	}
 }
 
-func (l TaskListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (l *TaskListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	var taskWhere []string
 	var where []string
 

@@ -43,7 +43,7 @@ func TestListQueues(t *testing.T) {
 		assert.EqualValues(t, 3, result.Count)
 		require.Len(t, result.Body, 3)
 		for i, name := range []string{"one", "three", "two"} {
-			assert.Equal(t, name, result.Body[i].Queue)
+			assert.Equal(t, name, result.Body[i].Name)
 			require.NotNil(t, result.Body[i].Retries)
 			assert.EqualValues(t, 3, *result.Body[i].Retries)
 		}
@@ -53,7 +53,7 @@ func TestListQueues(t *testing.T) {
 		result := list(t, "?offset=1&limit=1")
 		assert.EqualValues(t, 3, result.Count)
 		require.Len(t, result.Body, 1)
-		assert.Equal(t, "three", result.Body[0].Queue)
+		assert.Equal(t, "three", result.Body[0].Name)
 		assert.EqualValues(t, 1, result.Offset)
 		require.NotNil(t, result.Limit)
 		assert.EqualValues(t, 1, *result.Limit)
@@ -62,5 +62,29 @@ func TestListQueues(t *testing.T) {
 	t.Run("BadQuery", func(t *testing.T) {
 		status, body := server.Do(t, http.MethodGet, "queue?limit=many", nil)
 		assert.Equal(t, http.StatusBadRequest, status, "body: %s", body)
+	})
+}
+
+func TestGetQueue(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	manager := test.IsolatedManager(t)
+	server := test.NewServer(t, manager)
+	_, err := manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+
+	t.Run("Found", func(t *testing.T) {
+		var queue schema.QueueWithStatus
+		require.Equal(t, http.StatusOK, server.JSON(t, http.MethodGet, "queue/queue", nil, &queue))
+		assert.Equal(t, "queue", queue.Name)
+		assert.Zero(t, queue.New)
+	})
+
+	t.Run("NotFound", func(t *testing.T) {
+		assert.Equal(t, http.StatusNotFound, server.JSON(t, http.MethodGet, "queue/missing", nil, nil))
+	})
+
+	t.Run("InvalidName", func(t *testing.T) {
+		assert.Equal(t, http.StatusBadRequest, server.JSON(t, http.MethodGet, "queue/not%20a%20name", nil, nil))
 	})
 }

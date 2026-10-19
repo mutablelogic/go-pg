@@ -26,18 +26,27 @@ func (self *Manager) registerMetrics() error {
 		return err
 	}
 	if _, err := self.opt.metrics.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
-		statuses, err := self.ListQueueStatuses(ctx)
+		queues, err := self.ListQueueStatuses(ctx)
 		if err != nil {
 			return err
 		}
-		for _, status := range statuses {
-			observer.ObserveInt64(queueTasks, int64(status.Count),
-				metric.WithAttributes(
-					attribute.String("queue", status.Queue),
-					attribute.String("status", status.Status),
-					attribute.String("worker", self.opt.worker),
-				),
-			)
+		for _, queue := range queues {
+			for status, count := range map[string]uint64{
+				"new":     queue.New,
+				"running": queue.Running,
+				"retry":   queue.Retry,
+				"expired": queue.Expired,
+				"failed":  queue.Failed,
+				"done":    queue.Done,
+			} {
+				observer.ObserveInt64(queueTasks, int64(count),
+					metric.WithAttributes(
+						attribute.String("queue", queue.Name),
+						attribute.String("status", status),
+						attribute.String("worker", self.opt.worker),
+					),
+				)
+			}
 		}
 		return nil
 	}, queueTasks); err != nil {

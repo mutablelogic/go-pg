@@ -17,10 +17,15 @@ import (
 
 type TickerCommands struct {
 	TickerList TickerListCmd `cmd:"" name:"tickers" help:"List the tickers." group:"TASK QUEUES"`
+	TickerGet  TickerGetCmd  `cmd:"" name:"ticker" help:"Get a ticker." group:"TASK QUEUES"`
 }
 
 type TickerListCmd struct {
 	schema.TickerListRequest
+}
+
+type TickerGetCmd struct {
+	Name string `arg:"" help:"Ticker name"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -56,6 +61,18 @@ func (cmd *TickerListCmd) Run(ctx server.Cmd) error {
 			return err
 		}
 
+		return nil
+	})
+}
+
+func (cmd *TickerGetCmd) Run(ctx server.Cmd) error {
+	return WithClient(ctx, "pgqueue.TickerGetCmd", func(ctx context.Context, client *httpclient.Client) error {
+		ticker, err := client.GetTicker(ctx, cmd.Name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(ticker)
 		return nil
 	})
 }

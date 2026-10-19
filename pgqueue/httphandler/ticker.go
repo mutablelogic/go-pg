@@ -1,6 +1,7 @@
 package httphandler
 
 import (
+	"errors"
 	"net/http"
 
 	// Packages
@@ -14,9 +15,24 @@ import (
 )
 
 ///////////////////////////////////////////////////////////////////////////////
+// TYPES
+
+// tickerName is the name of a ticker in the path
+type tickerName struct {
+	Name string `json:"name" help:"Ticker name"`
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
 func tickerHandlers(manager *pgqueue.Manager, router *httprouter.Router, documentation *openapi.MarkdownDoc) error {
+	return errors.Join(
+		tickerListHandler(manager, router, documentation),
+		tickerGetHandler(manager, router, documentation),
+	)
+}
+
+func tickerListHandler(manager *pgqueue.Manager, router *httprouter.Router, documentation *openapi.MarkdownDoc) error {
 	return router.Register("ticker", nil, func(path httprequest.PathItem) {
 		path.Tag("Ticker")
 
@@ -36,6 +52,27 @@ func tickerHandlers(manager *pgqueue.Manager, router *httprouter.Router, documen
 			op.Query(jsonschema.MustFor[schema.TickerListRequest]())
 			op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.TickerList](), "List of tickers")
 			op.ErrorResponse(http.StatusBadRequest, "Invalid request")
+		})
+	})
+}
+
+func tickerGetHandler(manager *pgqueue.Manager, router *httprouter.Router, documentation *openapi.MarkdownDoc) error {
+	return router.Register("ticker/{name}", jsonschema.MustFor[tickerName](), func(path httprequest.PathItem) {
+		path.Tag("Ticker")
+
+		// GET
+		path.Get(func(w http.ResponseWriter, r *http.Request) {
+			if ticker, err := manager.GetTicker(r.Context(), r.PathValue("name")); err != nil {
+				httpresponse.Error(w, httpErr(err), r.PathValue("name"))
+			} else {
+				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), ticker)
+			}
+		}, func(op httprequest.PathOperation) {
+			op.Summary("Get Ticker")
+			op.Description(documentation.Section(3, "GET /ticker/{name}").Body)
+			op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Ticker](), "Ticker")
+			op.ErrorResponse(http.StatusBadRequest, "Invalid ticker name")
+			op.ErrorResponse(http.StatusNotFound, "Ticker not found")
 		})
 	})
 }

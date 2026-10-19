@@ -42,3 +42,16 @@ func TestListTickers(t *testing.T) {
 		assert.Equal(t, "hourly", list.Body[0].Ticker)
 	})
 }
+
+func TestGetTicker(t *testing.T) {
+	manager, client, ctx := newClient(t)
+	_, err := manager.RegisterTicker(ctx, "ticker", schema.TickerMeta{}, noopTask)
+	require.NoError(t, err)
+
+	ticker, err := client.GetTicker(ctx, "ticker")
+	require.NoError(t, err)
+	assert.Equal(t, "ticker", ticker.Ticker)
+
+	_, err = client.GetTicker(ctx, "missing")
+	assert.Error(t, err)
+}

@@ -105,3 +105,34 @@ func TestListTasks(t *testing.T) {
 		}
 	})
 }
+
+func TestGetTask(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	manager := test.IsolatedManager(t)
+	server := test.NewServer(t, manager)
+	_, err := manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+	created, err := manager.CreateTask(ctx, "queue", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
+	require.NoError(t, err)
+
+	t.Run("Found", func(t *testing.T) {
+		var task schema.TaskWithStatus
+		require.Equal(t, http.StatusOK, server.JSON(t, http.MethodGet, "task/"+strconv.FormatUint(created.Id, 10), nil, &task))
+		assert.Equal(t, created.Id, task.Id)
+		assert.Equal(t, "new", task.Status)
+	})
+
+	t.Run("NotFound", func(t *testing.T) {
+		assert.Equal(t, http.StatusNotFound, server.JSON(t, http.MethodGet, "task/"+strconv.FormatUint(created.Id+1000, 10), nil, nil))
+	})
+
+	t.Run("InvalidId", func(t *testing.T) {
+		assert.Equal(t, http.StatusBadRequest, server.JSON(t, http.MethodGet, "task/abc", nil, nil))
+
+		// An id is a signed BIGINT, so the largest is 2^63-1, which isn't
+		// found, and one more is invalid
+		assert.Equal(t, http.StatusNotFound, server.JSON(t, http.MethodGet, "task/9223372036854775807", nil, nil))
+		assert.Equal(t, http.StatusBadRequest, server.JSON(t, http.MethodGet, "task/9223372036854775808", nil, nil))
+	})
+}

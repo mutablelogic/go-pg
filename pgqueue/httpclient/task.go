@@ -23,3 +23,15 @@ func (c *Client) ListTasks(ctx context.Context, req schema.TaskListRequest) (*sc
 	// Return the response
 	return types.Ptr(response), nil
 }
+
+// GetTask returns a task by id, with its status. The task isn't retained
+// or changed
+func (c *Client) GetTask(ctx context.Context, id uint64) (*schema.TaskWithStatus, error) {
+	var response schema.TaskWithStatus
+	if err := c.DoWithContext(ctx, client.MethodGet, &response, client.OptPath("task", id)); err != nil {
+		return nil, err
+	}
+
+	// Return the response
+	return types.Ptr(response), nil
+}

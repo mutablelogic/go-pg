@@ -41,7 +41,7 @@ func TestTaskHash(t *testing.T) {
 	one, two := queueName("hash_one"), queueName("hash_two")
 	for _, name := range []string{one, two} {
 		var queue schema.Queue
-		require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Queue: name}))
+		require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Name: name}))
 	}
 
 	// hash inserts a task with the payload, and returns its hash
@@ -103,9 +103,9 @@ func TestTaskDedupe(t *testing.T) {
 
 	// A queue which deduplicates tasks, and one which doesn't
 	var queue schema.Queue
-	require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Queue: "dedupe_on"}))
+	require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Name: "dedupe_on"}))
 	require.NoError(t, manager.Update(ctx, &queue, schema.QueueName("dedupe_on"), schema.Queue{QueueMeta: schema.QueueMeta{Dedupe: types.Ptr(true)}}))
-	require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Queue: "dedupe_off"}))
+	require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Name: "dedupe_off"}))
 
 	// insert inserts a task, and returns its id
 	insert := func(t *testing.T, queue, payload string, delayedAt *time.Time) uint64 {
@@ -218,7 +218,7 @@ func TestTaskFailed(t *testing.T) {
 	defer test.End(t)
 	manager := test.IsolatedManager(t)
 	var queue schema.Queue
-	require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Queue: "failed"}))
+	require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Name: "failed"}))
 	require.NoError(t, manager.Update(ctx, &queue, schema.QueueName("failed"), schema.Queue{QueueMeta: schema.QueueMeta{
 		Retries:    types.Ptr(uint64(1)),
 		RetryDelay: types.Ptr(24 * time.Hour),

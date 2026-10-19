@@ -31,15 +31,15 @@ func TestQueueDedupe(t *testing.T) {
 	t.Run("Default", func(t *testing.T) {
 		// A new queue doesn't deduplicate tasks
 		var queue schema.Queue
-		require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Queue: defaultQueue}))
-		assert.Equal(t, defaultQueue, queue.Queue)
+		require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Name: defaultQueue}))
+		assert.Equal(t, defaultQueue, queue.Name)
 		require.NotNil(t, queue.Dedupe)
 		assert.False(t, *queue.Dedupe)
 	})
 
 	t.Run("Update", func(t *testing.T) {
 		var queue schema.Queue
-		require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Queue: updateQueue}))
+		require.NoError(t, manager.Insert(ctx, &queue, schema.Queue{Name: updateQueue}))
 
 		// Deduplication can be turned on, and is returned when the queue is got
 		require.NoError(t, manager.Update(ctx, &queue, schema.QueueName(updateQueue), schema.Queue{QueueMeta: schema.QueueMeta{Dedupe: types.Ptr(true)}}))
@@ -79,7 +79,7 @@ func queueName(prefix string) string {
 }
 
 func TestQueueTable(t *testing.T) {
-	queue := schema.Queue{Queue: "queue", QueueMeta: schema.QueueMeta{
+	queue := schema.Queue{Name: "queue", QueueMeta: schema.QueueMeta{
 		TTL:         types.Ptr(time.Hour),
 		Retries:     types.Ptr(uint64(3)),
 		RetryDelay:  types.Ptr(2 * time.Minute),
@@ -93,7 +93,7 @@ func TestQueueTable(t *testing.T) {
 	assert.Equal(t, []any{"queue", "1h0m0s", "3", "2m0s", "unlimited", "yes"}, cells)
 
 	// Settings which aren't set are empty, and a concurrency limit is shown
-	queue = schema.Queue{Queue: "limited", QueueMeta: schema.QueueMeta{Concurrency: types.Ptr(uint64(2))}}
+	queue = schema.Queue{Name: "limited", QueueMeta: schema.QueueMeta{Concurrency: types.Ptr(uint64(2))}}
 	assert.Equal(t, "", queue.Cell(1))
 	assert.Equal(t, "2", queue.Cell(4))
 	assert.Equal(t, "", queue.Cell(5))

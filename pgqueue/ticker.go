@@ -113,10 +113,18 @@ func (self *Manager) ListTickers(ctx context.Context, req schema.TickerListReque
 	)
 	defer func() { endSpan(err) }()
 
-	resp := schema.TickerList{TickerListRequest: req}
-	if err := self.List(ctx, &resp, req); err != nil {
+	// Copy the limit, so the caller's request isn't modified
+	if req.Limit != nil {
+		req.Limit = types.Ptr(*req.Limit)
+	}
+
+	// Selecting sets the limit used on the request, which is returned,
+	// clamped to the number of rows available
+	var resp schema.TickerList
+	if err := self.List(ctx, &resp, &req); err != nil {
 		return nil, err
 	} else {
+		resp.TickerListRequest = req
 		resp.OffsetLimit.Clamp(resp.Count)
 	}
 	return types.Ptr(resp), nil

@@ -187,7 +187,7 @@ func (self *Manager) cleanup(ctx context.Context, _ json.RawMessage) (any, error
 		for _, queue := range queues.Body {
 			var count int
 			for {
-				removed, err := self.CleanQueue(ctx, queue.Queue)
+				removed, err := self.CleanQueue(ctx, queue.Name)
 				if err != nil {
 					return nil, err
 				}

@@ -57,17 +57,26 @@ RETURNING
     "dedupe";
 
 -- pgqueue.list
+-- The queues, with the number of their tasks with each status
 SELECT
-    "queue",
-    "ttl",
-    "retries",
-    "retry_delay",
-    "concurrency",
-    "dedupe"
+    q."queue",
+    q."ttl",
+    q."retries",
+    q."retry_delay",
+    q."concurrency",
+    q."dedupe",
+    s."new",
+    s."running",
+    s."retry",
+    s."expired",
+    s."failed",
+    s."done"
 FROM
-    ${"schema"}."queue"
+    ${"schema"}."queue" q
+JOIN
+    ${"schema"}."queue_status" s ON s."queue" = q."queue"
 ORDER BY
-    "queue"
+    q."queue"
 
 -- pgqueue.clean
 SELECT
@@ -250,18 +259,49 @@ SELECT
 FROM
     ${"schema"}.ticker_next(@tickers);
 
--- pgqueue.stats
+-- pgqueue.get_status
+-- A queue, with the number of its tasks with each status
 SELECT
     q."queue",
-    q."status",
-    q."count"
+    q."ttl",
+    q."retries",
+    q."retry_delay",
+    q."concurrency",
+    q."dedupe",
+    s."new",
+    s."running",
+    s."retry",
+    s."expired",
+    s."failed",
+    s."done"
 FROM
-    ${"schema"}."queue_status" q
+    ${"schema"}."queue" q
+JOIN
+    ${"schema"}."queue_status" s ON s."queue" = q."queue"
 WHERE
-    TRUE ${where}
-ORDER BY
+    q."queue" = @id;
+
+-- pgqueue.stats
+-- Every queue, with the number of its tasks with each status
+SELECT
     q."queue",
-    q."status";
+    q."ttl",
+    q."retries",
+    q."retry_delay",
+    q."concurrency",
+    q."dedupe",
+    s."new",
+    s."running",
+    s."retry",
+    s."expired",
+    s."failed",
+    s."done"
+FROM
+    ${"schema"}."queue" q
+JOIN
+    ${"schema"}."queue_status" s ON s."queue" = q."queue"
+ORDER BY
+    q."queue";
     
 -- pgqueue.partition_create
 CREATE TABLE IF NOT EXISTS ${"schema"}.${"partition"} PARTITION OF ${"schema"}."task"

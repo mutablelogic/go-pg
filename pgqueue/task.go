@@ -46,13 +46,36 @@ func (self *Manager) ListTasks(ctx context.Context, req schema.TaskListRequest) 
 	)
 	defer func() { endSpan(err) }()
 
-	resp := schema.TaskList{TaskListRequest: req}
-	if err := self.List(ctx, &resp, req); err != nil {
+	// Copy the limit, so the caller's request isn't modified
+	if req.Limit != nil {
+		req.Limit = types.Ptr(*req.Limit)
+	}
+
+	// Selecting sets the limit used on the request, which is returned,
+	// clamped to the number of rows available
+	var resp schema.TaskList
+	if err := self.List(ctx, &resp, &req); err != nil {
 		return nil, err
 	} else {
+		resp.TaskListRequest = req
 		resp.OffsetLimit.Clamp(resp.Count)
 	}
 	return types.Ptr(resp), nil
+}
+
+// GetTask returns a task with its status, so it can be examined. The task
+// isn't retained or changed.
+func (self *Manager) GetTask(ctx context.Context, id uint64) (result *schema.TaskWithStatus, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.GetTask",
+		attribute.Int64("id", int64(id)),
+	)
+	defer func() { endSpan(err) }()
+
+	var task schema.TaskWithStatus
+	if err := self.Get(ctx, &task, schema.TaskId(id)); err != nil {
+		return nil, err
+	}
+	return types.Ptr(task), nil
 }
 
 // NextTask retains a task from any of the specified queues, and returns it.

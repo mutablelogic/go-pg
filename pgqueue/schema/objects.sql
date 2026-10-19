@@ -75,6 +75,14 @@ CREATE INDEX IF NOT EXISTS "task_queue_status_idx"
       AND "finished_at" IS NULL 
       AND "retries" > 0;
 
+-- pgqueue.task_queue_index
+-- Covers counting a queue's tasks with each status, with the columns of a
+-- task's status, so the tasks aren't read. It's also used to delete a queue's
+-- tasks when the queue is deleted.
+CREATE INDEX IF NOT EXISTS "task_queue_idx"
+    ON ${"schema"}."task" ("queue")
+    INCLUDE ("started_at", "finished_at", "dies_at", "retries", "initial_retries");
+
 -- pgqueue.task_hash_index
 -- Covers finding a pending task which is the same as an inserted task
 CREATE INDEX IF NOT EXISTS "task_hash_idx"
@@ -431,19 +439,32 @@ CREATE OR REPLACE FUNCTION ${"schema"}."queue_clean"(q TEXT, retention INTERVAL)
 $$ LANGUAGE SQL;
 
 -- pgqueue.queue_status_view
+-- The number of tasks in each queue with each status, with a row for each
+-- queue. The view from before, with a row for each queue and status, is
+-- dropped, as a view's columns can't be replaced.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = ${'schema'} AND table_name = 'queue_status' AND column_name = 'status'
+    ) THEN
+        DROP VIEW ${"schema"}."queue_status";
+    END IF;
+END $$;
 CREATE OR REPLACE VIEW ${"schema"}."queue_status" AS
 SELECT
     Q."queue",
-    S."status",
-    COUNT(T."id") AS "count"
+    COUNT(*) FILTER (WHERE T."status" = 'new')     AS "new",
+    COUNT(*) FILTER (WHERE T."status" = 'running') AS "running",
+    COUNT(*) FILTER (WHERE T."status" = 'retry')   AS "retry",
+    COUNT(*) FILTER (WHERE T."status" = 'expired') AS "expired",
+    COUNT(*) FILTER (WHERE T."status" = 'failed')  AS "failed",
+    COUNT(*) FILTER (WHERE T."status" = 'done')    AS "done"
 FROM
     ${"schema"}."queue" Q
-CROSS JOIN
-    (SELECT UNNEST(enum_range(NULL::${"schema"}.task_status)) AS "status") S
 LEFT JOIN
     (
         SELECT
-            "id",
             "queue",
             ${"schema"}.queue_task_status(
                 "dies_at",
@@ -456,9 +477,9 @@ LEFT JOIN
             ${"schema"}."task"
     ) T
 ON
-    S."status" = T."status" AND Q."queue" = T."queue"
+    Q."queue" = T."queue"
 GROUP BY
-    1, 2;
+    Q."queue";
 
 -- pgqueue.ticker_next_func
 -- Returns the ticker, of the tickers with the names, which is most overdue,

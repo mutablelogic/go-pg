@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -26,7 +27,7 @@ type QueueMeta struct {
 }
 
 type Queue struct {
-	Queue string `json:"queue,omitempty" arg:"" help:"Queue name"`
+	Name string `json:"queue,omitempty" arg:"" help:"Queue name"`
 	QueueMeta
 }
 
@@ -34,10 +35,21 @@ type QueueListRequest struct {
 	pg.OffsetLimit
 }
 
+// QueueWithStatus is a queue with the number of its tasks with each status
+type QueueWithStatus struct {
+	Queue
+	New     uint64 `json:"new" help:"Tasks which are ready to run"`
+	Running uint64 `json:"running" help:"Tasks which are running"`
+	Retry   uint64 `json:"retry" help:"Tasks which are waiting to be retried"`
+	Expired uint64 `json:"expired" help:"Tasks which ran for longer than the queue's ttl"`
+	Failed  uint64 `json:"failed" help:"Tasks which failed with no retries left"`
+	Done    uint64 `json:"done" help:"Tasks which are done"`
+}
+
 type QueueList struct {
 	QueueListRequest
-	Count uint64  `json:"count"`
-	Body  []Queue `json:"body,omitempty"`
+	Count uint64            `json:"count"`
+	Body  []QueueWithStatus `json:"body,omitempty"`
 }
 
 type QueueCleanRequest struct {
@@ -50,17 +62,15 @@ type QueueCleanResponse struct {
 	Body []Task `json:"body,omitempty"`
 }
 
-type QueueStatus struct {
-	Queue  string `json:"queue"`
-	Status string `json:"status"`
-	Count  uint64 `json:"count"`
+// QueueStatusRequest gets a queue with the number of its tasks with each
+// status, or lists every queue with them
+type QueueStatusRequest struct {
+	Queue string `json:"queue,omitempty"`
 }
-
-type QueueStatusRequest struct{}
 
 type QueueStatusResponse struct {
 	QueueStatusRequest
-	Body []QueueStatus `json:"body,omitempty"`
+	Body []QueueWithStatus `json:"body,omitempty"`
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -92,7 +102,7 @@ func (q Queue) Width(col int) int {
 func (q Queue) Cell(col int) tui.CellText {
 	switch col {
 	case 0:
-		return q.Queue
+		return q.Name
 	case 1:
 		return durationCell(q.TTL)
 	case 2:
@@ -112,6 +122,24 @@ func (q Queue) Cell(col int) tui.CellText {
 	default:
 		return ""
 	}
+}
+
+func (q QueueWithStatus) Header() []string {
+	return append(q.Queue.Header(), "New", "Running", "Retry", "Expired", "Failed", "Done")
+}
+
+func (q QueueWithStatus) Width(col int) int {
+	return 0
+}
+
+func (q QueueWithStatus) Cell(col int) tui.CellText {
+	counts := []uint64{q.New, q.Running, q.Retry, q.Expired, q.Failed, q.Done}
+	if n := len(q.Queue.Header()); col < n {
+		return q.Queue.Cell(col)
+	} else if col-n < len(counts) {
+		return fmt.Sprint(counts[col-n])
+	}
+	return ""
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -136,7 +164,7 @@ func (q QueueCleanResponse) String() string {
 	return types.Stringify(q)
 }
 
-func (q QueueStatus) String() string {
+func (q QueueWithStatus) String() string {
 	return types.Stringify(q)
 }
 
@@ -148,11 +176,18 @@ func (q QueueStatusResponse) String() string {
 // READER
 
 func (q *Queue) Scan(row pg.Row) error {
-	return row.Scan(&q.Queue, &q.TTL, &q.Retries, &q.RetryDelay, &q.Concurrency, &q.Dedupe)
+	return row.Scan(&q.Name, &q.TTL, &q.Retries, &q.RetryDelay, &q.Concurrency, &q.Dedupe)
+}
+
+func (q *QueueWithStatus) Scan(row pg.Row) error {
+	return row.Scan(
+		&q.Name, &q.TTL, &q.Retries, &q.RetryDelay, &q.Concurrency, &q.Dedupe,
+		&q.New, &q.Running, &q.Retry, &q.Expired, &q.Failed, &q.Done,
+	)
 }
 
 func (l *QueueList) Scan(row pg.Row) error {
-	var queue Queue
+	var queue QueueWithStatus
 	if err := queue.Scan(row); err != nil {
 		return err
 	}
@@ -185,12 +220,8 @@ func (l *QueueCleanResponse) Scan(row pg.Row) error {
 	return nil
 }
 
-func (s *QueueStatus) Scan(row pg.Row) error {
-	return row.Scan(&s.Queue, &s.Status, &s.Count)
-}
-
 func (l *QueueStatusResponse) Scan(row pg.Row) error {
-	var status QueueStatus
+	var status QueueWithStatus
 	if err := status.Scan(row); err != nil {
 		return err
 	}
@@ -236,7 +267,7 @@ func (q QueueCleanRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	}
 }
 
-func (l QueueListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+func (l *QueueListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	bind.Set("where", "")
 	l.OffsetLimit.Bind(bind, QueueListLimit)
 
@@ -249,20 +280,17 @@ func (l QueueListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 }
 
 func (l QueueStatusRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
-	var where []string
-
-	if bind.Has("id") {
-		where = append(where, `q."queue" = @id`)
-	}
-
-	if len(where) > 0 {
-		bind.Set("where", "AND "+strings.Join(where, " AND "))
-	} else {
-		bind.Set("where", "")
-	}
-
 	switch op {
+	case pg.Get:
+		// The queue with the name
+		name, err := QueueName(l.Queue).queueName()
+		if err != nil {
+			return "", err
+		}
+		bind.Set("id", name)
+		return bind.Query("pgqueue.get_status"), nil
 	case pg.List:
+		// Every queue
 		return bind.Query("pgqueue.stats"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("unsupported QueueStatusRequest operation %q", op)
@@ -273,7 +301,7 @@ func (l QueueStatusRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 // WRITER
 
 func (q Queue) Insert(bind *pg.Bind) (string, error) {
-	queue, err := QueueName(q.Queue).queueName()
+	queue, err := QueueName(q.Name).queueName()
 	if err != nil {
 		return "", err
 	}
@@ -285,8 +313,8 @@ func (q Queue) Insert(bind *pg.Bind) (string, error) {
 func (q Queue) Update(bind *pg.Bind) error {
 	var patch []string
 
-	if q.Queue != "" {
-		queue, err := QueueName(q.Queue).queueName()
+	if q.Name != "" {
+		queue, err := QueueName(q.Name).queueName()
 		if err != nil {
 			return err
 		}

@@ -338,5 +338,14 @@ ORDER BY c.relname ASC;
 -- Returns the current sequence value for the task table
 SELECT last_value FROM ${"schema"}."task_id_seq";
 
+-- pgqueue.partition_seq_min
+-- Raises the sequence for the task table so the next value is at least the
+-- minimum, when it's lower, such as when it's been reset, and returns its value
+SELECT
+    CASE WHEN last_value < @min
+    THEN setval(format('%I.%I', ${'schema'}, 'task_id_seq')::regclass, @min, false)
+    ELSE last_value END
+FROM ${"schema"}."task_id_seq";
+
 -- pgqueue.partition_drop
 DROP TABLE IF EXISTS ${"schema"}.${"partition"};

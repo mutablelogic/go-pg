@@ -87,6 +87,38 @@ func TestPartition(t *testing.T) {
 		assert.Equal(t, "task_00000011_00000021", partitions[1].Partition)
 	})
 
+	t.Run("SequenceReset", func(t *testing.T) {
+		// A sequence which is reset below the lowest partition is raised to
+		// it, so the next task is inserted into it
+		manager := test.IsolatedManager(t, pgqueue.WithPartitionSize(10))
+		require.NoError(t, manager.CreatePartition(ctx, schema.PartitionMeta{Partition: "task_00000011_00000021", Start: 11, End: 21}))
+		require.NoError(t, manager.DeletePartition(ctx, "task_00000001_00000011"))
+		require.NoError(t, manager.Exec(ctx, `ALTER SEQUENCE ${"schema"}."task_id_seq" RESTART WITH 1`))
+
+		// which crosses the threshold for the next partition
+		created, err := manager.CreateNextPartition(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "task_00000021_00000031", created)
+		seq, err := manager.GetPartitionSeq(ctx)
+		require.NoError(t, err)
+		assert.EqualValues(t, 11, seq)
+
+		// A sequence which is already within the partitions is left
+		seq, err = manager.SetPartitionSeqMin(ctx, 5)
+		require.NoError(t, err)
+		assert.EqualValues(t, 11, seq)
+	})
+
+	t.Run("SequenceAhead", func(t *testing.T) {
+		// A sequence which has passed the highest partition has a partition
+		// created from it
+		manager := test.IsolatedManager(t, pgqueue.WithPartitionSize(10))
+		require.NoError(t, manager.Exec(ctx, `ALTER SEQUENCE ${"schema"}."task_id_seq" RESTART WITH 50`))
+		created, err := manager.CreateNextPartition(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "task_00000050_00000060", created)
+	})
+
 	t.Run("DropDrained", func(t *testing.T) {
 		manager := test.IsolatedManager(t, pgqueue.WithPartitionSize(10))
 

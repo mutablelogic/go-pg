@@ -30,11 +30,23 @@ func (self *Manager) CreateNextPartition(ctx context.Context) (result string, er
 		return "", err
 	}
 
-	// Find the highest upper bound
-	var maxEnd uint64
+	// Find the lowest lower bound and the highest upper bound
+	var minStart, maxEnd uint64
 	for _, p := range partitions {
+		if minStart == 0 || p.Start < minStart {
+			minStart = p.Start
+		}
 		if p.End > maxEnd {
 			maxEnd = p.End
+		}
+	}
+
+	// Raise the sequence to the lowest partition when it's below it, such as
+	// when the sequence has been reset, so tasks aren't inserted where there's
+	// no partition
+	if minStart > seq {
+		if seq, err = self.SetPartitionSeqMin(ctx, minStart); err != nil {
+			return "", err
 		}
 	}
 
@@ -47,10 +59,9 @@ func (self *Manager) CreateNextPartition(ctx context.Context) (result string, er
 
 		created := make([]string, 0, count)
 		for i := uint64(0); i < count; i++ {
-			start := maxEnd
-			if start == 0 {
-				start = 1
-			}
+			// The partition starts from the highest, or from the sequence
+			// when it's passed the highest, such as when it's been set
+			start := max(maxEnd, seq, 1)
 			end := start + self.partitionSize
 			name := fmt.Sprintf("task_%08d_%08d", start, end)
 			if err := self.CreatePartition(ctx, schema.PartitionMeta{
@@ -134,6 +145,22 @@ func (self *Manager) GetPartitionSeq(ctx context.Context) (result uint64, err er
 
 	var seq schema.PartitionSeq
 	if err := self.Get(ctx, &seq, schema.PartitionSeqRequest{}); err != nil {
+		return 0, err
+	}
+	return uint64(seq), nil
+}
+
+// SetPartitionSeqMin raises the sequence for the task table so the next task
+// id is at least the minimum, and leaves it when it's already there. Returns
+// the sequence's value.
+func (self *Manager) SetPartitionSeqMin(ctx context.Context, min uint64) (result uint64, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.SetPartitionSeqMin",
+		attribute.Int64("min", int64(min)),
+	)
+	defer func() { endSpan(err) }()
+
+	var seq schema.PartitionSeq
+	if err := self.Get(ctx, &seq, schema.PartitionSeqRequest{Min: min}); err != nil {
 		return 0, err
 	}
 	return uint64(seq), nil

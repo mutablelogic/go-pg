@@ -32,7 +32,11 @@ type Partition struct {
 
 type PartitionListRequest struct{}
 
-type PartitionSeqRequest struct{}
+// PartitionSeqRequest gets the sequence for the task table, and raises it to
+// the minimum first, when it's set and the sequence is lower
+type PartitionSeqRequest struct {
+	Min uint64 `json:"min,omitempty"`
+}
 
 type PartitionList struct {
 	Body []Partition `json:"body,omitempty"`
@@ -151,6 +155,10 @@ func (p PartitionName) Select(bind *pg.Bind, op pg.Op) (string, error) {
 func (p PartitionSeqRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	switch op {
 	case pg.Get:
+		if p.Min > 0 {
+			bind.Set("min", int64(p.Min))
+			return bind.Query("pgqueue.partition_seq_min"), nil
+		}
 		return bind.Query("pgqueue.partition_seq"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("unsupported PartitionSeqRequest operation %q", op)

@@ -165,3 +165,41 @@ func TestSubscribeStopped(t *testing.T) {
 	defer cancel()
 	assert.ErrorIs(t, manager.WaitListening(ctx), context.DeadlineExceeded)
 }
+
+func TestSubscribeTwice(t *testing.T) {
+	manager, ctx := test.Begin(t)
+	defer test.End(t)
+
+	// A channel is subscribed once at a time
+	ch := make(chan schema.Event, 1)
+	firstCtx, cancelFirst := context.WithCancel(ctx)
+	first, err := manager.Subscribe(firstCtx, schema.EventFilter{}, ch)
+	require.NoError(t, err)
+	before := manager.Subscribers()
+	second, err := manager.Subscribe(ctx, schema.EventFilter{}, ch)
+	assert.ErrorIs(t, err, pg.ErrConflict)
+	assert.Nil(t, second)
+	assert.Equal(t, before, manager.Subscribers())
+
+	// The first subscription is still sent the events
+	require.NoError(t, manager.Publish(ctx, schema.Event{Schema: "twice", Table: "first", Action: "INSERT"}))
+	select {
+	case event := <-ch:
+		assert.Equal(t, schema.Event{Schema: "twice", Table: "first", Action: "INSERT"}, event)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first subscription wasn't sent the event")
+	}
+
+	// Once it ends, the channel can be subscribed again
+	cancelFirst()
+	select {
+	case err := <-first:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first subscription didn't end")
+	}
+	againCtx, cancelAgain := context.WithCancel(ctx)
+	defer cancelAgain()
+	_, err = manager.Subscribe(againCtx, schema.EventFilter{}, ch)
+	assert.NoError(t, err)
+}

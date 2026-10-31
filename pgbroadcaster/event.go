@@ -25,12 +25,13 @@ var errStopped = pg.ErrNotAvailable.With("broadcaster stopped")
 // the filter to ch, from when it returns, as it's subscribed before it does,
 // until the context is cancelled, or the manager stops running, as there will
 // be no more events. It returns a channel which is sent nil when the context
-// is cancelled, or ErrServiceUnavailable when the manager stops, or has
-// stopped, once the subscription has ended, after which no more events are
-// sent to ch, so it can be closed. A subscription made before the manager
-// first runs lasts until it stops, and one made once it's stopped isn't
-// made, and ErrServiceUnavailable is returned, so the server, as it stops,
-// doesn't accept them. The channel ch isn't closed. An event
+// is cancelled, or ErrNotAvailable when the manager stops, or has stopped,
+// once the subscription has ended, after which no more events are sent to
+// ch, so it can be closed. A subscription made before the manager first runs
+// lasts until it stops, and one made once it's stopped isn't made, and
+// ErrNotAvailable is returned, so the server, as it stops, doesn't accept
+// them. A channel is subscribed once at a time: subscribing it while it's
+// subscribed returns ErrConflict. The channel ch isn't closed. An event
 // isn't waited for a subscriber to receive, so a subscriber whose channel is
 // full misses it, which coalesces events into the one in the channel, or
 // which, when it needs every event, should buffer its channel.
@@ -47,6 +48,11 @@ func (self *Manager) Subscribe(ctx context.Context, filter schema.EventFilter, c
 	if self.stopped {
 		self.mu.Unlock()
 		return nil, errStopped
+	} else if _, exists := self.subscribers[ch]; exists {
+		// Replacing the subscription would leave the first waiting, and
+		// ending the first would end the second
+		self.mu.Unlock()
+		return nil, pg.ErrConflict.With("channel is already subscribed")
 	}
 	self.subscribers[ch] = sub
 	self.mu.Unlock()

@@ -15,7 +15,7 @@ import (
 // TYPES
 
 type EventCommands struct {
-	Events EventsCmd `cmd:"" name:"events" help:"Watch the server's events, such as changes to volumes, until interrupted." group:"EVENTS"`
+	Events EventsCmd `cmd:"" name:"events" help:"Watch the server's events, which are the changes to its tables, until interrupted." group:"EVENTS"`
 }
 
 type EventsCmd struct {

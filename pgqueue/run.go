@@ -14,6 +14,7 @@ import (
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgqueue/schema"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	attribute "go.opentelemetry.io/otel/attribute"
 	trace "go.opentelemetry.io/otel/trace"
 )
@@ -258,7 +259,10 @@ func (r *runner) runDueTickers(ctx context.Context) (err error) {
 		} else if ticker == nil {
 			return nil
 		}
-		if err := r.tickers.RunTickerTask(ctx, ticker, r.results); err != nil {
+		if err := r.tickers.RunTickerTask(ctx, ticker, r.results); errors.Is(err, httpresponse.ErrNotFound) {
+			// The ticker was unregistered after it was found to be due
+			continue
+		} else if err != nil {
 			return err
 		}
 	}

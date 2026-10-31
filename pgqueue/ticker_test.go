@@ -243,3 +243,47 @@ func TestTickerInterval(t *testing.T) {
 		}
 	}
 }
+
+func TestUnregisterTicker(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+
+	t.Run("Unregister", func(t *testing.T) {
+		// The ticker is kept, and it can be registered again
+		manager := test.IsolatedManager(t)
+		_, err := manager.RegisterTicker(ctx, "ticker", schema.TickerMeta{Interval: types.Ptr(time.Hour)}, noopTask)
+		require.NoError(t, err)
+
+		require.NoError(t, manager.UnregisterTicker(ctx, "ticker"))
+		ticker, err := manager.GetTicker(ctx, "ticker")
+		require.NoError(t, err)
+		assert.Equal(t, time.Hour, types.Value(ticker.Interval))
+
+		_, err = manager.RegisterTicker(ctx, "ticker", schema.TickerMeta{}, noopTask)
+		require.NoError(t, err)
+	})
+
+	t.Run("NotRegistered", func(t *testing.T) {
+		manager := test.IsolatedManager(t)
+		assert.ErrorIs(t, manager.UnregisterTicker(ctx, "missing"), httpresponse.ErrNotFound)
+	})
+
+	t.Run("NotRun", func(t *testing.T) {
+		// An unregistered ticker isn't run, while another ticker is
+		manager := test.IsolatedManager(t)
+		for _, name := range []string{"unregistered", "registered"} {
+			_, err := manager.RegisterTicker(ctx, name, schema.TickerMeta{Interval: types.Ptr(time.Hour)}, noopTask)
+			require.NoError(t, err)
+		}
+		require.NoError(t, manager.UnregisterTicker(ctx, "unregistered"))
+		runIsolated(t, manager)
+
+		require.Eventually(t, func() bool {
+			ticker, err := manager.GetTicker(ctx, "registered")
+			return err == nil && ticker.LastAt != nil
+		}, 10*time.Second, 10*time.Millisecond)
+		ticker, err := manager.GetTicker(ctx, "unregistered")
+		require.NoError(t, err)
+		assert.Nil(t, ticker.LastAt)
+	})
+}

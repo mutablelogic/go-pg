@@ -108,6 +108,18 @@ func Test_spanName(t *testing.T) {
 		{"rollback to savepoint sp_1", nil, "pg.rollback"},
 		{"  ROLLBACK  ", nil, "pg.rollback"},
 
+		// Statements ended with a semicolon
+		{"BEGIN;", nil, "pg.transaction"},
+		{"START TRANSACTION;", nil, "pg.transaction"},
+		{"savepoint sp_1;", nil, "pg.transaction"},
+		{"COMMIT;", nil, "pg.commit"},
+		{"END;", nil, "pg.commit"},
+		{"ROLLBACK;", nil, "pg.rollback"},
+		{"ROLLBACK ;", nil, "pg.rollback"},
+		{"rollback to savepoint sp_1;", nil, "pg.rollback"},
+		{";", nil, "pg.query"},
+		{"SELECT 1;", nil, "pg.query"},
+
 		// Other queries
 		{"SELECT 1", nil, "pg.query"},
 		{"SELECT 1", []any{pgx.NamedArgs{"otelspan": ""}}, "pg.query"},

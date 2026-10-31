@@ -3,6 +3,7 @@ package pg
 import (
 	"context"
 	"strings"
+	"unicode"
 
 	// Packages
 	pgx "github.com/jackc/pgx/v5"
@@ -101,8 +102,11 @@ func spanName(sql string, args []any) string {
 		}
 	}
 
-	// The first two words of the statement, in lower case
-	words := strings.Fields(strings.ToLower(sql))
+	// The first two words of the statement, in lower case, without the
+	// semicolons which end statements, such as "COMMIT;"
+	words := strings.FieldsFunc(strings.ToLower(sql), func(r rune) bool {
+		return unicode.IsSpace(r) || r == ';'
+	})
 	if len(words) > 2 {
 		words = words[:2]
 	}

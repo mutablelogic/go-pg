@@ -67,7 +67,7 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (_ *Manager, err er
 	// Parse and register named queries so bind.Query(...) can resolve them.
 	queries, err := pg.NewQueries(strings.NewReader(schema.Queries))
 	if err != nil {
-		return nil, pg.ErrInternalServerError.Withf("queries.sql: %v", err)
+		return nil, pg.ErrInternalServerError.Withf("queries.sql: %w", err)
 	} else {
 		pool = pool.WithQueries(queries).With(
 			"schema", self.schema,

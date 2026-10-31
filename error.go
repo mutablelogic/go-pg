@@ -102,9 +102,11 @@ func (e Err) With(a ...any) error {
 	return fmt.Errorf("%w: %s", e, fmt.Sprint(a...))
 }
 
-// Withf returns the error with formatted context appended.
+// Withf returns the error with formatted context appended. As with
+// fmt.Errorf, the format may use %w to wrap errors, so that they can still be
+// matched with errors.Is and errors.As.
 func (e Err) Withf(format string, a ...any) error {
-	return fmt.Errorf("%w: %s", e, fmt.Sprintf(format, a...))
+	return fmt.Errorf("%w: %w", e, fmt.Errorf(format, a...))
 }
 
 // Error returns the wrapped database error string.

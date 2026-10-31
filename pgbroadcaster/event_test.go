@@ -203,3 +203,31 @@ func TestSubscribeTwice(t *testing.T) {
 	_, err = manager.Subscribe(againCtx, schema.EventFilter{}, ch)
 	assert.NoError(t, err)
 }
+
+func TestSubscribeRow(t *testing.T) {
+	manager, ctx := test.Begin(t)
+	defer test.End(t)
+
+	// A subscription to the events of a table
+	ch := make(chan schema.Event, 2)
+	subCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	_, err := manager.Subscribe(subCtx, schema.EventFilter{Table: "row_test"}, ch)
+	require.NoError(t, err)
+
+	// An event's row is sent with it, and an event without a row is sent
+	// without one
+	require.NoError(t, manager.Publish(ctx, schema.Event{Schema: "test", Table: "row_test", Action: "UPDATE", Row: "42"}))
+	require.NoError(t, manager.Publish(ctx, schema.Event{Schema: "test", Table: "row_test", Action: "INSERT"}))
+	for _, want := range []schema.Event{
+		{Schema: "test", Table: "row_test", Action: "UPDATE", Row: "42"},
+		{Schema: "test", Table: "row_test", Action: "INSERT"},
+	} {
+		select {
+		case event := <-ch:
+			assert.Equal(t, want, event)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%v wasn't sent", want)
+		}
+	}
+}

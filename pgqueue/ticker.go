@@ -57,6 +57,20 @@ func (self *Manager) RegisterTicker(ctx context.Context, name string, meta schem
 	return types.Ptr(result), nil
 }
 
+// UnregisterTicker removes the task callback of the ticker in this process,
+// so this process stops running it, but keeps the ticker, for other
+// processes, or for when the ticker is registered again. A run of the ticker
+// which has started finishes. Returns ErrNotFound if the ticker has no
+// callback in this process.
+func (self *Manager) UnregisterTicker(ctx context.Context, name string) (err error) {
+	_, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.UnregisterTicker",
+		attribute.String("name", name),
+	)
+	defer func() { endSpan(err) }()
+
+	return self.tickers.RemoveTask(name)
+}
+
 // UpdateTicker updates an existing ticker, and returns it.
 func (self *Manager) UpdateTicker(ctx context.Context, name string, meta schema.TickerMeta) (result *schema.Ticker, err error) {
 	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.UpdateTicker",

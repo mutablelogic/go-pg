@@ -12,7 +12,8 @@ import (
 
 // Queries represents a collection of named SQL statements parsed from a reader.
 // SQL statements are separated by comment lines in the format: -- <identifier>
-// Each statement is stored with its identifier as the key.
+// or -- <identifier>.<identifier>, with any number of dots between them. Each
+// statement is stored with its key.
 type Queries struct {
 	keys    []string
 	queries map[string]string
@@ -22,16 +23,24 @@ type Queries struct {
 // GLOBALS
 
 var (
-	reQuerySeparator = regexp.MustCompile(`^--\s*([a-zA-Z0-9_.-]+)\s*$`)
+	// A key is identifiers separated by dots, where an identifier is letters,
+	// digits and underscores, which doesn't start with a digit, so a comment
+	// which ends in a word and a period, such as "-- form.", isn't a key
+	reQuerySeparator = regexp.MustCompile(`^--\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*$`)
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
 // NewQueries parses SQL statements from a reader and returns a Queries collection.
-// SQL statements must be separated by comment lines matching the pattern: -- <identifier>
-// where <identifier> consists of alphanumeric characters, underscores, dots, and hyphens.
-// Returns an error if duplicate identifiers are found or if reading fails.
+// SQL statements must be separated by comment lines with a key: -- <identifier>
+// or -- <identifier>.<identifier>, with any number of dots, where an identifier
+// consists of letters, digits and underscores, and doesn't start with a digit.
+// Other comment lines, such as those which describe a statement, or one which
+// ends a sentence with a period, such as "-- form.", and comments at the end of
+// a line, are removed from the statement, except within strings, quoted
+// identifiers and dollar-quoted bodies, such as those of functions.
+// Returns an error if duplicate keys are found or if reading fails.
 //
 // Example input format:
 //
@@ -83,9 +92,9 @@ func NewQueries(r io.Reader) (*Queries, error) {
 		self.keys = append(self.keys, key)
 	}
 
-	// Remove any ; at the end of each SQL statement
+	// Remove the comments, and any ; at the end of each SQL statement
 	for k, v := range self.queries {
-		self.queries[k] = strings.TrimSuffix(v, ";")
+		self.queries[k] = strings.TrimSuffix(strings.TrimSpace(stripComments(v)), ";")
 	}
 
 	// Check for scanner errors
@@ -112,4 +121,123 @@ func (s *Queries) Query(key string) string {
 		return sql
 	}
 	return ""
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
+// stripComments removes the -- comments from a statement: lines which are
+// only a comment are removed, and a comment at the end of a line is removed
+// with the space before it. A -- within a string, such as 'a--b', a quoted
+// identifier, such as "a--b", or a dollar-quoted body, such as a function's,
+// isn't a comment, and a dollar-quoted body is kept as it is.
+func stripComments(sql string) string {
+	var result strings.Builder
+	var line strings.Builder
+	var quote string // the quote which is open: ', E', ", or a dollar tag
+	comment := false // whether the rest of the line is a comment
+
+	// endLine writes the line, without any space at its end, unless it was
+	// only a comment
+	endLine := func(eol bool) {
+		text := line.String()
+		if trimmed := strings.TrimRight(text, " \t\r"); trimmed != "" || !comment {
+			if quote == "" {
+				text = trimmed
+			}
+			result.WriteString(text)
+			if eol {
+				result.WriteByte('\n')
+			}
+		}
+		line.Reset()
+		comment = false
+	}
+
+	for i := 0; i < len(sql); i++ {
+		c := sql[i]
+		switch {
+		case c == '\n':
+			endLine(true)
+		case comment:
+			// Skip the comment to the end of the line
+		case quote == "'" || quote == "E'":
+			line.WriteByte(c)
+			if c == '\\' && quote == "E'" && i+1 < len(sql) {
+				// A backslash escapes the next character in an E'' string
+				i++
+				line.WriteByte(sql[i])
+			} else if c == '\'' {
+				if i+1 < len(sql) && sql[i+1] == '\'' {
+					// '' is a quote within the string
+					i++
+					line.WriteByte(sql[i])
+				} else {
+					quote = ""
+				}
+			}
+		case quote == `"`:
+			line.WriteByte(c)
+			if c == '"' {
+				quote = ""
+			}
+		case quote != "":
+			// A dollar-quoted body ends with its tag
+			if strings.HasPrefix(sql[i:], quote) {
+				line.WriteString(quote)
+				i += len(quote) - 1
+				quote = ""
+			} else {
+				line.WriteByte(c)
+			}
+		case c == '-' && i+1 < len(sql) && sql[i+1] == '-':
+			comment = true
+		case c == '\'':
+			if n := line.Len(); n > 0 && (line.String()[n-1] == 'E' || line.String()[n-1] == 'e') && (n == 1 || !isIdentChar(line.String()[n-2])) {
+				quote = "E'"
+			} else {
+				quote = "'"
+			}
+			line.WriteByte(c)
+		case c == '"':
+			quote = `"`
+			line.WriteByte(c)
+		case c == '$':
+			if tag := dollarTag(sql[i:]); tag != "" && (line.Len() == 0 || !isIdentChar(line.String()[line.Len()-1])) {
+				quote = tag
+				line.WriteString(tag)
+				i += len(tag) - 1
+			} else {
+				line.WriteByte(c)
+			}
+		default:
+			line.WriteByte(c)
+		}
+	}
+	endLine(false)
+
+	// Return the statement
+	return result.String()
+}
+
+// dollarTag returns the dollar quote at the start of the string, such as $$
+// or $body$, or an empty string if it doesn't start with one, such as $1 or
+// ${"schema"}
+func dollarTag(s string) string {
+	for i := 1; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '$':
+			return s[:i+1]
+		case c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (i > 1 && c >= '0' && c <= '9') || c >= 0x80:
+			// Part of the tag
+		default:
+			return ""
+		}
+	}
+	return ""
+}
+
+// isIdentChar reports whether the byte can be part of an identifier
+func isIdentChar(c byte) bool {
+	return c == '_' || c == '$' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c >= 0x80
 }

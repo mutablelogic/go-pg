@@ -49,12 +49,12 @@ func SchemaExists(ctx context.Context, conn Conn, name string) (bool, error) {
 
 // SchemaCreate creates a schema with the given name if it does not exist.
 func SchemaCreate(ctx context.Context, conn Conn, name string) error {
-	return conn.With("schema", name).Exec(ctx, schemaCreate)
+	return conn.With("schema", name, TraceSpanNameArg, "pg.schema.create").Exec(ctx, schemaCreate)
 }
 
 // SchemaDrop drops a schema with the given name if it exists.
 func SchemaDrop(ctx context.Context, conn Conn, name string) error {
-	return conn.With("schema", name).Exec(ctx, schemaDrop)
+	return conn.With("schema", name, TraceSpanNameArg, "pg.schema.drop").Exec(ctx, schemaDrop)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

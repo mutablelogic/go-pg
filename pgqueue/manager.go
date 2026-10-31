@@ -134,9 +134,9 @@ func bootstrap(ctx context.Context, conn pg.Conn, schemaName string) error {
 		return fmt.Errorf("create schema %q: %w", schemaName, err)
 	}
 
-	// Create all objects - not in a transaction
+	// Create all objects - not in a transaction - in spans named by their keys
 	for _, key := range objects.Keys() {
-		if err := conn.Exec(ctx, objects.Query(key)); err != nil {
+		if err := conn.With(pg.TraceSpanNameArg, key).Exec(ctx, objects.Query(key)); err != nil {
 			return fmt.Errorf("create object %q: %w", key, err)
 		}
 	}

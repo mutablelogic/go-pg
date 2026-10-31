@@ -3,6 +3,7 @@ package pg
 import (
 	"context"
 	"strings"
+	"unicode"
 
 	// Packages
 	pgx "github.com/jackc/pgx/v5"
@@ -52,20 +53,9 @@ func (t *tracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.Trac
 		args: data.Args,
 	}
 
-	otelSpanName := func() string {
-		if args_, ok := namedArgs(qd.args); ok {
-			if v, ok := args_[TraceSpanNameArg]; ok {
-				if s, ok := v.(string); ok && s != "" {
-					return s
-				}
-			}
-		}
-		return "pg.query"
-	}
-
 	// Start OTEL span if tracer is configured
 	if t.otel != nil {
-		ctx, qd.span = t.otel.Start(ctx, otelSpanName(),
+		ctx, qd.span = t.otel.Start(ctx, spanName(qd.sql, qd.args),
 			trace.WithSpanKind(trace.SpanKindClient),
 			trace.WithAttributes(
 				semconv.DBSystemPostgreSQL,
@@ -100,6 +90,39 @@ func (t *tracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.Tra
 
 //////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
+
+// spanName returns the name of the span of a query: the query's name, when it
+// has one (see Bind.Query), or else pg.transaction, pg.commit or pg.rollback
+// for the statements of a transaction, including those of a savepoint, which
+// is how pgx nests transactions, or else pg.query
+func spanName(sql string, args []any) string {
+	if args, ok := namedArgs(args); ok {
+		if name, ok := args[TraceSpanNameArg].(string); ok && name != "" {
+			return name
+		}
+	}
+
+	// The first two words of the statement, in lower case, without the
+	// semicolons which end statements, such as "COMMIT;"
+	words := strings.FieldsFunc(strings.ToLower(sql), func(r rune) bool {
+		return unicode.IsSpace(r) || r == ';'
+	})
+	if len(words) > 2 {
+		words = words[:2]
+	}
+	switch {
+	case len(words) == 0:
+		return "pg.query"
+	case words[0] == "begin", words[0] == "savepoint", words[0] == "start" && len(words) > 1 && words[1] == "transaction":
+		return "pg.transaction"
+	case words[0] == "commit", words[0] == "end", words[0] == "release":
+		return "pg.commit"
+	case words[0] == "rollback", words[0] == "abort":
+		return "pg.rollback"
+	default:
+		return "pg.query"
+	}
+}
 
 // args normalizes traced query arguments and filters named arguments down to
 // the @bind placeholders referenced by the traced SQL.

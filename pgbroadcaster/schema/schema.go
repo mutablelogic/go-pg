@@ -44,12 +44,15 @@ var Queries string
 // TYPES
 
 // Event is a change which is published to the broadcaster's channel: what
-// changed, such as a table of a schema, and how, such as INSERT, UPDATE or
-// DELETE, as the database's triggers notify of their tables' changes
+// changed, such as a table of a schema, how, such as INSERT, UPDATE or
+// DELETE, as the database's triggers notify of their tables' changes, and
+// which row, or rows, changed, when it says, such as by an identifier which
+// the rows share
 type Event struct {
 	Schema string `json:"schema,omitempty"`
 	Table  string `json:"table,omitempty"`
 	Action string `json:"action,omitempty"`
+	Row    string `json:"row,omitempty"`
 }
 
 // EventFilter matches events: those with its schema, table and action, each

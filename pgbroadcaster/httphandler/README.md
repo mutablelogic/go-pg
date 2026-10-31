@@ -2,7 +2,7 @@
 
 ## Event Operations
 
-Events are the changes to the server's data. Each event has the schema and table which changed, and how it changed, as its action: `INSERT`, `UPDATE` or `DELETE`. An event says only what changed, not which rows, so a client which watches events reads what it needs again when one arrives.
+Events are the changes to the server's data. Each event has the schema and table which changed, and how it changed, as its action: `INSERT`, `UPDATE` or `DELETE`, and it can say which row, or rows, changed, as its `row`, such as an identifier which the rows share. An event doesn't have what changed, so a client which watches events reads what it needs again when one arrives.
 
 ### GET /event
 

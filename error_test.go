@@ -1,6 +1,7 @@
 package pg
 
 import (
+	"errors"
 	"testing"
 
 	// Packages
@@ -85,4 +86,21 @@ func Test_HTTPError_003(t *testing.T) {
 
 	err := HTTPError(&pgconn.PgError{Code: sqlStateUndefinedFile, Message: "directory \"/tmp/test\" does not exist"})
 	assert.ErrorIs(err, httpresponse.ErrNotFound)
+}
+
+func Test_Err_Withf(t *testing.T) {
+	assert := assert.New(t)
+	cause := errors.New("cause")
+
+	// The error is the code, and wraps an error with %w
+	err := ErrBadParameter.Withf("invalid %q: %w", "name", cause)
+	assert.ErrorIs(err, ErrBadParameter)
+	assert.ErrorIs(err, cause)
+	assert.Equal(`bad parameter: invalid "name": cause`, err.Error())
+
+	// Without %w, the message is the same, and nothing else is wrapped
+	err = ErrBadParameter.Withf("invalid %q: %v", "name", cause)
+	assert.ErrorIs(err, ErrBadParameter)
+	assert.NotErrorIs(err, cause)
+	assert.Equal(`bad parameter: invalid "name": cause`, err.Error())
 }

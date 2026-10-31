@@ -1,12 +1,14 @@
 package pgqueue_test
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
+	pgqueue "github.com/mutablelogic/go-pg/pgqueue"
 	schema "github.com/mutablelogic/go-pg/pgqueue/schema"
 	test "github.com/mutablelogic/go-pg/pgqueue/test"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -242,4 +244,90 @@ func TestTickerInterval(t *testing.T) {
 			assert.NotEqual(t, "zero", next.Ticker)
 		}
 	}
+}
+
+func TestUnregisterTicker(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+
+	t.Run("Unregister", func(t *testing.T) {
+		// The ticker is kept, and it can be registered again
+		manager := test.IsolatedManager(t)
+		_, err := manager.RegisterTicker(ctx, "ticker", schema.TickerMeta{Interval: types.Ptr(time.Hour)}, noopTask)
+		require.NoError(t, err)
+
+		require.NoError(t, manager.UnregisterTicker(ctx, "ticker"))
+		ticker, err := manager.GetTicker(ctx, "ticker")
+		require.NoError(t, err)
+		assert.Equal(t, time.Hour, types.Value(ticker.Interval))
+
+		_, err = manager.RegisterTicker(ctx, "ticker", schema.TickerMeta{}, noopTask)
+		require.NoError(t, err)
+	})
+
+	t.Run("NotRegistered", func(t *testing.T) {
+		manager := test.IsolatedManager(t)
+		assert.ErrorIs(t, manager.UnregisterTicker(ctx, "missing"), httpresponse.ErrNotFound)
+	})
+
+	t.Run("UnregisteredWhenDue", func(t *testing.T) {
+		// A ticker which is unregistered after it's found to be due, but
+		// before its callback is run, is skipped, and the other due ticker
+		// runs in the same poll
+		manager := test.IsolatedManager(t)
+		ch := make(chan string, 2)
+		for _, name := range []string{"one", "two"} {
+			_, err := manager.RegisterTicker(ctx, name, schema.TickerMeta{Interval: types.Ptr(time.Hour)}, func(context.Context, json.RawMessage) (any, error) {
+				ch <- name
+				return nil, nil
+			})
+			require.NoError(t, err)
+		}
+
+		// Unregister the first of the two tickers found to be due, once it's
+		// found, rather than the built-in tickers, which are also due
+		var unregistered string
+		next := func(ctx context.Context) (*schema.Ticker, error) {
+			ticker, err := manager.NextTicker(ctx)
+			if err == nil && ticker != nil && unregistered == "" && (ticker.Ticker == "one" || ticker.Ticker == "two") {
+				unregistered = ticker.Ticker
+				require.NoError(t, manager.UnregisterTicker(ctx, unregistered))
+			}
+			return ticker, err
+		}
+		require.NoError(t, pgqueue.RunDueTickers(ctx, manager, next))
+		require.NotEmpty(t, unregistered)
+
+		// The other ticker ran, and the unregistered one didn't
+		select {
+		case name := <-ch:
+			assert.NotEqual(t, unregistered, name)
+		case <-time.After(5 * time.Second):
+			t.Fatal("the other due ticker didn't run")
+		}
+		select {
+		case name := <-ch:
+			t.Fatalf("%q ran too", name)
+		case <-time.After(100 * time.Millisecond):
+		}
+	})
+
+	t.Run("NotRun", func(t *testing.T) {
+		// An unregistered ticker isn't run, while another ticker is
+		manager := test.IsolatedManager(t)
+		for _, name := range []string{"unregistered", "registered"} {
+			_, err := manager.RegisterTicker(ctx, name, schema.TickerMeta{Interval: types.Ptr(time.Hour)}, noopTask)
+			require.NoError(t, err)
+		}
+		require.NoError(t, manager.UnregisterTicker(ctx, "unregistered"))
+		runIsolated(t, manager)
+
+		require.Eventually(t, func() bool {
+			ticker, err := manager.GetTicker(ctx, "registered")
+			return err == nil && ticker.LastAt != nil
+		}, 10*time.Second, 10*time.Millisecond)
+		ticker, err := manager.GetTicker(ctx, "unregistered")
+		require.NoError(t, err)
+		assert.Nil(t, ticker.LastAt)
+	})
 }

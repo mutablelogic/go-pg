@@ -14,6 +14,7 @@ import (
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgqueue/schema"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	attribute "go.opentelemetry.io/otel/attribute"
 	trace "go.opentelemetry.io/otel/trace"
 )
@@ -38,6 +39,10 @@ type runner struct {
 	// The number of times in a row the queues and tickers couldn't be polled
 	queueRetries  int
 	tickerRetries int
+
+	// nextTicker returns the next due ticker, which is NextTicker, unless a
+	// test replaces it
+	nextTicker func(context.Context) (*schema.Ticker, error)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -251,14 +256,21 @@ func (r *runner) runDueTickers(ctx context.Context) (err error) {
 	ctx, endSpan := otel.StartSpan(r.tracer, ctx, "pgqueue.runTickers")
 	defer func() { endSpan(err) }()
 
+	next := r.NextTicker
+	if r.nextTicker != nil {
+		next = r.nextTicker
+	}
 	for range maxTickers {
-		ticker, err := r.NextTicker(ctx)
+		ticker, err := next(ctx)
 		if err != nil {
 			return err
 		} else if ticker == nil {
 			return nil
 		}
-		if err := r.tickers.RunTickerTask(ctx, ticker, r.results); err != nil {
+		if err := r.tickers.RunTickerTask(ctx, ticker, r.results); errors.Is(err, httpresponse.ErrNotFound) {
+			// The ticker was unregistered after it was found to be due
+			continue
+		} else if err != nil {
 			return err
 		}
 	}

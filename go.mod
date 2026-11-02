@@ -6,9 +6,9 @@ require (
 	github.com/djthorpe/go-wasmbuild v0.0.6
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/moby/moby/api v1.56.1
-	github.com/mutablelogic/go-client v1.4.10
+	github.com/mutablelogic/go-client v1.4.13
 	github.com/mutablelogic/go-llm v0.4.5
-	github.com/mutablelogic/go-server v1.7.13
+	github.com/mutablelogic/go-server v1.7.20
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.44.0
 	go.opentelemetry.io/otel v1.47.0
@@ -122,14 +122,15 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261019180522-ce908d29299b // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

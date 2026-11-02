@@ -337,7 +337,7 @@ func (r *runner) logTicker(ctx context.Context, result *Result) {
 	} else if result.Error != nil {
 		r.logger.ErrorContext(ctx, "Ticker failed", "ticker", result.Ticker, "error", result.Error.Error())
 	} else if len(result.Result) > 0 && !bytes.Equal(result.Result, []byte("null")) {
-		r.logger.DebugContext(ctx, "Ticker done", "ticker", result.Ticker, "result", string(result.Result))
+		r.logger.DebugContext(ctx, "Ticker done", "ticker", result.Ticker, "result", json.RawMessage(result.Result))
 	}
 }
 

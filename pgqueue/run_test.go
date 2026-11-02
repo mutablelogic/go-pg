@@ -1,11 +1,13 @@
 package pgqueue_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -56,10 +58,17 @@ func TestRun(t *testing.T) {
 // ends, or when the returned function is called
 func runIsolated(t *testing.T, manager *pgqueue.Manager) func() {
 	t.Helper()
+	return runIsolatedLogger(t, manager, slog.New(slog.DiscardHandler))
+}
+
+// runIsolatedLogger runs the manager's event loop, as runIsolated does,
+// logging to the logger
+func runIsolatedLogger(t *testing.T, manager *pgqueue.Manager, logger *slog.Logger) func() {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- manager.Run(ctx, slog.New(slog.DiscardHandler))
+		done <- manager.Run(ctx, logger)
 	}()
 	require.Eventually(t, manager.Running, 10*time.Second, 10*time.Millisecond)
 
@@ -300,11 +309,35 @@ func TestRunCleanup(t *testing.T) {
 	require.NoError(t, manager.Exec(ctx, `UPDATE ${"schema"}."task" SET "started_at" = NOW() - INTERVAL '1 second', "finished_at" = NOW() - INTERVAL '1 second'`))
 
 	// The cleanup ticker runs when the loop starts, and removes them all
-	runIsolated(t, manager)
+	var logs logBuffer
+	runIsolatedLogger(t, manager, slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	require.Eventually(t, func() bool {
 		list, err := manager.ListTasks(ctx, schema.TaskListRequest{})
 		return err == nil && list.Count == 0
 	}, 10*time.Second, 10*time.Millisecond)
+
+	// Which is logged with the queue's name, and the ticker's result, as JSON
+	require.Eventually(t, func() bool {
+		return strings.Contains(logs.String(), `"result":["cleaned queue \"cleanup\" removed `+strconv.Itoa(count)+` tasks"]`)
+	}, 10*time.Second, 10*time.Millisecond, logs.String())
+}
+
+// logBuffer is a buffer which logs are written to, while they're read
+type logBuffer struct {
+	sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *logBuffer) Write(data []byte) (int, error) {
+	b.Lock()
+	defer b.Unlock()
+	return b.buf.Write(data)
+}
+
+func (b *logBuffer) String() string {
+	b.Lock()
+	defer b.Unlock()
+	return b.buf.String()
 }
 
 func TestRunResubscribe(t *testing.T) {

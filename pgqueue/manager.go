@@ -197,7 +197,7 @@ func (self *Manager) cleanup(ctx context.Context, _ json.RawMessage) (any, error
 				}
 			}
 			if count > 0 {
-				messages = append(messages, fmt.Sprintf("cleaned queue %q removed %d tasks", queue.Queue, count))
+				messages = append(messages, fmt.Sprintf("cleaned queue %q removed %d tasks", queue.Name, count))
 			}
 		}
 

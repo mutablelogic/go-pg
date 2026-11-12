@@ -216,11 +216,21 @@ table('role-table', roles, ListLimits.role, views.roleColumns(openRole), (role) 
 }));
 
 // openRole opens a role, by its name, such as one a role is a member of,
-// which mayn't be on the page, so it isn't the table's
+// which mayn't be on the page, so it isn't the table's. Only the role which
+// was asked for last opens, so a slower response to an earlier one doesn't
+// replace it.
+let roleLookup = 0;
 function openRole(name: string) {
-    api.getRole(client, name).then((role) => open({
-        kind: 'role', title: role.name, subtitle: role.predefined ? 'Predefined role' : 'Role', body: views.roleBody(role, openRole),
-    })).catch((error) => notifications.error(`The role ${name} couldn't be loaded`, error));
+    const lookup = ++roleLookup;
+    api.getRole(client, name).then((role) => {
+        if (lookup === roleLookup) {
+            open({ kind: 'role', title: role.name, subtitle: role.predefined ? 'Predefined role' : 'Role', body: views.roleBody(role, openRole) });
+        }
+    }).catch((error) => {
+        if (lookup === roleLookup) {
+            notifications.error(`The role ${name} couldn't be loaded`, error);
+        }
+    });
 }
 table('connection-table', connections, ListLimits.connection, views.connectionColumns, (conn) => ({
     title: `Connection ${conn.pid}`, subtitle: [conn.role, conn.database].filter(Boolean).join(' · '), body: views.connectionBody(conn),

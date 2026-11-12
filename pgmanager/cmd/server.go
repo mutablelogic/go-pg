@@ -5,15 +5,12 @@ import (
 	"fmt"
 
 	// Packages
-	mcpserver "github.com/mutablelogic/go-llm/mcp/server"
 	pg "github.com/mutablelogic/go-pg"
 	httphandlers "github.com/mutablelogic/go-pg/pgmanager/httphandlers"
 	manager "github.com/mutablelogic/go-pg/pgmanager/manager"
-	mcp "github.com/mutablelogic/go-pg/pgmanager/mcp"
 	pgpkg "github.com/mutablelogic/go-pg/pkg/cmd"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
-	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	errgroup "golang.org/x/sync/errgroup"
 )
@@ -28,7 +25,6 @@ type ServerCommands struct {
 type RunServer struct {
 	cmd.RunServer
 	pgpkg.PostgresFlags `embed:"" prefix:"pg."`
-	MCP                 bool `name:"mcp" help:"Enable an MCP endpoint" negatable:"" default:"false"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -67,8 +63,8 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 // PRIVATE METHODS
 
 // WithManager creates a manager, with the server's tracer and meter,
-// registers its HTTP handlers, and its MCP endpoint when it's enabled, with
-// the server, and then calls the function with it, returning any error
+// registers its HTTP handlers with the server, and then calls the function
+// with it, returning any error
 func (runner *RunServer) WithManager(ctx server.Cmd, conn pg.PoolConn, fn func(*manager.Manager) error) error {
 	opts := []manager.Opt{
 		manager.WithMeter(ctx.Meter()),
@@ -95,38 +91,6 @@ func (runner *RunServer) WithManager(ctx server.Cmd, conn pg.PoolConn, fn func(*
 			httphandlers.RegisterExtensionHandlers(pgmanager, router),
 			httphandlers.RegisterSettingHandlers(pgmanager, router),
 			router.RegisterCatchAll("/", true),
-		)
-	})
-
-	// If MCP is enabled, register the MCP handler
-	runner.Register(func(router *httprouter.Router) error {
-		if !runner.MCP {
-			return nil
-		}
-
-		ctx.Logger().DebugContext(ctx.Context(), "registering pgmanager mcp server")
-
-		// Set options
-		opts := []mcpserver.ServerOpt{
-			mcpserver.WithInstructions("Manage PostgreSQL database clusters, databases, roles, schemas, and more."),
-			mcpserver.WithTracer(ctx.Tracer()),
-		}
-
-		// Create an MCP server
-		mcpServer, err := mcp.New(pgmanager, ctx.Name(), ctx.Version(), opts...)
-		if err != nil {
-			return err
-		}
-
-		// Serve the MCP endpoint
-		handler := mcpServer.Handler()
-		return router.RegisterPath("/mcp", nil, httprequest.NewPathItem("MCP", "Management Control Protocol endpoint").Tag("MCP").
-			Post(handler.ServeHTTP, func(op httprequest.PathOperation) {
-				op.Summary("Send a message to the MCP server")
-			}).
-			Delete(handler.ServeHTTP, func(op httprequest.PathOperation) {
-				op.Summary("Close an MCP session")
-			}),
 		)
 	})
 

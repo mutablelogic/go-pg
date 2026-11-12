@@ -13,3 +13,6 @@ build/
 
 # Ignore build files from wasmbuild
 pkg/manager/httphandler/frontend
+
+# The web UI's dependencies, which npm installs
+frontend/node_modules

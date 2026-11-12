@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pgmanager</title>
+    <link rel="stylesheet" href="index.css">
+    <script type="module" src="index.js"></script>
+    <style>
+        body {
+            margin: 0;
+            background: var(--cds-background);
+            color: var(--cds-text-primary);
+            font-family: 'IBM Plex Sans', sans-serif;
+        }
+
+        /* The header is 3rem high, and the side navigation 16rem wide, when
+           it's fixed open, on large screens */
+        main {
+            padding: calc(3rem + 2rem) 2rem 2rem;
+        }
+
+        /* A page's header is across the page, beneath the menu bar */
+        main gs-page-header {
+            --gs-page-header-margin: -2rem -2rem 1.5rem;
+        }
+
+        /* The filters of a table, above it */
+        .filters {
+            margin: 0 0 1rem;
+        }
+
+        main h2 {
+            margin: 0 0 1rem;
+            font-size: 1.25rem;
+            font-weight: 400;
+        }
+
+        /* The router hides the pages which aren't shown, which Carbon's
+           styles would show */
+        main > section[hidden] {
+            display: none;
+        }
+
+        /* The server's status is at the bottom of the side navigation, and
+           its items scroll above it */
+        cds-side-nav-items {
+            margin-bottom: calc(3rem + 1px);
+        }
+
+        gs-server-status {
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            border-top: 1px solid var(--cds-border-subtle);
+        }
+
+        /* A panel's description, such as a setting's, and a query */
+        gs-panel .description {
+            margin: 0 0 1rem;
+            font-size: 0.875rem;
+            color: var(--cds-text-secondary);
+        }
+
+        gs-panel pre {
+            margin: 0;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            white-space: pre-wrap;
+        }
+
+        gs-panel pre.statement {
+            margin: 0 0 1rem;
+        }
+
+        /* A panel's fields */
+        gs-panel dl {
+            display: grid;
+            grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
+            margin: 0;
+            font-size: 0.875rem;
+        }
+
+        gs-panel dt,
+        gs-panel dd {
+            margin: 0;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--cds-border-subtle-01);
+            overflow-wrap: anywhere;
+        }
+
+        gs-panel dt {
+            padding-right: 1rem;
+            color: var(--cds-text-secondary);
+        }
+
+        @media (min-width: 66rem) {
+            main {
+                margin-left: 16rem;
+            }
+        }
+    </style>
+</head>
+
+<body class="cds--white">
+    <!-- The menu bar, and the sidebar, of the navigation controller, with
+         the server's status at its bottom -->
+    <div class="cds--g100">
+        <gs-header></gs-header>
+        <gs-side-nav>
+            <gs-server-status></gs-server-status>
+        </gs-side-nav>
+    </div>
+
+    <main>
+        <section id="page-database" hidden>
+            <gs-page-header id="database-header" heading="Database"></gs-page-header>
+            <gs-tiles id="schema-tiles" label="Schemas"></gs-tiles>
+            <div id="object-types" class="filters"></div>
+            <gs-table id="object-table" empty="No objects"></gs-table>
+        </section>
+        <section id="page-roles" hidden>
+            <gs-page-header id="roles-header" heading="Roles" subtitle="Who can sign in, and what they can own and use"></gs-page-header>
+            <gs-table id="role-table" empty="No roles"></gs-table>
+        </section>
+        <section id="page-connections" hidden>
+            <gs-page-header id="connections-header" heading="Connections" subtitle="The sessions connected to the server, and what they're running"></gs-page-header>
+            <gs-tiles id="connection-tiles" label="Databases"></gs-tiles>
+            <gs-table id="connection-table" empty="No connections"></gs-table>
+        </section>
+        <section id="page-settings" hidden>
+            <gs-page-header id="settings-header" heading="Settings" subtitle="The server's configuration, and when each setting can be changed"></gs-page-header>
+            <div id="setting-categories" class="filters"></div>
+            <gs-table id="setting-table" empty="No settings"></gs-table>
+        </section>
+        <section id="page-tablespaces" hidden>
+            <gs-page-header id="tablespaces-header" heading="Tablespaces" subtitle="Where the databases' files are stored"></gs-page-header>
+            <gs-table id="tablespace-table" empty="No tablespaces"></gs-table>
+        </section>
+        <section id="page-replication-slots" hidden>
+            <gs-page-header id="replication-slots-header" heading="Replication slots" subtitle="Where replicas and subscribers read the server's changes from"></gs-page-header>
+            <gs-table id="slot-table" empty="No replication slots"></gs-table>
+        </section>
+        <section id="page-statements" hidden>
+            <gs-page-header id="statements-header" heading="Statements" subtitle="How often each statement runs, and how long it takes"></gs-page-header>
+            <gs-tiles id="statement-tiles" label="Databases"></gs-tiles>
+            <gs-table id="statement-table" empty="No statements, or the pg_stat_statements extension isn't installed"></gs-table>
+        </section>
+    </main>
+
+    <!-- The panel which shows an object, or a role, and the notifications -->
+    <gs-panel id="panel"></gs-panel>
+    <gs-notifications></gs-notifications>
+</body>
+
+</html>

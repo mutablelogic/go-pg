@@ -145,6 +145,8 @@ RETURNING
     "priority";
 
 -- pgqueue.task_list
+-- The tasks with the highest priority, which is the lowest, first, and then
+-- the oldest
 SELECT
     sq."id",
     sq."queue",
@@ -180,6 +182,7 @@ FROM (
 ) sq
 ${where}
 ORDER BY
+    sq."priority",
     sq."created_at",
     sq."id"
 

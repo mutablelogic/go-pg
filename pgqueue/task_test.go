@@ -476,6 +476,26 @@ func TestListTasks(t *testing.T) {
 		assert.EqualValues(t, 2, list.Count)
 	})
 
+	t.Run("Priority", func(t *testing.T) {
+		// The tasks with the highest priority, which is the lowest, are
+		// first, and then the oldest
+		manager := taskManager(t, "order", schema.QueueMeta{})
+		var want []uint64
+		for _, priority := range []uint16{3, 0, 3, 1} {
+			task, err := manager.CreateTask(ctx, "order", schema.TaskMeta{Payload: json.RawMessage(`{"n":` + strconv.Itoa(len(want)) + `}`), Priority: types.Ptr(priority)})
+			require.NoError(t, err)
+			want = append(want, task.Id)
+		}
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{})
+		require.NoError(t, err)
+		require.Len(t, list.Body, 4)
+		got := make([]uint64, 0, len(list.Body))
+		for _, task := range list.Body {
+			got = append(got, task.Id)
+		}
+		assert.Equal(t, []uint64{want[1], want[3], want[0], want[2]}, got)
+	})
+
 	t.Run("Page", func(t *testing.T) {
 		limit := types.Ptr(uint64(10))
 		list, err := manager.ListTasks(ctx, schema.TaskListRequest{OffsetLimit: pg.OffsetLimit{Offset: 2, Limit: limit}})

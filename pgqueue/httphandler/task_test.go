@@ -67,7 +67,8 @@ func TestListTasks(t *testing.T) {
 	})
 
 	t.Run("List", func(t *testing.T) {
-		// The tasks are oldest first, with their queue, payload and status
+		// The tasks, which have the same priority, are oldest first, with
+		// their queue, payload and status
 		result := list(t, "?queue=queue")
 		assert.EqualValues(t, 3, result.Count)
 		require.Len(t, result.Body, 3)

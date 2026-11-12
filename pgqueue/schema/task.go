@@ -221,7 +221,7 @@ func (t TaskMeta) validatePriority() error {
 // TABLE
 
 func (t TaskWithStatus) Header() []string {
-	return []string{"ID", "Queue", "Status", "Retries", "Worker", "Created", "Payload", "Result"}
+	return []string{"ID", "Queue", "Status", "Priority", "Retries", "Worker", "Created", "Payload", "Result"}
 }
 
 func (t TaskWithStatus) Width(col int) int {
@@ -237,14 +237,19 @@ func (t TaskWithStatus) Cell(col int) tui.CellText {
 	case 2:
 		return t.Status
 	case 3:
-		return countCell(t.Retries)
+		if t.Priority == nil {
+			return ""
+		}
+		return strconv.FormatUint(uint64(*t.Priority), 10)
 	case 4:
-		return types.Value(t.Worker)
+		return countCell(t.Retries)
 	case 5:
-		return timeCell(t.CreatedAt)
+		return types.Value(t.Worker)
 	case 6:
-		return jsonCell(t.Payload)
+		return timeCell(t.CreatedAt)
 	case 7:
+		return jsonCell(t.Payload)
+	case 8:
 		return jsonCell(t.Result)
 	default:
 		return ""

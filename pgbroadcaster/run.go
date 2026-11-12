@@ -9,7 +9,6 @@ import (
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgbroadcaster/schema"
-	changeschema "github.com/mutablelogic/go-server/broadcaster/schema"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -145,26 +144,18 @@ func (self *Manager) WaitListening(ctx context.Context) error {
 ////////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-// waitRunning waits until the manager's broadcaster is running, so it can be
-// watched, which it can't once it has stopped, until it runs again, by
-// watching it, until it can be, or the context is cancelled, when it returns
-// the context's error
+// waitRunning waits until the manager's broadcaster is running, so it's
+// watched, which it isn't once it has stopped, until it runs again, or the
+// context is cancelled, when it returns the context's error
 func (self *Manager) waitRunning(ctx context.Context) error {
-	probe := make(chan changeschema.Change)
-	for {
-		probeCtx, cancel := context.WithCancel(ctx)
-		done, err := self.broadcaster.Watch(probeCtx, changeschema.ChangeFilter{}, probe)
-		cancel()
-		if err == nil {
-			<-done
-			return nil
-		}
+	for !self.broadcaster.Running() {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(time.Millisecond):
 		}
 	}
+	return nil
 }
 
 // setListening sets whether the manager is listening on its channel, and

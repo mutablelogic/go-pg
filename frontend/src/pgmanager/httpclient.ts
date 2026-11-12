@@ -27,9 +27,10 @@ export function getDatabase(client: Client, name: string): Promise<Database> {
     return request<Database>(client, 'GET', `database/${encodeURIComponent(name)}`);
 }
 
-// listRoles returns a page of the roles
-export function listRoles(client: Client, offset: number, limit: number): Promise<List<Role>> {
-    return request<List<Role>>(client, 'GET', 'role', { query: { offset, limit } });
+// listRoles returns a page of the roles: PostgreSQL's own, such as
+// pg_monitor, when predefined is true, or else the others
+export function listRoles(client: Client, predefined: boolean, offset: number, limit: number): Promise<List<Role>> {
+    return request<List<Role>>(client, 'GET', 'role', { query: { predefined, offset, limit } });
 }
 
 // getRole returns a role, by its name

@@ -343,7 +343,7 @@ const (
 			LEFT JOIN
 				pg_stat_user_tables S ON S.relid = C.oid
 			WHERE
-				N.nspname NOT LIKE 'pg_%' AND N.nspname != 'information_schema' AND C.relkind != 't'
+				N.nspname NOT LIKE 'pg\_%' AND N.nspname != 'information_schema' AND C.relkind != 't'
 		) SELECT * FROM objects
 	`
 	objectGet  = objectSelect + `WHERE name = ${'name'} AND schema = ${'schema'}`

@@ -295,13 +295,14 @@ export function statementBody(stmt: Statement): TemplateResult {
 }
 
 // extensionVersion is an extension's version: the version which is
-// installed, with the default, when it's newer, or else the default
+// installed, with the default, when it's another, which mayn't be newer, or
+// else the default
 function extensionVersion(ext: Extension): string {
     if (!ext.installed_version) {
         return ext.default_version ?? '';
     }
     if (ext.default_version && ext.default_version !== ext.installed_version) {
-        return `${ext.installed_version} (${ext.default_version} available)`;
+        return `${ext.installed_version} (default ${ext.default_version})`;
     }
     return ext.installed_version;
 }

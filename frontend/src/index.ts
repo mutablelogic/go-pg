@@ -131,7 +131,16 @@ let extensionDatabase: string | undefined;
 const extensions = new ListController<Extension>({
     pageSize: 20,
     name: 'Extensions',
-    list: (offset, limit) => api.listExtensions(client, extensionDatabase ? { database: extensionDatabase, installed: true } : {}, offset, limit),
+    // Without a database, the extensions are the server's, so only what's
+    // the same in every database is kept, rather than what's installed in
+    // the database pgmanager connects to
+    list: async (offset, limit) => {
+        if (extensionDatabase) {
+            return api.listExtensions(client, { database: extensionDatabase, installed: true }, offset, limit);
+        }
+        const list = await api.listExtensions(client, {}, offset, limit);
+        return { ...list, body: list.body?.map(({ name, default_version, comment }) => ({ name, default_version, comment })) };
+    },
     same: (a, b) => a.name === b.name && a.database === b.database,
     notifications, changes, filter: { table: 'extension' },
 });
@@ -411,15 +420,20 @@ function databaseTiles<T>(name: string, list: ListController<T>, count: (databas
             return;
         }
         counted = items;
+        // Each is counted by itself, as a database can refuse its
+        // connection, and the count of one which can't be counted is blank
         const names = (databases.current.items ?? []).map((db) => db.name);
-        Promise.all([count(), ...names.map((name) => count(name))]).then(([all, ...each]) => {
-            total = all;
+        void Promise.allSettled([count(), ...names.map((name) => count(name))]).then(([all, ...each]) => {
+            const value = (result: PromiseSettledResult<number>) => result.status === 'fulfilled' ? result.value : undefined;
+            total = value(all);
             counts.clear();
-            names.forEach((name, i) => counts.set(name, each[i]));
+            names.forEach((name, i) => {
+                const n = value(each[i]);
+                if (n !== undefined) {
+                    counts.set(name, n);
+                }
+            });
             renderTiles();
-        }).catch(() => {
-            // The counts aren't shown, as the list says why it can't be
-            // loaded
         });
     });
 }

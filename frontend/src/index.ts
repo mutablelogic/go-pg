@@ -358,6 +358,9 @@ async function editRole(role?: Role) {
             },
         ],
     });
+    // The roles table's selection is closed, once the form's open, so a
+    // refresh doesn't show the role again in place of the form
+    roles.close();
 }
 
 // deleteRole deletes a role, once it's confirmed, and closes the panel

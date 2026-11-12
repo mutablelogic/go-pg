@@ -184,7 +184,8 @@ export function roleBody(role: Role, onRole: (name: string) => void, describe: (
             ['Description', role.comment],
             ['Permissions', roleFlags(role).join(', ') || 'none'],
             ['Connection limit', role.conlimit],
-            ['Expires', role.expires ? new Date(role.expires).toLocaleDateString(undefined, { dateStyle: 'medium' }) : undefined],
+            // An expiry is a day, which the form sets at its start, in UTC
+        ['Expires', role.expires ? new Date(role.expires).toLocaleDateString(undefined, { dateStyle: 'medium', timeZone: 'UTC' }) : undefined],
             ['OID', role.oid],
         ])}
         ${role.memberof?.length ? html`

@@ -1,0 +1,35 @@
+{
+    "name": "@mutablelogic/go-pg",
+    "version": "0.0.0",
+    "private": true,
+    "description": "The web UI of go-pg's servers, such as pgmanager, which will also export its components, such as pgqueue's",
+    "license": "Apache-2.0",
+    "type": "module",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/mutablelogic/go-pg.git",
+        "directory": "frontend"
+    },
+    "scripts": {
+        "build": "node build.js",
+        "check": "tsc -p tsconfig.json",
+        "test": "node --test 'test/**/*.test.ts'"
+    },
+    "engines": {
+        "node": ">=22.18"
+    },
+    "dependencies": {
+        "@carbon/icons": "^11.92.0",
+        "@carbon/styles": "^1.119.0",
+        "@carbon/web-components": "^2.67.0",
+        "@ibm/plex-mono": "^2.5.0",
+        "@ibm/plex-sans": "^1.1.0",
+        "@mutablelogic/go-server": "^1.8.2",
+        "lit": "^3.3.3"
+    },
+    "devDependencies": {
+        "@types/node": "^24.19.2",
+        "esbuild": "^0.25.12",
+        "typescript": "^5.9.3"
+    }
+}

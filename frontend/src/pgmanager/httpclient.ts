@@ -2,6 +2,7 @@
 
 import type { Client } from '@mutablelogic/go-server/api';
 import { request } from '@mutablelogic/go-server/api';
+import type { DatabaseRequest } from './databaseform.ts';
 import type { RoleRequest } from './roleform.ts';
 import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './schema.ts';
 
@@ -21,6 +22,22 @@ export async function listAll<T>(page: (offset: number, limit: number) => Promis
 // listDatabases returns a page of the databases
 export function listDatabases(client: Client, offset: number, limit: number): Promise<List<Database>> {
     return request<List<Database>>(client, 'GET', 'database', { query: { offset, limit } });
+}
+
+// createDatabase creates a database, and returns it
+export function createDatabase(client: Client, db: DatabaseRequest): Promise<Database> {
+    return request<Database>(client, 'POST', 'database', { body: db });
+}
+
+// updateDatabase changes a database, by its name, and returns it
+export function updateDatabase(client: Client, name: string, db: DatabaseRequest): Promise<Database> {
+    return request<Database>(client, 'PATCH', `database/${encodeURIComponent(name)}`, { body: db });
+}
+
+// deleteDatabase deletes a database, by its name, and everything in it, and
+// returns it as it was. It fails while it's connected to.
+export function deleteDatabase(client: Client, name: string): Promise<Database> {
+    return request<Database>(client, 'DELETE', `database/${encodeURIComponent(name)}`);
 }
 
 // getDatabase returns a database, by its name

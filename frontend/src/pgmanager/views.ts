@@ -4,6 +4,7 @@
 import { html, type TemplateResult } from 'lit';
 import iconLoader from '@carbon/web-components/es/globals/internal/icon-loader.js';
 import UserIcon from '@carbon/icons/es/user/16.js';
+import TrashIcon from '@carbon/icons/es/trash-can/16.js';
 import type { Column } from '@mutablelogic/go-server/list/view';
 import type { Tile } from '@mutablelogic/go-server/list/tiles';
 import type { Connection, Extension, PgObject, ReplicationSlot, Role, Schema, Setting, Statement, Tablespace } from './schema.ts';
@@ -12,6 +13,7 @@ import type { Connection, Extension, PgObject, ReplicationSlot, Role, Schema, Se
 import '@carbon/web-components/es/components/button/index.js';
 import '@carbon/web-components/es/components/content-switcher/index.js';
 import '@carbon/web-components/es/components/dropdown/index.js';
+import '@carbon/web-components/es/components/icon-button/index.js';
 import '@carbon/web-components/es/components/link/index.js';
 import '@carbon/web-components/es/components/tag/tag.js';
 
@@ -134,6 +136,18 @@ export function objectBody(object: PgObject): TemplateResult {
     ]);
 }
 
+// removeButton is a small button, of a trash can, which removes a row of a
+// table, and says what it removes, when it's hovered, and to assistive
+// technology
+export function removeButton(label: string, onRemove: () => void) {
+    return html`
+        <cds-icon-button kind="ghost" size="sm" align="left" @click=${onRemove}>
+            ${iconLoader(TrashIcon, { slot: 'icon' })}
+            <span slot="tooltip-content">${label}</span>
+        </cds-icon-button>
+    `;
+}
+
 // roleMembers is a table of roles, such as those a role is a member of,
 // with their descriptions, whose names open them, with a button on each,
 // which removes it, when there's onRemove
@@ -154,7 +168,7 @@ export function roleMembers(names: readonly string[], describe: (name: string) =
                         <cds-table-cell>${describe(name) ?? ''}</cds-table-cell>
                         ${onRemove ? html`
                             <cds-table-cell class="remove">
-                                <cds-button kind="ghost" size="sm" @click=${() => onRemove(name)}>Remove</cds-button>
+                                ${removeButton(`Remove ${name}`, () => onRemove(name))}
                             </cds-table-cell>
                         ` : ''}
                     </cds-table-row>

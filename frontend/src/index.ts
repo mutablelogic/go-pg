@@ -34,6 +34,8 @@ import { ListLimits, type Connection, type Database, type Extension, type PgObje
 import * as views from './pgmanager/views.ts';
 import { roleForm, roleFormErrors, roleRequest, type RoleFormErrors } from './pgmanager/roleform.ts';
 import { roleFormView } from './pgmanager/roleformview.ts';
+import { databaseForm, databaseFormErrors, databaseRequest, type DatabaseFormErrors } from './pgmanager/databaseform.ts';
+import { databaseFormView } from './pgmanager/databaseformview.ts';
 
 // Carbon components, and icons
 import '@carbon/web-components/es/components/ui-shell/index.js';
@@ -42,6 +44,8 @@ import DatabaseIcon from '@carbon/icons/es/data--base/32.js';
 import GroupIcon from '@carbon/icons/es/group/32.js';
 import PlugIcon from '@carbon/icons/es/plug/32.js';
 import AddIcon from '@carbon/icons/es/add/16.js';
+import EditIcon from '@carbon/icons/es/edit/16.js';
+import TrashIcon from '@carbon/icons/es/trash-can/16.js';
 import ReplicateIcon from '@carbon/icons/es/replicate/32.js';
 import ResetIcon from '@carbon/icons/es/reset/16.js';
 import SettingsIcon from '@carbon/icons/es/settings/32.js';
@@ -256,9 +260,71 @@ function roleView(role: Role): Omit<Item, 'kind'> {
 
 // editRole shows the form of a role, or a new one, in the panel, which saves
 // it, and shows it, or, when it's cancelled, shows the role again, or closes
+// allRoles returns the name of every role, yours, and then PostgreSQL's
+// own, which can own things, or be granted access to them
+async function allRoles(): Promise<string[]> {
+    const lists = await Promise.all([false, true].map((predefined) => api.listAll((offset, limit) => api.listRoles(client, predefined, offset, limit), ListLimits.role)));
+    return lists.flatMap((list) => (list.body ?? []).map((role) => role.name));
+}
+
+// editDatabase shows the form of a database, or a new one, in the panel,
+// which saves it, and shows its page
+async function editDatabase(db?: Database) {
+    const roleNames = await allRoles();
+    const form = databaseForm(db);
+    let errors: DatabaseFormErrors = {};
+    const view = (): TemplateResult => databaseFormView(form, roleNames, rerender, errors);
+    const rerender = () => {
+        if (panelView) {
+            render(view(), panelView);
+        }
+    };
+    open({
+        kind: 'database-form',
+        title: db ? `Change ${db.name}` : 'Create a database',
+        subtitle: 'Database',
+        body: view(),
+        actions: [
+            { label: 'Cancel', kind: 'secondary' },
+            {
+                label: db ? 'Save' : 'Create',
+                kind: 'primary',
+                close: false,
+                run: async () => {
+                    errors = databaseFormErrors(form);
+                    rerender();
+                    if (Object.keys(errors).length) {
+                        return;
+                    }
+                    const saved = db ? await api.updateDatabase(client, db.name, databaseRequest(form, db)) : await api.createDatabase(client, databaseRequest(form));
+                    await databases.refresh();
+                    panel.close();
+                    location.hash = `#database/${encodeURIComponent(saved.name)}`;
+                },
+            },
+        ],
+    });
+}
+
+// deleteDatabase deletes a database, and everything in it, once its name is
+// typed, which is asked for, as it can't be undone, and shows the first
+async function deleteDatabase(db: Database) {
+    const typed = prompt(`Delete the database ${db.name}, and everything in it? This can't be undone. Type its name to delete it.`);
+    if (typed === null) {
+        return;
+    }
+    if (typed.trim() !== db.name) {
+        notifications.push({ kind: 'warning', title: `The database ${db.name} wasn't deleted`, subtitle: "The name you typed isn't its name" });
+        return;
+    }
+    await api.deleteDatabase(client, db.name);
+    notifications.push({ kind: 'success', title: `The database ${db.name} was deleted` });
+    await databases.refresh();
+    location.hash = '#database';
+}
+
 async function editRole(role?: Role) {
-    const names = (await Promise.all([false, true].map((predefined) => api.listAll((offset, limit) => api.listRoles(client, predefined, offset, limit), ListLimits.role))))
-        .flatMap((list) => (list.body ?? []).map((r) => r.name));
+    const names = await allRoles();
     const form = roleForm(role);
     let errors: RoleFormErrors = {};
     const view = (): TemplateResult => roleFormView(form, names, !role, rerender, errors, describeRole, openRole);
@@ -372,6 +438,13 @@ function showDatabase(name: string) {
     if (header) {
         header.heading = name;
         header.subtitle = db ? [db.comment, db.owner && `Owned by ${db.owner}`, views.formatBytes(db.bytes)].filter(Boolean).join(' · ') : '';
+        header.actions = [
+            ...(db ? [
+                { label: 'Delete', kind: 'danger' as const, icon: TrashIcon, run: () => void deleteDatabase(db).catch((error) => notifications.error(`The database ${db.name} couldn't be deleted`, error)) },
+                { label: 'Change', kind: 'secondary' as const, icon: EditIcon, run: () => void editDatabase(db).catch((error) => notifications.error("The form couldn't be opened", error)) },
+            ] : []),
+            { label: 'Create a database', icon: AddIcon, run: () => void editDatabase().catch((error) => notifications.error("The form couldn't be opened", error)) },
+        ];
     }
     if (filter?.database === name) {
         return;

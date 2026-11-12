@@ -39,9 +39,9 @@ type QueueListRequest struct {
 type QueueWithStatus struct {
 	Queue
 	New     uint64 `json:"new" help:"Tasks which are ready to run"`
+	Delayed uint64 `json:"delayed" help:"New tasks which are waiting to run later"`
 	Running uint64 `json:"running" help:"Tasks which are running"`
-	Retry   uint64 `json:"retry" help:"Tasks which are waiting to be retried"`
-	Expired uint64 `json:"expired" help:"Tasks which ran for longer than the queue's ttl"`
+	Retry   uint64 `json:"retry" help:"Tasks which failed, and are waiting to be retried"`
 	Failed  uint64 `json:"failed" help:"Tasks which failed with no retries left"`
 	Done    uint64 `json:"done" help:"Tasks which are done"`
 }
@@ -125,7 +125,7 @@ func (q Queue) Cell(col int) tui.CellText {
 }
 
 func (q QueueWithStatus) Header() []string {
-	return append(q.Queue.Header(), "New", "Running", "Retry", "Expired", "Failed", "Done")
+	return append(q.Queue.Header(), "New", "Delayed", "Running", "Retry", "Failed", "Done")
 }
 
 func (q QueueWithStatus) Width(col int) int {
@@ -133,7 +133,7 @@ func (q QueueWithStatus) Width(col int) int {
 }
 
 func (q QueueWithStatus) Cell(col int) tui.CellText {
-	counts := []uint64{q.New, q.Running, q.Retry, q.Expired, q.Failed, q.Done}
+	counts := []uint64{q.New, q.Delayed, q.Running, q.Retry, q.Failed, q.Done}
 	if n := len(q.Queue.Header()); col < n {
 		return q.Queue.Cell(col)
 	} else if col-n < len(counts) {
@@ -182,7 +182,7 @@ func (q *Queue) Scan(row pg.Row) error {
 func (q *QueueWithStatus) Scan(row pg.Row) error {
 	return row.Scan(
 		&q.Name, &q.TTL, &q.Retries, &q.RetryDelay, &q.Concurrency, &q.Dedupe,
-		&q.New, &q.Running, &q.Retry, &q.Expired, &q.Failed, &q.Done,
+		&q.New, &q.Delayed, &q.Running, &q.Retry, &q.Failed, &q.Done,
 	)
 }
 

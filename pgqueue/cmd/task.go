@@ -24,7 +24,7 @@ type TaskCommands struct {
 type TaskListCmd struct {
 	pg.OffsetLimit `embed:""`
 	Queue          []string `name:"queue" help:"Only list the tasks in these queues." optional:""`
-	Status         string   `name:"status" help:"Only list the tasks with this status." enum:"any,new,running,retry,expired,failed,done" default:"any"`
+	Status         string   `name:"status" help:"Only list the tasks with this status." enum:"any,new,delayed,running,retry,failed,done" default:"any"`
 }
 
 type TaskGetCmd struct {

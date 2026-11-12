@@ -58,7 +58,7 @@ type TaskWithStatus struct {
 type TaskListRequest struct {
 	pg.OffsetLimit
 	Queue  []string `json:"queue,omitempty" help:"Returns only the tasks in these queues, or in any queue" optional:""`
-	Status string   `json:"status,omitempty" help:"Returns only the tasks with this status" enum:"new,running,retry,expired,failed,done" optional:""`
+	Status string   `json:"status,omitempty" help:"Returns only the tasks with this status" enum:"new,delayed,running,retry,failed,done" optional:""`
 }
 
 type TaskList struct {
@@ -352,7 +352,7 @@ func (l TaskListRequest) status() (string, error) {
 	switch status := strings.ToLower(strings.TrimSpace(l.Status)); status {
 	case "":
 		return "", nil
-	case "new", "running", "retry", "expired", "failed", "done":
+	case "new", "delayed", "running", "retry", "failed", "done":
 		return status, nil
 	default:
 		return "", httpresponse.ErrBadRequest.Withf("invalid task status: %q", l.Status)

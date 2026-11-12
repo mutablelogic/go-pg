@@ -27,13 +27,26 @@ ALTER TABLE ${"schema"}."queue"
     ALTER COLUMN "ttl" SET NOT NULL;
 
 -- pgqueue.task_status_type
+-- A task's status. The type from before, with an expired status, is dropped,
+-- with the status function and view which use it, which are created again
+-- below, as an enum's values can't be dropped.
+DO $$ BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_enum E
+        JOIN pg_type T ON T.oid = E.enumtypid
+        JOIN pg_namespace N ON N.oid = T.typnamespace
+        WHERE N.nspname = ${'schema'} AND T.typname = 'task_status' AND E.enumlabel = 'expired'
+    ) THEN
+        DROP TYPE ${"schema"}."task_status" CASCADE;
+    END IF;
+END $$;
 DO $$ BEGIN
     CREATE TYPE ${"schema"}."task_status" AS ENUM(
         'new',      -- ready to run
-        'running',  -- currently locked by a worker
-        'retry',    -- waiting for retry delay before next attempt
-        'expired',  -- dies_at exceeded before completion
-        'failed',   -- exhausted all retries
+        'delayed',  -- new, and waiting to run later
+        'running',  -- locked by a worker
+        'retry',    -- failed, and waiting to be retried
+        'failed',   -- failed with no retries left
         'done'      -- completed successfully
     );
 EXCEPTION
@@ -77,6 +90,12 @@ ALTER TABLE ${"schema"}."task"
 ALTER TABLE ${"schema"}."task"
     ADD COLUMN IF NOT EXISTS "priority" SMALLINT NOT NULL DEFAULT 0 CHECK ("priority" >= 0);
 
+-- A task which failed, from before, has no finish time, which is when it was
+-- last delayed, which is when it failed
+UPDATE ${"schema"}."task"
+SET "finished_at" = COALESCE("delayed_at", "created_at")
+WHERE "finished_at" IS NULL AND "started_at" IS NULL AND "retries" = 0 AND "initial_retries" > 0;
+
 -- pgqueue.queue_status_index
 -- Covers 'new' and 'retry' states
 CREATE INDEX IF NOT EXISTS "task_queue_status_idx"
@@ -88,10 +107,12 @@ CREATE INDEX IF NOT EXISTS "task_queue_status_idx"
 -- pgqueue.task_queue_index
 -- Covers counting a queue's tasks with each status, with the columns of a
 -- task's status, so the tasks aren't read. It's also used to delete a queue's
--- tasks when the queue is deleted.
-CREATE INDEX IF NOT EXISTS "task_queue_idx"
+-- tasks when the queue is deleted. The index from before, which had a
+-- task's deadline, rather than its delay, is dropped.
+DROP INDEX IF EXISTS ${"schema"}."task_queue_idx";
+CREATE INDEX IF NOT EXISTS "task_queue_status_cols_idx"
     ON ${"schema"}."task" ("queue")
-    INCLUDE ("started_at", "finished_at", "dies_at", "retries", "initial_retries");
+    INCLUDE ("delayed_at", "started_at", "finished_at", "retries", "initial_retries");
 
 -- pgqueue.task_hash_index
 -- Covers finding a pending task which is the same as an inserted task
@@ -122,22 +143,26 @@ CREATE INDEX IF NOT EXISTS "idx_ticker_next"
     WHERE "interval" IS NOT NULL;
 
 -- pgqueue.queue_task_status_func
+-- A task's status. A task which has finished is done, or failed when it has
+-- no retries left. A task which has started is running, until it's released,
+-- or it stalls, and is failed when another task is locked. A task which
+-- hasn't started has failed when it has no retries, is waiting to be retried
+-- when it's been tried, or else is new, or delayed until later.
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_task_status(
-    dies_at TIMESTAMPTZ,
+    delayed_at TIMESTAMPTZ,
     started_at TIMESTAMPTZ,
     finished_at TIMESTAMPTZ,
     retries INTEGER,
     initial_retries INTEGER
 ) RETURNS ${"schema"}.task_status AS $$
     SELECT CASE
-        WHEN started_at IS NOT NULL AND finished_at IS NOT NULL                THEN 'done'::${"schema"}.task_status
-        WHEN started_at IS NOT NULL AND finished_at IS NULL AND dies_at IS NOT NULL AND dies_at < NOW() THEN 'expired'::${"schema"}.task_status
-        WHEN started_at IS NULL AND finished_at IS NULL AND retries = 0        THEN 'failed'::${"schema"}.task_status
-        WHEN started_at IS NULL AND finished_at IS NULL AND retries = initial_retries
-                                                                            THEN 'new'::${"schema"}.task_status
-        WHEN started_at IS NULL AND finished_at IS NULL                        THEN 'retry'::${"schema"}.task_status
-        WHEN started_at IS NOT NULL AND finished_at IS NULL                    THEN 'running'::${"schema"}.task_status
-        ELSE NULL
+        WHEN finished_at IS NOT NULL AND retries = 0            THEN 'failed'::${"schema"}.task_status
+        WHEN finished_at IS NOT NULL                            THEN 'done'::${"schema"}.task_status
+        WHEN started_at IS NOT NULL                             THEN 'running'::${"schema"}.task_status
+        WHEN retries = 0                                        THEN 'failed'::${"schema"}.task_status
+        WHEN retries < initial_retries                          THEN 'retry'::${"schema"}.task_status
+        WHEN delayed_at IS NOT NULL AND delayed_at > NOW()      THEN 'delayed'::${"schema"}.task_status
+        ELSE 'new'::${"schema"}.task_status
     END AS "status";
 $$ LANGUAGE SQL STABLE;
 
@@ -324,80 +349,6 @@ CREATE OR REPLACE FUNCTION ${"schema"}.queue_delete(name TEXT) RETURNS TABLE (
         D."queue", D."ttl", D."retries", D."retry_delay", D."concurrency", D."dedupe";
 $$ LANGUAGE SQL;
 
--- pgqueue.queue_lock_func
--- Locks a task for the worker, from the queues, or any queue, and returns its
--- id. The task with the highest priority, which is the lowest, is locked
--- first. Queues take turns between tasks with the same priority: the queue
--- which a task was locked from longest ago, or never, goes first, and then
--- its oldest task. The queue's turn is taken when the task is locked, after
--- the turns taken before, as the task is chosen once the lock on the turns
--- is held, with what's committed then.
-CREATE OR REPLACE FUNCTION ${"schema"}.queue_lock(q TEXT[], w TEXT) RETURNS BIGINT AS $$
-SELECT ${"schema"}.queue_turn();
-
-WITH selected AS (
-    SELECT
-        t."id",
-        t."queue",
-        queue."ttl"
-    FROM
-        ${"schema"}."task" t
-    JOIN
-        ${"schema"}."queue" queue
-    ON
-        queue."queue" = t."queue"
-    LEFT JOIN (
-        SELECT
-            "queue",
-            COUNT(*) AS "retained"
-        FROM
-            ${"schema"}."task"
-        WHERE
-            "started_at" IS NOT NULL
-        AND
-            "finished_at" IS NULL
-        AND
-            ("dies_at" IS NULL OR "dies_at" >= NOW())
-        GROUP BY
-            "queue"
-    ) retained
-    ON
-        retained."queue" = t."queue"
-    WHERE
-        (CARDINALITY(q) = 0 OR t."queue" = ANY(q))
-    AND
-        (
-            (t."started_at" IS NULL AND t."finished_at" IS NULL)
-            OR
-            (t."started_at" IS NOT NULL AND t."finished_at" IS NULL AND t."dies_at" IS NOT NULL AND t."dies_at" < NOW())
-        )
-    AND
-        (t."delayed_at" IS NULL OR t."delayed_at" <= NOW())
-    AND
-        t."retries" > 0
-    AND
-        (queue."concurrency" = 0 OR COALESCE(retained."retained", 0) < queue."concurrency")
-    ORDER BY
-        t."priority",
-        queue."locked_at" NULLS FIRST,
-        t."created_at"
-    FOR UPDATE OF t SKIP LOCKED LIMIT 1
-), turn AS (
-    UPDATE ${"schema"}."queue" SET
-        "locked_at" = CLOCK_TIMESTAMP()
-    FROM selected
-    WHERE ${"schema"}."queue"."queue" = selected."queue"
-)
-UPDATE ${"schema"}."task" SET
-    "started_at" = NOW(),
-    "worker" = w,
-    "result" = 'null',
-    "dies_at" = NOW() + selected."ttl"
-FROM selected
-WHERE ${"schema"}."task"."id" = selected."id"
-RETURNING ${"schema"}."task"."id";
-$$ LANGUAGE SQL;
-
 -- pgqueue.queue_unlock_func
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_unlock(tid BIGINT, r JSONB) RETURNS BIGINT AS $$
     UPDATE ${"schema"}."task" SET
@@ -429,16 +380,22 @@ CREATE OR REPLACE FUNCTION ${"schema"}.queue_backoff(tid BIGINT) RETURNS TIMESTA
 $$ LANGUAGE SQL STABLE;
 
 -- pgqueue.queue_fail_func
+-- Fails a running task, which is retried after a backoff, or, with no retries
+-- left, has failed, and finished, when its retention starts
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_fail(tid BIGINT, r JSONB) RETURNS BIGINT AS $$
     UPDATE ${"schema"}."task" SET
         "retries" = "retries" - 1,
         "result" = r,
-        "started_at" = NULL,
-        "finished_at" = NULL,
-        "delayed_at" = CASE
-            -- The last failure is when the task failed, which is when its
-            -- retention starts, rather than a backoff
+        "started_at" = CASE
+            WHEN "retries" = 1 THEN "started_at"
+            ELSE NULL
+        END,
+        "finished_at" = CASE
             WHEN "retries" = 1 THEN NOW()
+            ELSE NULL
+        END,
+        "delayed_at" = CASE
+            WHEN "retries" = 1 THEN "delayed_at"
             ELSE ${"schema"}.queue_backoff(tid)
         END,
         "dies_at" = NULL
@@ -452,11 +409,106 @@ CREATE OR REPLACE FUNCTION ${"schema"}.queue_fail(tid BIGINT, r JSONB) RETURNS B
         "id";
 $$ LANGUAGE SQL;
 
+-- pgqueue.queue_lock_func
+-- Locks a task for the worker, from the queues, or any queue, and returns its
+-- id. The task with the highest priority, which is the lowest, is locked
+-- first. Queues take turns between tasks with the same priority: the queue
+-- which a task was locked from longest ago, or never, goes first, and then
+-- its oldest task. The queue's turn is taken when the task is locked, after
+-- the turns taken before, as the task is chosen once the lock on the turns
+-- is held, with what's committed then.
+--
+-- First, the tasks of the queues which have stalled are failed, which are
+-- running, and weren't released by their deadlines, and the grace period
+-- which a worker gives a task to stop after its deadline, which is a minute,
+-- doubled, such as when their workers stopped. A stalled task is retried, or
+-- fails when it has no retries left, as when it fails. At most 10 are failed
+-- each time, those which stalled first, so a backlog of stalled tasks, such
+-- as after an outage, is failed over the next locks, in short transactions.
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_lock(q TEXT[], w TEXT) RETURNS BIGINT AS $$
+SELECT ${"schema"}.queue_turn();
+
+SELECT
+    ${"schema"}.queue_fail(stalled."id", to_jsonb('task stalled: it was not released by its deadline'::TEXT))
+FROM (
+    SELECT
+        "id"
+    FROM
+        ${"schema"}."task"
+    WHERE
+        (CARDINALITY(q) = 0 OR "queue" = ANY(q))
+    AND
+        "started_at" IS NOT NULL AND "finished_at" IS NULL
+    AND
+        "dies_at" < NOW() - INTERVAL '2 minutes'
+    ORDER BY
+        "dies_at"
+    LIMIT 10
+    FOR UPDATE SKIP LOCKED
+) stalled;
+
+WITH selected AS (
+    SELECT
+        t."id",
+        t."queue",
+        queue."ttl"
+    FROM
+        ${"schema"}."task" t
+    JOIN
+        ${"schema"}."queue" queue
+    ON
+        queue."queue" = t."queue"
+    LEFT JOIN (
+        SELECT
+            "queue",
+            COUNT(*) AS "retained"
+        FROM
+            ${"schema"}."task"
+        WHERE
+            "started_at" IS NOT NULL
+        AND
+            "finished_at" IS NULL
+        GROUP BY
+            "queue"
+    ) retained
+    ON
+        retained."queue" = t."queue"
+    WHERE
+        (CARDINALITY(q) = 0 OR t."queue" = ANY(q))
+    AND
+        t."started_at" IS NULL AND t."finished_at" IS NULL
+    AND
+        (t."delayed_at" IS NULL OR t."delayed_at" <= NOW())
+    AND
+        t."retries" > 0
+    AND
+        (queue."concurrency" = 0 OR COALESCE(retained."retained", 0) < queue."concurrency")
+    ORDER BY
+        t."priority",
+        queue."locked_at" NULLS FIRST,
+        t."created_at"
+    FOR UPDATE OF t SKIP LOCKED LIMIT 1
+), turn AS (
+    UPDATE ${"schema"}."queue" SET
+        "locked_at" = CLOCK_TIMESTAMP()
+    FROM selected
+    WHERE ${"schema"}."queue"."queue" = selected."queue"
+)
+UPDATE ${"schema"}."task" SET
+    "started_at" = NOW(),
+    "worker" = w,
+    "result" = 'null',
+    "dies_at" = NOW() + selected."ttl"
+FROM selected
+WHERE ${"schema"}."task"."id" = selected."id"
+RETURNING ${"schema"}."task"."id";
+$$ LANGUAGE SQL;
+
 -- pgqueue.queue_clean_func
--- Deletes up to 100 of the queue's finished tasks, which are done, failed or
--- expired, and finished longer ago than the retention period, oldest first,
--- and returns them. A task's finish is when it was done, or expired, or else
--- when it was last delayed, which is when it failed, or created.
+-- Deletes up to 100 of the queue's finished tasks, which are done or failed,
+-- and finished longer ago than the retention period, oldest first, and
+-- returns them. A task's finish is when it was done, or failed, or else, for
+-- a task which never had retries, when it was delayed, or created.
 -- The function without a retention period, from before, is dropped.
 DROP FUNCTION IF EXISTS ${"schema"}."queue_clean"(TEXT);
 CREATE OR REPLACE FUNCTION ${"schema"}."queue_clean"(q TEXT, retention INTERVAL) RETURNS TABLE (
@@ -479,9 +531,9 @@ CREATE OR REPLACE FUNCTION ${"schema"}."queue_clean"(q TEXT, retention INTERVAL)
             WITH sq AS (
                 SELECT
                     "id",
-                    COALESCE("finished_at", "dies_at", "delayed_at", "created_at") AS "finished",
+                    COALESCE("finished_at", "delayed_at", "created_at") AS "finished",
                     ${"schema"}.queue_task_status(
-                        "dies_at",
+                        "delayed_at",
                         "started_at",
                         "finished_at",
                         "retries",
@@ -496,7 +548,7 @@ CREATE OR REPLACE FUNCTION ${"schema"}."queue_clean"(q TEXT, retention INTERVAL)
             FROM
                 sq
             WHERE
-                "status" IN ('expired'::${"schema"}.task_status, 'done'::${"schema"}.task_status, 'failed'::${"schema"}.task_status)
+                "status" IN ('done'::${"schema"}.task_status, 'failed'::${"schema"}.task_status)
             AND
                 "finished" < NOW() - retention
             ORDER BY
@@ -510,13 +562,13 @@ $$ LANGUAGE SQL;
 
 -- pgqueue.queue_status_view
 -- The number of tasks in each queue with each status, with a row for each
--- queue. The view from before, with a row for each queue and status, is
--- dropped, as a view's columns can't be replaced.
+-- queue. The views from before, with a row for each queue and status, or
+-- with expired tasks, are dropped, as a view's columns can't be replaced.
 DO $$
 BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_schema = ${'schema'} AND table_name = 'queue_status' AND column_name = 'status'
+        WHERE table_schema = ${'schema'} AND table_name = 'queue_status' AND column_name IN ('status', 'expired')
     ) THEN
         DROP VIEW ${"schema"}."queue_status";
     END IF;
@@ -525,9 +577,9 @@ CREATE OR REPLACE VIEW ${"schema"}."queue_status" AS
 SELECT
     Q."queue",
     COUNT(*) FILTER (WHERE T."status" = 'new')     AS "new",
+    COUNT(*) FILTER (WHERE T."status" = 'delayed') AS "delayed",
     COUNT(*) FILTER (WHERE T."status" = 'running') AS "running",
     COUNT(*) FILTER (WHERE T."status" = 'retry')   AS "retry",
-    COUNT(*) FILTER (WHERE T."status" = 'expired') AS "expired",
     COUNT(*) FILTER (WHERE T."status" = 'failed')  AS "failed",
     COUNT(*) FILTER (WHERE T."status" = 'done')    AS "done"
 FROM
@@ -537,7 +589,7 @@ LEFT JOIN
         SELECT
             "queue",
             ${"schema"}.queue_task_status(
-                "dies_at",
+                "delayed_at",
                 "started_at",
                 "finished_at",
                 "retries",

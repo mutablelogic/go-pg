@@ -6,11 +6,11 @@ Queues hold tasks, which are run by the workers with a callback for the queue. A
 
 ### GET /queue
 
-List queues in name order, a page at a time, with the number of each queue's tasks with each status: `new`, `running`, `retry`, `expired`, `failed` and `done`. A page has at most `limit` queues, which defaults to and is capped at 100, starting at `offset`, and `count` is the total number of queues. Returns 400 if the query is invalid.
+List queues in name order, a page at a time, with the number of each queue's tasks with each status: `new`, `delayed`, `running`, `retry`, `failed` and `done`. A page has at most `limit` queues, which defaults to and is capped at 100, starting at `offset`, and `count` is the total number of queues. Returns 400 if the query is invalid.
 
 ### GET /queue/{name}
 
-Get a queue by name, with the number of its tasks with each status: `new`, `running`, `retry`, `expired`, `failed` and `done`. Returns 400 if the name is invalid, or 404 if there's no queue with the name.
+Get a queue by name, with the number of its tasks with each status: `new`, `delayed`, `running`, `retry`, `failed` and `done`. Returns 400 if the name is invalid, or 404 if there's no queue with the name.
 
 ## Ticker Operations
 
@@ -30,7 +30,7 @@ Tasks are run by the workers with a callback for their queue, at most once at a 
 
 ### GET /task
 
-List tasks, a page at a time, by priority, highest first, where 0 is the highest, and then oldest first. The `queue` parameter, which can be given more than once, returns only the tasks in those queues, and the `status` parameter returns only the tasks with that status, which is `new`, `running`, `retry`, `expired`, `failed` or `done`, or any status without it. A page has at most `limit` tasks, which defaults to and is capped at 100, starting at `offset`, and `count` is the total number of tasks matching. Each task has its `queue`, `payload`, `result`, `status`, `priority`, the `worker` which retained it, and when it was created, delayed until, started, and finished, and when it expires. Returns 400 if the query is invalid, such as an invalid queue name, or an unknown status.
+List tasks, a page at a time, by priority, highest first, where 0 is the highest, and then oldest first. The `queue` parameter, which can be given more than once, returns only the tasks in those queues, and the `status` parameter returns only the tasks with that status, which is `new`, `delayed`, `running`, `retry`, `failed` or `done`, or any status without it. A page has at most `limit` tasks, which defaults to and is capped at 100, starting at `offset`, and `count` is the total number of tasks matching. Each task has its `queue`, `payload`, `result`, `status`, `priority`, the `worker` which retained it, and when it was created, delayed until, started, and finished, and when it expires. Returns 400 if the query is invalid, such as an invalid queue name, or an unknown status.
 
 ### GET /task/{id}
 

@@ -33,9 +33,9 @@ func (self *Manager) registerMetrics() error {
 		for _, queue := range queues {
 			for status, count := range map[string]uint64{
 				"new":     queue.New,
+				"delayed": queue.Delayed,
 				"running": queue.Running,
 				"retry":   queue.Retry,
-				"expired": queue.Expired,
 				"failed":  queue.Failed,
 				"done":    queue.Done,
 			} {

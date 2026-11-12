@@ -120,3 +120,17 @@ func Test_Opts_009(t *testing.T) {
 		assert.Equal("dbname=user host=localhost password=original pool_max_conns=10 port=5432 user=user", o.Encode())
 	}
 }
+
+func Test_Opts_010(t *testing.T) {
+	assert := assert.New(t)
+
+	// An application name, which the URL's replaces, when it has one
+	o, err := apply(WithApplicationName("app"), WithURL("postgres://localhost/db"))
+	if assert.NoError(err) {
+		assert.Equal("app", o.Get("application_name"))
+	}
+	o, err = apply(WithApplicationName("app"), WithURL("postgres://localhost/db?application_name=other"))
+	if assert.NoError(err) {
+		assert.Equal([]string{"other"}, o.Values["application_name"])
+	}
+}

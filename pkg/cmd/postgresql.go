@@ -21,11 +21,14 @@ type PostgresFlags struct {
 // PUBLIC METHODS
 
 // Connect to the database and return a connection pool, or nil if no URL is set.
+// Its connections' application name, which pg_stat_activity shows, is the
+// command's name, unless the URL has an application_name.
 func (cmd *PostgresFlags) Connect(ctx server.Cmd) (pg.PoolConn, error) {
 	if cmd.Url == "" {
 		return nil, nil
 	}
 	opts := []pg.Opt{
+		pg.WithApplicationName(ctx.Name()),
 		pg.WithURL(cmd.Url),
 		pg.WithTracer(ctx.Tracer()),
 	}

@@ -67,7 +67,8 @@ func apply(opts ...Opt) (*opt, error) {
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// WithURL sets connection parameters from a PostgreSQL URL.
+// WithURL sets connection parameters from a PostgreSQL URL. Its query's
+// parameters, such as application_name, replace those set before it.
 func WithURL(value string) Opt {
 	return func(o *opt) error {
 		url, err := parseUrl(value)
@@ -83,11 +84,8 @@ func WithURL(value string) Opt {
 		if password, ok := url.User.Password(); ok {
 			o.Values.Set("password", password)
 		}
-		q := url.Query()
-		for key, values := range q {
-			for _, v := range values {
-				o.Values.Add(key, v)
-			}
+		for key, values := range url.Query() {
+			o.Values[key] = values
 		}
 		return nil
 	}

@@ -390,7 +390,7 @@ function databaseTiles<T>(name: string, list: ListController<T>, count: (databas
     const text = (n?: number) => n?.toLocaleString();
     const renderTiles = () => {
         tiles.all = { value: '', label: allLabel, text: text(total) };
-        tiles.tile = (db) => ({ value: db.name, label: db.name, badge: db.owner, text: text(counts.get(db.name)) });
+        tiles.tile = (db) => ({ value: db.name, label: db.name, ...views.ownerBadge(db.owner), text: text(counts.get(db.name)) });
         tiles.selected = selected;
     };
     tiles.controller = databases;

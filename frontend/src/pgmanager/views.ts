@@ -2,6 +2,8 @@
 // bodies of the panels which show one
 
 import { html, type TemplateResult } from 'lit';
+import iconLoader from '@carbon/web-components/es/globals/internal/icon-loader.js';
+import UserIcon from '@carbon/icons/es/user/16.js';
 import type { Column } from '@mutablelogic/go-server/list/view';
 import type { Tile } from '@mutablelogic/go-server/list/tiles';
 import type { Connection, Extension, PgObject, ReplicationSlot, Role, Schema, Setting, Statement, Tablespace } from './schema.ts';
@@ -34,9 +36,15 @@ function description(comment?: string) {
     return comment ? html`<span style="display: block; max-width: 20rem; overflow: hidden; text-overflow: ellipsis" title=${comment}>${comment}</span>` : '';
 }
 
+// ownerBadge is a tile's badge of its owner, with a person, which says it's
+// the owner, when it's hovered
+export function ownerBadge(owner?: string): Pick<Tile, 'badge' | 'badgeIcon' | 'badgeTitle'> {
+    return owner ? { badge: owner, badgeIcon: iconLoader(UserIcon), badgeTitle: 'Owner' } : {};
+}
+
 // schemaTile is a schema's tile, with its owner, and its size
 export function schemaTile(schema: Schema): Tile {
-    return { value: schema.schema, label: schema.schema, badge: schema.owner, text: formatBytes(schema.bytes), title: schema.comment ?? `${schema.schema}, owned by ${schema.owner ?? 'nobody'}` };
+    return { value: schema.schema, label: schema.schema, ...ownerBadge(schema.owner), text: formatBytes(schema.bytes), title: schema.comment ?? `${schema.schema}, owned by ${schema.owner ?? 'nobody'}` };
 }
 
 // The types of objects which can be chosen, after all of them, as some,

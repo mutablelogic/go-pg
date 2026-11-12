@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS ${"schema"}."task" (
     "dies_at"           TIMESTAMPTZ,
     "retries"           INTEGER NOT NULL CHECK ("retries" >= 0),
     "initial_retries"   INTEGER NOT NULL CHECK ("initial_retries" >= 0),
+    "priority"          SMALLINT NOT NULL DEFAULT 0 CHECK ("priority" >= 0), -- higher runs first, 0 = normal
     "hash"              BYTEA GENERATED ALWAYS AS (${"schema"}.task_hash("queue", "payload")) STORED, -- hash of the queue and payload, to find duplicate tasks
     PRIMARY KEY ("id"),
     FOREIGN KEY ("queue") REFERENCES ${"schema"}."queue" ("queue") ON DELETE CASCADE
@@ -66,6 +67,11 @@ CREATE TABLE IF NOT EXISTS ${"schema"}."task" (
 
 ALTER TABLE ${"schema"}."task"
     ADD COLUMN IF NOT EXISTS "hash" BYTEA GENERATED ALWAYS AS (${"schema"}.task_hash("queue", "payload")) STORED;
+
+-- The priority of tasks from before is normal. A constant default doesn't
+-- rewrite the task table's partitions.
+ALTER TABLE ${"schema"}."task"
+    ADD COLUMN IF NOT EXISTS "priority" SMALLINT NOT NULL DEFAULT 0 CHECK ("priority" >= 0);
 
 -- pgqueue.queue_status_index
 -- Covers 'new' and 'retry' states

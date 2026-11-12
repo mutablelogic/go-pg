@@ -2,6 +2,8 @@ package pgqueue_test
 
 import (
 	"context"
+	"crypto/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,6 +49,32 @@ func TestNew(t *testing.T) {
 		cleanup, err := isolated.GetTicker(ctx, schema.DefaultCleanupTickerName)
 		require.NoError(t, err)
 		assert.Equal(t, schema.DefaultCleanupPeriod, *cleanup.Interval)
+	})
+
+	t.Run("TaskPriority", func(t *testing.T) {
+		// A task table from before has no priority, and a manager adds it,
+		// with a normal priority for the tasks, which can't be negative
+		name := "test_" + strings.ToLower(rand.Text())
+		_, err := pgqueue.New(ctx, manager.PoolConn, pgqueue.WithSchema(name))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			assert.NoError(t, pg.SchemaDrop(context.Background(), manager.PoolConn, name))
+		})
+		conn := manager.PoolConn.With("schema", name)
+		require.NoError(t, conn.Exec(ctx, `INSERT INTO ${"schema"}."queue" ("queue") VALUES ('priority')`))
+		require.NoError(t, conn.Exec(ctx, `SELECT ${"schema"}.queue_insert('priority', '{}', NULL)`))
+		require.NoError(t, conn.Exec(ctx, `ALTER TABLE ${"schema"}."task" DROP COLUMN "priority"`))
+
+		// Create the manager again, on the schema from before
+		_, err = pgqueue.New(ctx, manager.PoolConn, pgqueue.WithSchema(name))
+		require.NoError(t, err)
+		require.NoError(t, conn.Exec(ctx, `DO $$ BEGIN
+			IF EXISTS (SELECT 1 FROM ${"schema"}."task" WHERE "priority" <> 0) OR NOT EXISTS (SELECT 1 FROM ${"schema"}."task") THEN
+				RAISE EXCEPTION 'tasks from before have no normal priority';
+			END IF;
+		END $$`))
+		assert.Error(t, conn.Exec(ctx, `UPDATE ${"schema"}."task" SET "priority" = -1`))
+		assert.NoError(t, conn.Exec(ctx, `UPDATE ${"schema"}."task" SET "priority" = 10`))
 	})
 
 	t.Run("NoPool", func(t *testing.T) {

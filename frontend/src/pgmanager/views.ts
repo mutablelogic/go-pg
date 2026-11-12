@@ -134,15 +134,50 @@ export function objectBody(object: PgObject): TemplateResult {
     ]);
 }
 
-export function roleBody(role: Role, onRole: (name: string) => void): TemplateResult {
-    return fields([
-        ['Description', role.comment],
-        ['Permissions', roleFlags(role).join(', ') || 'none'],
-        ['Member of', role.memberof?.length ? roleLinks(role.memberof, onRole) : undefined],
-        ['Connection limit', role.conlimit],
-        ['Expires', role.expires ? new Date(role.expires).toLocaleDateString(undefined, { dateStyle: 'medium' }) : undefined],
-        ['OID', role.oid],
-    ]);
+// roleMembers is a table of roles, such as those a role is a member of,
+// with their descriptions, whose names open them, with a button on each,
+// which removes it, when there's onRemove
+export function roleMembers(names: readonly string[], describe: (name: string) => string | undefined, onRole: (name: string) => void, onRemove?: (name: string) => void): TemplateResult {
+    return html`
+        <cds-table size="sm" class="members">
+            <cds-table-head>
+                <cds-table-header-row>
+                    <cds-table-header-cell>Role</cds-table-header-cell>
+                    <cds-table-header-cell>Description</cds-table-header-cell>
+                    ${onRemove ? html`<cds-table-header-cell><span class="visually-hidden">Remove</span></cds-table-header-cell>` : ''}
+                </cds-table-header-row>
+            </cds-table-head>
+            <cds-table-body>
+                ${names.map((name) => html`
+                    <cds-table-row>
+                        <cds-table-cell>${roleLinks([name], onRole)}</cds-table-cell>
+                        <cds-table-cell>${describe(name) ?? ''}</cds-table-cell>
+                        ${onRemove ? html`
+                            <cds-table-cell class="remove">
+                                <cds-button kind="ghost" size="sm" @click=${() => onRemove(name)}>Remove</cds-button>
+                            </cds-table-cell>
+                        ` : ''}
+                    </cds-table-row>
+                `)}
+            </cds-table-body>
+        </cds-table>
+    `;
+}
+
+export function roleBody(role: Role, onRole: (name: string) => void, describe: (name: string) => string | undefined = () => undefined): TemplateResult {
+    return html`
+        ${fields([
+            ['Description', role.comment],
+            ['Permissions', roleFlags(role).join(', ') || 'none'],
+            ['Connection limit', role.conlimit],
+            ['Expires', role.expires ? new Date(role.expires).toLocaleDateString(undefined, { dateStyle: 'medium' }) : undefined],
+            ['OID', role.oid],
+        ])}
+        ${role.memberof?.length ? html`
+            <h4 class="section">Member of</h4>
+            ${roleMembers(role.memberof, describe, onRole)}
+        ` : ''}
+    `;
 }
 
 

@@ -1,11 +1,13 @@
 // The inputs of pgmanager's form of a role, which change the form
 
 import { html, type TemplateResult } from 'lit';
+import { keyed } from 'lit/directives/keyed.js';
 import { impliedBySuperuser, permissions, type RoleForm, type RoleFormErrors } from './roleform.ts';
+import { roleMembers } from './views.ts';
 
 // Carbon components
 import '@carbon/web-components/es/components/checkbox/index.js';
-import '@carbon/web-components/es/components/multi-select/index.js';
+import '@carbon/web-components/es/components/combo-box/index.js';
 import '@carbon/web-components/es/components/number-input/index.js';
 import '@carbon/web-components/es/components/password-input/index.js';
 import '@carbon/web-components/es/components/text-input/index.js';
@@ -16,7 +18,9 @@ import '@carbon/web-components/es/components/textarea/index.js';
 // has no password to remove. It's rendered again, with rerender, when what
 // it shows depends on what's changed, such as a superuser's permissions,
 // which are checked, and can't be changed, as a superuser has them.
-export function roleFormView(form: RoleForm, roles: readonly string[], isNew: boolean, rerender: () => void, errors: RoleFormErrors = {}): TemplateResult {
+export function roleFormView(form: RoleForm, roles: readonly string[], isNew: boolean, rerender: () => void, errors: RoleFormErrors = {}, describe: (name: string) => string | undefined = () => undefined, onRole: (name: string) => void = () => {}): TemplateResult {
+    // The roles it can be added to, which are the others it isn't in
+    const addable = roles.filter((name) => name !== form.name && !form.memberof.includes(name));
     const text = (key: 'name' | 'comment' | 'password' | 'confirm' | 'conlimit' | 'expires') => (event: Event) => {
         form[key] = (event.target as HTMLInputElement).value;
     };
@@ -56,15 +60,23 @@ export function roleFormView(form: RoleForm, roles: readonly string[], isNew: bo
                 value=${form.conlimit} @input=${text('conlimit')}></cds-text-input>
             <cds-text-input label="Password expires" type="date" helper-text="Leave it empty for never"
                 value=${form.expires} @input=${text('expires')}></cds-text-input>
-            <cds-multi-select title-text="Member of" label="Choose roles" filterable
-                @cds-multi-select-selected=${(event: Event) => {
-                    const value = (event.target as HTMLElement & { value: string }).value;
-                    form.memberof = value ? value.split(',') : [];
-                }}>
-                ${roles.filter((name) => name !== form.name).map((name) => html`
-                    <cds-multi-select-item value=${name} ?selected=${form.memberof.includes(name)}>${name}</cds-multi-select-item>
-                `)}
-            </cds-multi-select>
+            <div class="members-field">
+                <span class="label">Member of</span>
+                ${form.memberof.length ? roleMembers(form.memberof, describe, onRole, (name) => {
+                    form.memberof = form.memberof.filter((member) => member !== name);
+                    rerender();
+                }) : html`<p class="helper">It isn't a member of any role</p>`}
+                ${keyed(form.memberof.join(','), html`<cds-combo-box title-text="Add a role" label="Choose a role"
+                    @cds-combo-box-selected=${(event: CustomEvent<{ item?: { value: string } }>) => {
+                        const name = event.detail.item?.value;
+                        if (name && !form.memberof.includes(name)) {
+                            form.memberof = [...form.memberof, name];
+                            rerender();
+                        }
+                    }}>
+                    ${addable.map((name) => html`<cds-combo-box-item value=${name}>${name}</cds-combo-box-item>`)}
+                </cds-combo-box>`)}
+            </div>
         </div>
     `;
 }

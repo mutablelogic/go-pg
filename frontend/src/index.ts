@@ -245,7 +245,7 @@ function roleView(role: Role): Omit<Item, 'kind'> {
     return {
         title: role.name,
         subtitle: role.predefined ? 'Predefined role' : 'Role',
-        body: views.roleBody(role, openRole),
+        body: views.roleBody(role, openRole, describeRole),
         actions: role.predefined ? undefined : [
             { label: 'Delete', kind: 'danger', close: false, run: () => deleteRole(role) },
             { label: 'Edit', kind: 'secondary', close: false, run: () => editRole(role) },
@@ -261,7 +261,7 @@ async function editRole(role?: Role) {
         .flatMap((list) => (list.body ?? []).map((r) => r.name));
     const form = roleForm(role);
     let errors: RoleFormErrors = {};
-    const view = (): TemplateResult => roleFormView(form, names, !role, rerender, errors);
+    const view = (): TemplateResult => roleFormView(form, names, !role, rerender, errors, describeRole, openRole);
     const rerender = () => {
         if (panelView) {
             render(view(), panelView);
@@ -546,12 +546,29 @@ if (roleTiles) {
     renderRoleTiles();
     void roleKinds.load();
 }
+// The descriptions of every role, yours and PostgreSQL's own, which a role's
+// memberships show, and which are loaded again whenever the roles are
+const roleDescriptions = new Map<string, string | undefined>();
+function describeRole(name: string): string | undefined {
+    return roleDescriptions.get(name);
+}
+function loadRoleDescriptions() {
+    Promise.all([false, true].map((predefined) => api.listAll((offset, limit) => api.listRoles(client, predefined, offset, limit), ListLimits.role))).then((lists) => {
+        roleDescriptions.clear();
+        lists.flatMap((list) => list.body ?? []).forEach((role) => roleDescriptions.set(role.name, role.comment));
+    }).catch(() => {
+        // The descriptions are left out, as the roles say why they can't be
+        // loaded
+    });
+}
+
 let countedRoles: unknown;
 roles.subscribe(({ items }) => {
     if (!items || items === countedRoles) {
         return;
     }
     countedRoles = items;
+    loadRoleDescriptions();
     Promise.all([false, true].map((predefined) => api.listRoles(client, predefined, 0, 1))).then(([own, predefined]) => {
         roleCounts.set('', own.count);
         roleCounts.set('predefined', predefined.count);

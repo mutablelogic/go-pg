@@ -4,7 +4,7 @@
 import { html, type TemplateResult } from 'lit';
 import type { Column } from '@mutablelogic/go-server/list/view';
 import type { Tile } from '@mutablelogic/go-server/list/tiles';
-import type { Connection, PgObject, ReplicationSlot, Role, Schema, Setting, Statement, Tablespace } from './schema.ts';
+import type { Connection, Extension, PgObject, ReplicationSlot, Role, Schema, Setting, Statement, Tablespace } from './schema.ts';
 
 // Carbon components
 import '@carbon/web-components/es/components/button/index.js';
@@ -284,4 +284,36 @@ export function statementBody(stmt: Statement): TemplateResult {
             ['Query ID', String(stmt.query_id)],
         ])}
     `;
+}
+
+// extensionVersion is an extension's version: the version which is
+// installed, with the default, when it's newer, or else the default
+function extensionVersion(ext: Extension): string {
+    if (!ext.installed_version) {
+        return ext.default_version ?? '';
+    }
+    if (ext.default_version && ext.default_version !== ext.installed_version) {
+        return `${ext.installed_version} (${ext.default_version} available)`;
+    }
+    return ext.installed_version;
+}
+
+export const extensionColumns: Column<Extension>[] = [
+    { header: 'Extension', cell: (ext) => ext.name },
+    { header: 'Version', cell: (ext) => extensionVersion(ext) },
+    { header: 'Schema', cell: (ext) => ext.schema ?? '' },
+    { header: 'Description', cell: (ext) => description(ext.comment) },
+];
+
+export function extensionBody(ext: Extension): TemplateResult {
+    return fields([
+        ['Description', ext.comment],
+        ['Installed version', ext.installed_version],
+        ['Default version', ext.default_version],
+        ['Database', ext.database],
+        ['Schema', ext.schema],
+        ['Owner', ext.owner],
+        ['Requires', ext.requires?.join(', ')],
+        ['Relocatable', ext.relocatable === undefined ? undefined : ext.relocatable ? 'yes' : 'no'],
+    ]);
 }

@@ -30,7 +30,7 @@ import './core/header.ts';
 import type { PageHeaderElement } from './core/header.ts';
 import * as api from './pgmanager/httpclient.ts';
 import type { ObjectFilter } from './pgmanager/httpclient.ts';
-import { ListLimits, type Connection, type Database, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
+import { ListLimits, type Connection, type Database, type Extension, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
 import * as views from './pgmanager/views.ts';
 
 // Carbon components, and icons
@@ -38,6 +38,7 @@ import '@carbon/web-components/es/components/ui-shell/index.js';
 import ConnectIcon from '@carbon/icons/es/connect/32.js';
 import DatabaseIcon from '@carbon/icons/es/data--base/32.js';
 import GroupIcon from '@carbon/icons/es/group/32.js';
+import PlugIcon from '@carbon/icons/es/plug/32.js';
 import ReplicateIcon from '@carbon/icons/es/replicate/32.js';
 import ResetIcon from '@carbon/icons/es/reset/16.js';
 import SettingsIcon from '@carbon/icons/es/settings/32.js';
@@ -123,6 +124,16 @@ const roles = new ListController<Role>({
     get: (role) => api.getRole(client, role.name),
     same: (a, b) => a.name === b.name,
     notifications, changes, filter: { table: 'role' },
+});
+// The extensions the server has available, or, in a database, those
+// installed there
+let extensionDatabase: string | undefined;
+const extensions = new ListController<Extension>({
+    pageSize: 20,
+    name: 'Extensions',
+    list: (offset, limit) => api.listExtensions(client, extensionDatabase ? { database: extensionDatabase, installed: true } : {}, offset, limit),
+    same: (a, b) => a.name === b.name && a.database === b.database,
+    notifications, changes, filter: { table: 'extension' },
 });
 let connectionDatabase: string | undefined;
 const connections = new ListController<Connection>({
@@ -237,6 +248,9 @@ table('connection-table', connections, ListLimits.connection, views.connectionCo
 }));
 table('setting-table', settings, ListLimits.setting, views.settingColumns, (setting) => ({ title: setting.name, subtitle: setting.category, body: views.settingBody(setting) }));
 table('tablespace-table', tablespaces, ListLimits.tablespace, views.tablespaceColumns, (space) => ({ title: space.name, subtitle: 'Tablespace', body: views.tablespaceBody(space) }));
+table('extension-table', extensions, ListLimits.extension, views.extensionColumns, (ext) => ({
+    title: ext.name, subtitle: ext.database ? `Extension · ${ext.database}` : 'Extension', body: views.extensionBody(ext),
+}));
 table('slot-table', slots, ListLimits.replicationSlot, views.replicationSlotColumns, (slot) => ({ title: slot.name, subtitle: `Replication slot · ${slot.type}`, body: views.replicationSlotBody(slot) }));
 table('statement-table', statements, ListLimits.statement, views.statementColumns, (stmt) => ({
     title: 'Statement', subtitle: [stmt.role, stmt.database].filter(Boolean).join(' · '), body: views.statementBody(stmt),
@@ -334,7 +348,7 @@ function pageHeader(page: string) {
 }
 const icons = {
     database: DatabaseIcon, roles: GroupIcon, connections: ConnectIcon, settings: SettingsIcon,
-    tablespaces: StoragePoolIcon, 'replication-slots': ReplicateIcon, statements: SqlIcon,
+    tablespaces: StoragePoolIcon, extensions: PlugIcon, 'replication-slots': ReplicateIcon, statements: SqlIcon,
 };
 for (const [page, icon] of Object.entries(icons)) {
     const header = pageHeader(page);
@@ -365,7 +379,7 @@ if (statementsHeader) {
 // database whose items the list shows, for the list's name, such as
 // statement, whose tiles are statement-tiles, above statement-table. The
 // counts are loaded again whenever the list is.
-function databaseTiles<T>(name: string, list: ListController<T>, count: (database?: string) => Promise<number>, choose: (database?: string) => void) {
+function databaseTiles<T>(name: string, list: ListController<T>, count: (database?: string) => Promise<number>, choose: (database?: string) => void, allLabel = 'All databases') {
     const tiles = document.getElementById(`${name}-tiles`) as TilesElement<Database> | null;
     if (!tiles) {
         return;
@@ -375,7 +389,7 @@ function databaseTiles<T>(name: string, list: ListController<T>, count: (databas
     let selected = '';
     const text = (n?: number) => n?.toLocaleString();
     const renderTiles = () => {
-        tiles.all = { value: '', label: 'All databases', text: text(total) };
+        tiles.all = { value: '', label: allLabel, text: text(total) };
         tiles.tile = (db) => ({ value: db.name, label: db.name, badge: db.owner, text: text(counts.get(db.name)) });
         tiles.selected = selected;
     };
@@ -456,6 +470,9 @@ roles.subscribe(({ items }) => {
 databaseTiles('statement', statements, async (database) => (await listStatements({ sort: 'calls', database }, 0, 1)).count, (database) => {
     statementDatabase = database;
 });
+databaseTiles('extension', extensions, async (database) => (await api.listExtensions(client, database ? { database, installed: true } : {}, 0, 1)).count, (database) => {
+    extensionDatabase = database;
+}, 'Available');
 databaseTiles('connection', connections, async (database) => (await api.listConnections(client, { database }, 0, 1)).count, (database) => {
     connectionDatabase = database;
 });
@@ -467,6 +484,7 @@ const otherPages = [
     { id: 'roles', label: 'Roles', href: '#roles', section: 'Access' },
     { id: 'connections', label: 'Connections', href: '#connections', section: 'Server' },
     { id: 'settings', label: 'Settings', href: '#settings', section: 'Server' },
+    { id: 'extensions', label: 'Extensions', href: '#extensions', section: 'Server' },
     { id: 'tablespaces', label: 'Tablespaces', href: '#tablespaces', section: 'Server' },
     { id: 'replication-slots', label: 'Replication slots', href: '#replication-slots', section: 'Server' },
     { id: 'statements', label: 'Statements', href: '#statements', section: 'Server' },

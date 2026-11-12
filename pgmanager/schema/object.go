@@ -20,9 +20,10 @@ type ObjectName struct {
 }
 
 type ObjectMeta struct {
-	Name  string  `json:"name,omitempty" arg:"" help:"Name"`
-	Owner string  `json:"owner,omitempty" help:"Owner"`
-	Acl   ACLList `json:"acl,omitempty" help:"Access privileges"`
+	Name    string  `json:"name,omitempty" arg:"" help:"Name"`
+	Owner   string  `json:"owner,omitempty" help:"Owner"`
+	Acl     ACLList `json:"acl,omitempty" help:"Access privileges"`
+	Comment *string `json:"comment,omitempty" help:"Comment, which an empty one removes"`
 }
 
 // TableMeta contains metadata specific to tables
@@ -230,7 +231,7 @@ func (o *Object) Scan(row pg.Row) error {
 	var priv []string
 	var liveTuples, deadTuples *int64
 	o.Acl = ACLList{}
-	if err := row.Scan(&o.Oid, &o.Database, &o.Schema, &o.Name, &o.Type, &o.Owner, &priv, &o.Tablespace, &o.Size, &liveTuples, &deadTuples); err != nil {
+	if err := row.Scan(&o.Oid, &o.Database, &o.Schema, &o.Name, &o.Type, &o.Owner, &priv, &o.Tablespace, &o.Size, &liveTuples, &deadTuples, &o.Comment); err != nil {
 		return err
 	}
 	for _, v := range priv {
@@ -302,7 +303,7 @@ func (o ObjectName) Validate() error {
 // SQL
 
 const (
-	ObjectDef    = `object ("oid" OID, "database" TEXT, "schema" TEXT, "name" TEXT, "type" TEXT, "owner" TEXT, "acl" TEXT[], "tablespace" TEXT, "size" BIGINT, "live_tuples" BIGINT, "dead_tuples" BIGINT)`
+	ObjectDef    = `object ("oid" OID, "database" TEXT, "schema" TEXT, "name" TEXT, "type" TEXT, "owner" TEXT, "acl" TEXT[], "tablespace" TEXT, "size" BIGINT, "live_tuples" BIGINT, "dead_tuples" BIGINT, "comment" TEXT)`
 	objectSelect = `
 		WITH objects AS (
 			SELECT
@@ -331,7 +332,8 @@ const (
 					ELSE pg_relation_size(C.oid)
 				END AS size,
 				S.n_live_tup AS live_tuples,
-				S.n_dead_tup AS dead_tuples
+				S.n_dead_tup AS dead_tuples,
+				obj_description(C.oid, 'pg_class') AS comment
 			FROM
 				pg_class C
 			JOIN

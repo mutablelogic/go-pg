@@ -17,9 +17,10 @@ import (
 type SchemaName string
 
 type SchemaMeta struct {
-	Name  string  `json:"schema,omitempty" arg:"" help:"Schema name"`
-	Owner string  `json:"owner,omitempty" help:"Owner"`
-	Acl   ACLList `json:"acl,omitempty" help:"Access privileges"`
+	Name    string  `json:"schema,omitempty" arg:"" help:"Schema name"`
+	Owner   string  `json:"owner,omitempty" help:"Owner"`
+	Acl     ACLList `json:"acl,omitempty" help:"Access privileges"`
+	Comment *string `json:"comment,omitempty" help:"Comment, which an empty one removes"`
 }
 
 type Schema struct {
@@ -187,7 +188,7 @@ func (s SchemaMeta) Select(bind *pg.Bind, op pg.Op) (string, error) {
 func (s *Schema) Scan(row pg.Row) error {
 	var priv []string
 	s.Acl = ACLList{}
-	if err := row.Scan(&s.Oid, &s.Database, &s.Name, &s.Owner, &priv, &s.Size); err != nil {
+	if err := row.Scan(&s.Oid, &s.Database, &s.Name, &s.Owner, &priv, &s.Size, &s.Comment); err != nil {
 		return err
 	}
 	for _, v := range priv {
@@ -290,11 +291,11 @@ func (s SchemaMeta) with(insert bool) (string, error) {
 // SQL
 
 const (
-	SchemaDef    = `schema ("oid" OID, "database" TEXT, "name" TEXT, "owner" TEXT, "acl" TEXT[], "size" BIGINT)`
+	SchemaDef    = `schema ("oid" OID, "database" TEXT, "name" TEXT, "owner" TEXT, "acl" TEXT[], "size" BIGINT, "comment" TEXT)`
 	schemaSelect = `
 		WITH sc AS (
 			SELECT
-				S.oid AS "oid", current_database() AS "database", S.nspname AS "name", R.rolname AS "owner", S.nspacl AS "acl", COALESCE(SUM(pg_relation_size(C.oid)),0) AS "size"
+				S.oid AS "oid", current_database() AS "database", S.nspname AS "name", R.rolname AS "owner", S.nspacl AS "acl", COALESCE(SUM(pg_relation_size(C.oid)),0) AS "size", obj_description(S.oid, 'pg_namespace') AS "comment"
 			FROM
 				"pg_catalog"."pg_namespace" S
 			LEFT JOIN

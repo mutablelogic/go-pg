@@ -276,7 +276,7 @@ function showDatabase(name: string) {
     const header = pageHeader('database');
     if (header) {
         header.heading = name;
-        header.subtitle = db ? [db.owner && `Owned by ${db.owner}`, views.formatBytes(db.bytes)].filter(Boolean).join(' · ') : '';
+        header.subtitle = db ? [db.comment, db.owner && `Owned by ${db.owner}`, views.formatBytes(db.bytes)].filter(Boolean).join(' · ') : '';
     }
     if (filter?.database === name) {
         return;

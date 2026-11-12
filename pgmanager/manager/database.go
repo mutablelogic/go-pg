@@ -84,16 +84,21 @@ func (manager *Manager) CreateDatabase(ctx context.Context, meta schema.Database
 		return nil, err
 	}
 
-	// Set ACL's - this can be done in a transaction
+	// Set ACL's, and the comment - this can be done in a transaction
 	if err := manager.conn.Tx(ctx, func(conn pg.Conn) error {
 		for _, acl := range meta.Acl {
 			if err := acl.GrantDatabase(ctx, conn, meta.Name); err != nil {
 				return err
 			}
 		}
+		if comment := types.Value(meta.Comment); comment != "" {
+			if err := schema.CommentOn(ctx, conn, "DATABASE", meta.Name, comment); err != nil {
+				return err
+			}
+		}
 		return nil
 	}); err != nil {
-		// Delete the database if there is an issue with ACL's
+		// Delete the database if there is an issue with ACL's, or the comment
 		return nil, errors.Join(err, manager.conn.Delete(ctx, nil, schema.DatabaseName(meta.Name)))
 	}
 
@@ -177,14 +182,23 @@ func (manager *Manager) UpdateDatabase(ctx context.Context, name string, meta sc
 			meta.Name = name
 		}
 
-		// Update the rest of the metadata
-		if err := conn.Update(ctx, nil, meta, meta); err != nil {
-			return err
+		// Update the rest of the metadata, when it's changed
+		if meta.Altered() {
+			if err := conn.Update(ctx, nil, meta, meta); err != nil {
+				return err
+			}
 		}
 
 		// Update ACL's
 		if meta.Acl != nil {
 			if err := manager.updateDatabaseACLs(ctx, conn, meta.Name, database.Acl, meta.Acl); err != nil {
+				return err
+			}
+		}
+
+		// Update the comment, or remove it, when it's empty
+		if meta.Comment != nil {
+			if err := schema.CommentOn(ctx, conn, "DATABASE", meta.Name, *meta.Comment); err != nil {
 				return err
 			}
 		}

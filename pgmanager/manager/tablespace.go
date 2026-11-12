@@ -73,6 +73,10 @@ func (manager *Manager) CreateTablespace(ctx context.Context, meta schema.Tables
 	)
 	defer func() { endSpan(err) }()
 
+	// Trim the name, as TablespaceMeta.Insert does, so the grants and
+	// comment are of the tablespace which is created
+	meta.Name = strings.TrimSpace(meta.Name)
+
 	// Create the tablespace (outside a transaction)
 	var response schema.Tablespace
 	if err := manager.conn.With("location", location).Insert(ctx, nil, meta); err != nil {
@@ -83,6 +87,11 @@ func (manager *Manager) CreateTablespace(ctx context.Context, meta schema.Tables
 	if err := manager.conn.Tx(ctx, func(conn pg.Conn) error {
 		for _, acl := range meta.Acl {
 			if err := acl.GrantTablespace(ctx, conn, meta.Name); err != nil {
+				return err
+			}
+		}
+		if comment := types.Value(meta.Comment); comment != "" {
+			if err := schema.CommentOn(ctx, conn, "TABLESPACE", meta.Name, comment); err != nil {
 				return err
 			}
 		}
@@ -216,6 +225,13 @@ func (manager *Manager) UpdateTablespace(ctx context.Context, name string, meta 
 						return err
 					}
 				}
+			}
+		}
+
+		// Update the comment, or remove it, when it's empty
+		if meta.Comment != nil {
+			if err := schema.CommentOn(ctx, conn, "TABLESPACE", meta.Name, *meta.Comment); err != nil {
+				return err
 			}
 		}
 

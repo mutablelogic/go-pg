@@ -73,9 +73,17 @@ func (manager *Manager) CreateRole(ctx context.Context, meta schema.RoleMeta) (_
 		return nil, err
 	}
 
-	// Insert the role and return it
+	// Insert the role, with its comment, and return it
 	var role schema.Role
-	if err := manager.conn.Insert(ctx, nil, meta); err != nil {
+	if err := manager.conn.Tx(ctx, func(conn pg.Conn) error {
+		if err := conn.Insert(ctx, nil, meta); err != nil {
+			return err
+		}
+		if comment := types.Value(meta.Comment); comment != "" {
+			return schema.CommentOn(ctx, conn, "ROLE", meta.Name, comment)
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	} else if err := manager.conn.Get(ctx, &role, schema.RoleName(meta.Name)); err != nil {
 		return nil, err
@@ -151,9 +159,18 @@ func (manager *Manager) UpdateRole(ctx context.Context, name string, meta schema
 			}
 		}
 
-		// Update the rest of the metadata
-		if err := conn.Update(ctx, nil, meta, meta); err != nil {
-			return err
+		// Update the rest of the metadata, when it's changed
+		if meta.Altered() {
+			if err := conn.Update(ctx, nil, meta, meta); err != nil {
+				return err
+			}
+		}
+
+		// Update the comment, or remove it, when it's empty
+		if meta.Comment != nil {
+			if err := schema.CommentOn(ctx, conn, "ROLE", meta.Name, *meta.Comment); err != nil {
+				return err
+			}
 		}
 
 		// Update the group memberships

@@ -18,9 +18,10 @@ import (
 type TablespaceName string
 
 type TablespaceMeta struct {
-	Name  string  `json:"name,omitempty" arg:"" help:"Name"`
-	Owner string  `json:"owner,omitempty" help:"Owner"`
-	Acl   ACLList `json:"acl,omitempty" help:"Access privileges"`
+	Name    string  `json:"name,omitempty" arg:"" help:"Name"`
+	Owner   string  `json:"owner,omitempty" help:"Owner"`
+	Acl     ACLList `json:"acl,omitempty" help:"Access privileges"`
+	Comment *string `json:"comment,omitempty" help:"Comment, which an empty one removes"`
 }
 
 type Tablespace struct {
@@ -178,7 +179,7 @@ func (t TablespaceMeta) Select(bind *pg.Bind, op pg.Op) (string, error) {
 func (t *Tablespace) Scan(row pg.Row) error {
 	var priv []string
 	t.Acl = ACLList{}
-	if err := row.Scan(&t.Oid, &t.Name, &t.Owner, &priv, &t.Options, &t.Size, &t.Location); err != nil {
+	if err := row.Scan(&t.Oid, &t.Name, &t.Owner, &priv, &t.Options, &t.Size, &t.Location, &t.Comment); err != nil {
 		return err
 	}
 	for _, v := range priv {
@@ -303,7 +304,8 @@ const (
 					WHEN T.spcname = 'pg_global' THEN (SELECT setting||'/global' FROM pg_settings WHERE name='data_directory')
 					WHEN T.spcname = 'pg_default' THEN (SELECT setting||'/base' FROM pg_settings WHERE name='data_directory')
 					ELSE pg_tablespace_location(T.oid)
-				END AS "location"
+				END AS "location",
+				shobj_description(T.oid, 'pg_tablespace') AS "comment"
 			FROM
 				"pg_catalog"."pg_tablespace" T
 			JOIN

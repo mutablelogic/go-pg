@@ -85,3 +85,27 @@ func (manager *Manager) DeleteConnection(ctx context.Context, pid uint64) (_ *sc
 	// Return success
 	return &connection, nil
 }
+
+// CancelConnection cancels the query of a connection, by its pid, which
+// stays connected, and returns it. It's not found when it's this one.
+func (manager *Manager) CancelConnection(ctx context.Context, pid uint64) (_ *schema.Connection, err error) {
+	// Otel span
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "CancelConnection",
+		attribute.Int64("pid", int64(pid)),
+	)
+	defer func() { endSpan(err) }()
+
+	// Validate input
+	if pid == 0 {
+		return nil, pg.ErrBadParameter.With("pid is zero")
+	}
+
+	// Cancel its query
+	var connection schema.Connection
+	if err := manager.conn.Get(ctx, &connection, schema.ConnectionCancel(pid)); err != nil {
+		return nil, err
+	}
+
+	// Return success
+	return &connection, nil
+}

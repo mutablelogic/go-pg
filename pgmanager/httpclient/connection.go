@@ -36,6 +36,16 @@ func (c *Client) GetConnection(ctx context.Context, pid uint64) (*schema.Connect
 	return &response, nil
 }
 
+// CancelConnection cancels the query of a connection, by its pid, which
+// stays connected
+func (c *Client) CancelConnection(ctx context.Context, pid uint64) (*schema.Connection, error) {
+	var response schema.Connection
+	if err := c.DoWithContext(ctx, client.MethodPost, &response, client.OptPath("connection", pid, "cancel")); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 func (c *Client) DeleteConnection(ctx context.Context, pid uint64) error {
 	return c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("connection", pid))
 }

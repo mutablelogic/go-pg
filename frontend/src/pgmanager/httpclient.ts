@@ -142,6 +142,17 @@ export function getConnection(client: Client, pid: number): Promise<Connection> 
     return request<Connection>(client, 'GET', `connection/${pid}`);
 }
 
+// cancelConnection cancels a connection's query, by its process, which stays
+// connected, and returns it
+export function cancelConnection(client: Client, pid: number): Promise<Connection> {
+    return request<Connection>(client, 'POST', `connection/${pid}/cancel`);
+}
+
+// endConnection ends a connection, by its process, and returns it as it was
+export function endConnection(client: Client, pid: number): Promise<Connection> {
+    return request<Connection>(client, 'DELETE', `connection/${pid}`);
+}
+
 // listSettings returns a page of the settings, of a category, or of all
 export function listSettings(client: Client, category: string | undefined, offset: number, limit: number): Promise<List<Setting>> {
     return request<List<Setting>>(client, 'GET', 'setting', { query: { category, offset, limit } });

@@ -88,6 +88,14 @@ func Test_HTTPError_003(t *testing.T) {
 	assert.ErrorIs(err, httpresponse.ErrNotFound)
 }
 
+func Test_HTTPError_004(t *testing.T) {
+	assert := assert.New(t)
+
+	// What isn't available, such as an extension, is unavailable
+	err := HTTPError(ErrNotAvailable.With("pg_stat_statements"))
+	assert.ErrorIs(err, httpresponse.ErrServiceUnavailable)
+}
+
 func Test_Err_Withf(t *testing.T) {
 	assert := assert.New(t)
 	cause := errors.New("cause")

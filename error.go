@@ -199,6 +199,8 @@ func HTTPError(err error) error {
 		return httpresponse.ErrNotImplemented.With(err.Error())
 	case errors.Is(err, ErrConflict):
 		return httpresponse.ErrConflict.With(err.Error())
+	case errors.Is(err, ErrNotAvailable):
+		return httpresponse.ErrServiceUnavailable.With(err.Error())
 	default:
 		return httpresponse.ErrInternalError.With(err.Error())
 	}

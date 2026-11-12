@@ -101,6 +101,9 @@ test('tablespaceLocationError', () => {
     assert.match(tablespaceLocationError(400, 'Bad Request: could not set permissions on directory "/data/x": Operation not permitted') ?? '', /owned by the user PostgreSQL runs as/);
     assert.match(tablespaceLocationError(400, 'directory "/data/x/PG_17_202406281" already in use as a tablespace') ?? '', /already in use/);
     assert.equal(tablespaceLocationError(409, 'tablespace "x" already exists'), undefined);
+    // A reason which isn't the directory's is left as it is
+    assert.equal(tablespaceLocationError(400, 'permission denied to create tablespace "x"'), undefined);
+    assert.equal(tablespaceLocationError(404, 'role "nobody" does not exist'), undefined);
 });
 
 test('extensionRequest', () => {

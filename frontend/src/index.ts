@@ -32,7 +32,7 @@ import * as api from './pgmanager/httpclient.ts';
 import type { ObjectFilter } from './pgmanager/httpclient.ts';
 import { ListLimits, type Connection, type Database, type Extension, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
 import * as views from './pgmanager/views.ts';
-import { roleForm, roleRequest } from './pgmanager/roleform.ts';
+import { roleForm, roleFormErrors, roleRequest, type RoleFormErrors } from './pgmanager/roleform.ts';
 import { roleFormView } from './pgmanager/roleformview.ts';
 
 // Carbon components, and icons
@@ -260,11 +260,18 @@ async function editRole(role?: Role) {
     const names = (await Promise.all([false, true].map((predefined) => api.listAll((offset, limit) => api.listRoles(client, predefined, offset, limit), ListLimits.role))))
         .flatMap((list) => (list.body ?? []).map((r) => r.name));
     const form = roleForm(role);
+    let errors: RoleFormErrors = {};
+    const view = (): TemplateResult => roleFormView(form, names, !role, rerender, errors);
+    const rerender = () => {
+        if (panelView) {
+            render(view(), panelView);
+        }
+    };
     open({
         kind: 'role-form',
         title: role ? `Change ${role.name}` : 'Create a role',
         subtitle: 'Role',
-        body: roleFormView(form, names, !role),
+        body: view(),
         actions: [
             role ? { label: 'Cancel', kind: 'secondary', close: false, run: () => open({ kind: 'role', ...roleView(role) }) } : { label: 'Cancel', kind: 'secondary' },
             {
@@ -272,6 +279,12 @@ async function editRole(role?: Role) {
                 kind: 'primary',
                 close: false,
                 run: async () => {
+                    // What's wrong is shown by its input, and isn't sent
+                    errors = roleFormErrors(form);
+                    rerender();
+                    if (Object.keys(errors).length) {
+                        return;
+                    }
                     const saved = role ? await api.updateRole(client, role.name, roleRequest(form, role)) : await api.createRole(client, roleRequest(form));
                     void roles.refresh();
                     open({ kind: 'role', ...roleView(saved) });

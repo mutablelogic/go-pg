@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { roleForm, roleRequest } from '../src/pgmanager/roleform.ts';
+import { roleForm, roleFormErrors, roleRequest } from '../src/pgmanager/roleform.ts';
 import type { Role } from '../src/pgmanager/schema.ts';
 
 test('roleRequest', async (t) => {
@@ -48,4 +48,19 @@ test('roleRequest', async (t) => {
         form.expires = '2031-05-06';
         assert.equal(roleRequest(form).expires, '2031-05-06T00:00:00.000Z');
     });
+});
+
+test('roleFormErrors', () => {
+    // A role needs a name, and a password which is confirmed, unless it's
+    // removed
+    const form = roleForm();
+    assert.deepEqual(roleFormErrors(form), { name: 'A role needs a name' });
+    form.name = 'reporter';
+    form.password = 'secret';
+    assert.deepEqual(roleFormErrors(form), { confirm: "The passwords don't match" });
+    form.confirm = 'secret';
+    assert.deepEqual(roleFormErrors(form), {});
+    form.removePassword = true;
+    form.confirm = '';
+    assert.deepEqual(roleFormErrors(form), {});
 });

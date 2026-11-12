@@ -20,6 +20,7 @@ export interface RoleForm {
     bypassrls: boolean;
     inherit: boolean;
     password: string;
+    confirm: string;
     removePassword: boolean;
     conlimit: string;
     expires: string;
@@ -36,12 +37,16 @@ export type RoleRequest = Partial<Pick<Role, 'name' | 'comment' | 'login' | 'sup
 export const permissions: [keyof RoleForm & keyof Role, string][] = [
     ['login', 'Can sign in'],
     ['inherit', 'Inherits roles from group membership'],
+    ['super', 'Superuser'],
     ['createdb', 'Can create databases'],
     ['createrole', 'Can create roles'],
     ['replication', 'Can replicate'],
     ['bypassrls', 'Bypasses row-level security'],
-    ['super', 'Superuser'],
 ];
+
+// impliedBySuperuser are the permissions a superuser has, whatever they're
+// set to, as it bypasses every check, unlike signing in, or inheriting
+export const impliedBySuperuser: readonly (keyof RoleForm)[] = ['createdb', 'createrole', 'replication', 'bypassrls'];
 
 // The zero time, which is no expiry
 const noExpiry = '0001-01-01T00:00:00Z';
@@ -60,11 +65,28 @@ export function roleForm(role?: Role): RoleForm {
         bypassrls: role?.bypassrls ?? false,
         inherit: role?.inherit ?? true,
         password: '',
+        confirm: '',
         removePassword: false,
         conlimit: role?.conlimit === undefined ? '' : String(role.conlimit),
         expires: role?.expires ? role.expires.slice(0, 10) : '',
         memberof: [...(role?.memberof ?? [])],
     };
+}
+
+// RoleFormErrors are what's wrong with the form, by its input
+export type RoleFormErrors = Partial<Record<'name' | 'confirm', string>>;
+
+// roleFormErrors returns what's wrong with the form, which isn't sent until
+// there's nothing: a name, and a password which is confirmed
+export function roleFormErrors(form: RoleForm): RoleFormErrors {
+    const errors: RoleFormErrors = {};
+    if (!form.name.trim()) {
+        errors.name = 'A role needs a name';
+    }
+    if (!form.removePassword && form.password !== form.confirm) {
+        errors.confirm = "The passwords don't match";
+    }
+    return errors;
 }
 
 // roleRequest returns the request of the form, which, for a role which is

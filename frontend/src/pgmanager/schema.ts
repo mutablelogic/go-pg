@@ -9,7 +9,7 @@ export interface Database {
     name: string;
     comment?: string;
     owner?: string;
-    acl?: unknown[];
+    acl?: string[];
     bytes?: number;
 }
 
@@ -41,7 +41,7 @@ export interface PgObject {
     name?: string;
     comment?: string;
     owner?: string;
-    acl?: unknown[];
+    acl?: string[];
     tablespace?: string;
     bytes?: number;
     table?: { live_tuples?: number; dead_tuples?: number };
@@ -90,7 +90,7 @@ export interface Tablespace {
     name: string;
     comment?: string;
     owner?: string;
-    acl?: unknown[];
+    acl?: string[];
     location?: string;
     options?: string[];
     bytes?: number;

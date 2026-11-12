@@ -295,7 +295,7 @@ const (
 	schemaSelect = `
 		WITH sc AS (
 			SELECT
-				S.oid AS "oid", current_database() AS "database", S.nspname AS "name", R.rolname AS "owner", S.nspacl AS "acl", COALESCE(SUM(pg_relation_size(C.oid)),0) AS "size", obj_description(S.oid, 'pg_namespace') AS "comment"
+				S.oid AS "oid", current_database() AS "database", S.nspname AS "name", R.rolname AS "owner", COALESCE(S.nspacl, acldefault('n', S.nspowner)) AS "acl", COALESCE(SUM(pg_relation_size(C.oid)),0) AS "size", obj_description(S.oid, 'pg_namespace') AS "comment"
 			FROM
 				"pg_catalog"."pg_namespace" S
 			LEFT JOIN

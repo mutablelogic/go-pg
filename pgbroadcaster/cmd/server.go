@@ -1,13 +1,15 @@
 //go:build !client
 
+// Package cmd has the broadcaster's flags for a server. Its changes are
+// watched with go-server's broadcaster/cmd, such as its changes command.
 package cmd
 
 import (
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	broadcaster "github.com/mutablelogic/go-pg/pgbroadcaster"
-	httphandler "github.com/mutablelogic/go-pg/pgbroadcaster/httphandler"
 	server "github.com/mutablelogic/go-server"
+	httphandler "github.com/mutablelogic/go-server/broadcaster/httphandler"
 	servercmd "github.com/mutablelogic/go-server/pkg/cmd"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 )
@@ -23,7 +25,11 @@ type Flags struct {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// WithManager creates a broadcaster manager
+// WithManager creates a broadcaster manager, registers its broadcaster's
+// HTTP handler, which streams its changes at /changes, with the server,
+// when there is one, and then calls the function with the manager. A
+// broadcaster which is shared with the manager, with WithBroadcaster, isn't
+// registered, as whatever shares it registers it.
 func (flags Flags) WithManager(ctx server.Cmd, conn pg.PoolConn, srv *servercmd.RunServer, fn func(*broadcaster.Manager) error, opts ...broadcaster.Opt) error {
 	opts = append([]broadcaster.Opt{broadcaster.WithTracer(ctx.Tracer())}, opts...)
 	manager, err := broadcaster.New(ctx.Context(), conn, opts...)
@@ -31,11 +37,11 @@ func (flags Flags) WithManager(ctx server.Cmd, conn pg.PoolConn, srv *servercmd.
 		return err
 	}
 
-	// Register the HTTP handlers for watching events
-	if srv != nil {
+	// Register the HTTP handler for watching the changes
+	if srv != nil && !manager.Shared() {
 		srv.Register(func(router *httprouter.Router) error {
 			ctx.Logger().DebugContext(ctx.Context(), "registering pgbroadcaster http handlers")
-			return httphandler.RegisterHandlers(manager, router)
+			return httphandler.RegisterHandlers(manager.Broadcaster(), router)
 		})
 	}
 

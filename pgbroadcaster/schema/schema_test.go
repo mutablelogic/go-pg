@@ -6,46 +6,44 @@ import (
 
 	// Packages
 	schema "github.com/mutablelogic/go-pg/pgbroadcaster/schema"
+	changes "github.com/mutablelogic/go-server/broadcaster/schema"
 	assert "github.com/stretchr/testify/assert"
+	require "github.com/stretchr/testify/require"
 )
 
-func TestEventFilterMatches(t *testing.T) {
-	// A filter matches the events with its schema, table and action, each of
-	// which matches any when it's empty
-	event := schema.Event{Schema: "filer", Table: "volume", Action: "UPDATE", Row: "42"}
-	for _, test := range []struct {
-		filter schema.EventFilter
-		want   bool
-	}{
-		{schema.EventFilter{}, true},
-		{schema.EventFilter{Schema: "filer"}, true},
-		{schema.EventFilter{Schema: "filer", Table: "volume"}, true},
-		{schema.EventFilter{Schema: "filer", Table: "volume", Action: "UPDATE"}, true},
-		{schema.EventFilter{Action: "UPDATE"}, true},
-		{schema.EventFilter{Schema: "llm"}, false},
-		{schema.EventFilter{Schema: "filer", Table: "object"}, false},
-		{schema.EventFilter{Table: "volume", Action: "DELETE"}, false},
+func TestNotificationChange(t *testing.T) {
+	// A trigger's action, which is its TG_OP, and a published change's, are
+	// the change's action, with its schema, table, row and data
+	for action, want := range map[string]changes.ChangeAction{
+		"INSERT": changes.ChangeCreate,
+		"UPDATE": changes.ChangeUpdate,
+		"DELETE": changes.ChangeDelete,
+		"create": changes.ChangeCreate,
+		"update": changes.ChangeUpdate,
+		"delete": changes.ChangeDelete,
 	} {
-		assert.Equal(t, test.want, test.filter.Matches(event), test.filter)
+		change, err := schema.Notification{Schema: "filer", Table: "volume", Action: action, Row: "42", Data: json.RawMessage(`{"serial":1}`)}.Change()
+		require.NoError(t, err, action)
+		assert.Equal(t, changes.Change{Action: want, Schema: "filer", Table: "volume", Row: "42", Data: json.RawMessage(`{"serial":1}`)}, change, action)
+	}
+
+	// Another action isn't a change
+	for _, action := range []string{"TRUNCATE", ""} {
+		_, err := schema.Notification{Table: "volume", Action: action}.Change()
+		assert.Error(t, err, action)
 	}
 }
 
-func TestEventFilterQuery(t *testing.T) {
-	assert.Equal(t, "", schema.EventFilter{}.Query().Encode())
-	assert.Equal(t, "action=INSERT&schema=filer&table=volume", schema.EventFilter{Schema: "filer", Table: "volume", Action: "INSERT"}.Query().Encode())
-}
-
-func TestEventRow(t *testing.T) {
-	// The row is optional, so events without one are as they were
-	assert.JSONEq(t, `{"schema":"filer","table":"volume","action":"UPDATE"}`, mustJSON(t, schema.Event{Schema: "filer", Table: "volume", Action: "UPDATE"}))
-	assert.JSONEq(t, `{"schema":"filer","table":"volume","action":"UPDATE","row":"42"}`, mustJSON(t, schema.Event{Schema: "filer", Table: "volume", Action: "UPDATE", Row: "42"}))
-}
-
-func mustJSON(t *testing.T, v any) string {
-	t.Helper()
-	data, err := json.Marshal(v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(data)
+func TestNotificationJSON(t *testing.T) {
+	// A trigger's notification is decoded, and a published change is a
+	// notification
+	var n schema.Notification
+	require.NoError(t, json.Unmarshal([]byte(`{"schema":"feed","table":"item","action":"UPDATE","row":"{\"id\":\"1\",\"feed\":2}"}`), &n))
+	assert.Equal(t, schema.Notification{Schema: "feed", Table: "item", Action: "UPDATE", Row: `{"id":"1","feed":2}`}, n)
+	data, err := json.Marshal(changes.Change{Action: changes.ChangeDelete, Table: "item"})
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &n))
+	change, err := n.Change()
+	require.NoError(t, err)
+	assert.Equal(t, changes.ChangeDelete, change.Action)
 }

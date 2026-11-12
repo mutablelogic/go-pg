@@ -1,6 +1,7 @@
 // Package broadcaster listens for the database's notifications, on a channel,
-// so the server's modules, and its clients, can be told of changes, with one
-// connection which listens, rather than one each.
+// and publishes them, as changes, to a go-server broadcaster, so the
+// server's modules, and its clients, which watch the broadcaster, are told
+// of them, with one connection which listens, rather than one each.
 package broadcaster
 
 import (
@@ -13,6 +14,7 @@ import (
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgbroadcaster/schema"
+	changes "github.com/mutablelogic/go-server/broadcaster"
 	attribute "go.opentelemetry.io/otel/attribute"
 )
 
@@ -23,25 +25,17 @@ type Manager struct {
 	opt
 	pg.PoolConn
 
+	// The broadcaster which the changes are published to, and whether it's
+	// the manager's, which it runs, or one which is shared with it
+	broadcaster *changes.Broadcaster
+	shared      bool
+
 	// Whether the manager is running, and whether it's listening on its
-	// channel
+	// channel, and the channel which is closed once it's listening
 	running   atomic.Bool
 	listening atomic.Bool
-
-	// The channels which are sent the events, by Subscribe, whether the
-	// manager has stopped running, so later subscriptions end at once, and
-	// the channel which is closed once it's listening on its channel
-	mu          sync.Mutex
-	subscribers map[chan<- schema.Event]*subscriber
-	stopped     bool
-	ready       chan struct{}
-}
-
-// subscriber is a subscription's filter, and the channel which is closed
-// when the manager stops running, which ends the subscription
-type subscriber struct {
-	filter schema.EventFilter
-	stop   chan struct{}
+	mu        sync.Mutex
+	ready     chan struct{}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -50,7 +44,7 @@ type subscriber struct {
 // New creates a new manager, which listens for the notifications on its
 // channel when it's run
 func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (_ *Manager, err error) {
-	self := &Manager{subscribers: make(map[chan<- schema.Event]*subscriber), ready: make(chan struct{})}
+	self := &Manager{ready: make(chan struct{})}
 
 	// Check parameters
 	if pool == nil {
@@ -60,6 +54,14 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (_ *Manager, err er
 	// Apply options
 	if err := self.opt.apply(opts); err != nil {
 		return nil, err
+	}
+
+	// The broadcaster which the changes are published to, which is shared
+	// with the manager, or else its own
+	if self.opt.broadcaster != nil {
+		self.broadcaster, self.shared = self.opt.broadcaster, true
+	} else {
+		self.broadcaster = changes.New()
 	}
 
 	// Trace creating the manager, which needs the tracer from the options
@@ -92,4 +94,16 @@ func (self *Manager) Schema() string {
 // Channel returns the channel the manager listens for notifications on
 func (self *Manager) Channel() string {
 	return self.channel
+}
+
+// Broadcaster returns the broadcaster which the changes are published to,
+// which its HTTP handler streams
+func (self *Manager) Broadcaster() *changes.Broadcaster {
+	return self.broadcaster
+}
+
+// Shared returns true when the broadcaster is shared with the manager, with
+// WithBroadcaster, so it isn't the manager's, which runs it
+func (self *Manager) Shared() bool {
+	return self.shared
 }

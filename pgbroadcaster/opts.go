@@ -4,6 +4,7 @@ import (
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgbroadcaster/schema"
+	changes "github.com/mutablelogic/go-server/broadcaster"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	trace "go.opentelemetry.io/otel/trace"
 )
@@ -15,9 +16,10 @@ import (
 type Opt func(*opt) error
 
 type opt struct {
-	tracer  trace.Tracer
-	schema  string
-	channel string
+	tracer      trace.Tracer
+	schema      string
+	channel     string
+	broadcaster *changes.Broadcaster
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -73,6 +75,20 @@ func WithChannel(channel string) Opt {
 			return pg.ErrBadParameter.Withf("invalid channel: %q", channel)
 		}
 		o.channel = channel
+		return nil
+	}
+}
+
+// WithBroadcaster publishes the changes to the broadcaster, which is shared,
+// such as with the server's other modules, which publish theirs to it, so
+// their clients watch one stream of changes. A shared broadcaster isn't run
+// by the manager, but by whatever shares it.
+func WithBroadcaster(broadcaster *changes.Broadcaster) Opt {
+	return func(o *opt) error {
+		if broadcaster == nil {
+			return pg.ErrBadParameter.With("broadcaster is required")
+		}
+		o.broadcaster = broadcaster
 		return nil
 	}
 }

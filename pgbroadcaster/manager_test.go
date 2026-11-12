@@ -11,6 +11,7 @@ import (
 	broadcaster "github.com/mutablelogic/go-pg/pgbroadcaster"
 	schema "github.com/mutablelogic/go-pg/pgbroadcaster/schema"
 	test "github.com/mutablelogic/go-pg/pgbroadcaster/test"
+	changeschema "github.com/mutablelogic/go-server/broadcaster/schema"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -112,9 +113,9 @@ func TestRunReconnect(t *testing.T) {
 	go func() { done <- manager.Run(ctx, nil) }()
 	require.NoError(t, manager.WaitListening(ctx))
 
-	// A subscription made while it's listening
-	ch := make(chan schema.Event, 1)
-	_, err = manager.Subscribe(ctx, schema.EventFilter{}, ch)
+	// A watch made while it's listening
+	ch := make(chan changeschema.Change, 1)
+	_, err = manager.Watch(ctx, changeschema.ChangeFilter{}, ch)
 	require.NoError(t, err)
 
 	// The connection fails, and it doesn't stop, but tries to listen again,
@@ -127,13 +128,14 @@ func TestRunReconnect(t *testing.T) {
 	default:
 	}
 
-	// The subscription is still sent the events
-	require.NoError(t, manager.Publish(ctx, schema.Event{Schema: "reconnect", Table: "table", Action: "UPDATE"}))
+	// The watch is still sent the changes
+	change := changeschema.Change{Action: changeschema.ChangeUpdate, Schema: "reconnect", Table: "table"}
+	require.NoError(t, manager.Publish(ctx, change))
 	select {
-	case event := <-ch:
-		assert.Equal(t, schema.Event{Schema: "reconnect", Table: "table", Action: "UPDATE"}, event)
+	case got := <-ch:
+		assert.Equal(t, change, got)
 	case <-time.After(5 * time.Second):
-		t.Fatal("the subscription wasn't sent the event once it listened again")
+		t.Fatal("the watch wasn't sent the change once it listened again")
 	}
 
 	// It stops when it's cancelled

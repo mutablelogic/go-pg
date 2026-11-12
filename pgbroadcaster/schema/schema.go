@@ -2,7 +2,12 @@ package schema
 
 import (
 	_ "embed"
-	"net/url"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	// Packages
+	changes "github.com/mutablelogic/go-server/broadcaster/schema"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -23,17 +28,6 @@ const (
 	MaxPayloadSize = 7999
 )
 
-const (
-	// EventName is the name of each server-sent event which is streamed to
-	// a client watching events
-	EventName = "event"
-
-	// EventShutdown is the name of the server-sent event which is streamed
-	// to a client watching events when the server stops, before the stream
-	// ends, so the client knows it ended as there will be no more events
-	EventShutdown = "shutdown"
-)
-
 ////////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
@@ -43,48 +37,37 @@ var Queries string
 ////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// Event is a change which is published to the broadcaster's channel: what
-// changed, such as a table of a schema, how, such as INSERT, UPDATE or
-// DELETE, as the database's triggers notify of their tables' changes, and
-// which row, or rows, changed, when it says, such as by an identifier which
-// the rows share
-type Event struct {
-	Schema string `json:"schema,omitempty"`
-	Table  string `json:"table,omitempty"`
-	Action string `json:"action,omitempty"`
-	Row    string `json:"row,omitempty"`
-}
-
-// EventFilter matches events: those with its schema, table and action, each
-// of which matches any when it's empty
-type EventFilter struct {
-	Schema string `json:"schema,omitempty" help:"returns only events of the schema"`
-	Table  string `json:"table,omitempty" help:"returns only events of the table"`
-	Action string `json:"action,omitempty" help:"returns only events of the action, such as INSERT, UPDATE or DELETE"`
+// Notification is what's notified on the broadcaster's channel: by the
+// database's triggers, whose action is INSERT, UPDATE or DELETE, as their
+// TG_OP, or by Publish, whose action is create, update or delete. It says
+// what changed, which is a table of a schema, and which row, or rows,
+// changed, when it says, and what the table says of the change, when it
+// says anything.
+type Notification struct {
+	Schema string          `json:"schema,omitempty"`
+	Table  string          `json:"table,omitempty"`
+	Action string          `json:"action,omitempty"`
+	Row    string          `json:"row,omitempty"`
+	Data   json.RawMessage `json:"data,omitempty"`
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// Matches returns true when the event has the filter's schema, table and
-// action, each of which matches any when it's empty
-func (f EventFilter) Matches(event Event) bool {
-	return (f.Schema == "" || f.Schema == event.Schema) &&
-		(f.Table == "" || f.Table == event.Table) &&
-		(f.Action == "" || f.Action == event.Action)
-}
-
-// Query returns the filter as the query of a request to watch events
-func (f EventFilter) Query() url.Values {
-	q := url.Values{}
-	if f.Schema != "" {
-		q.Set("schema", f.Schema)
+// Change returns the notification as a change, whose action is create,
+// update or delete, or an error when its action is another, such as
+// TRUNCATE
+func (n Notification) Change() (changes.Change, error) {
+	var action changes.ChangeAction
+	switch strings.ToUpper(n.Action) {
+	case "INSERT", "CREATE":
+		action = changes.ChangeCreate
+	case "UPDATE":
+		action = changes.ChangeUpdate
+	case "DELETE":
+		action = changes.ChangeDelete
+	default:
+		return changes.Change{}, fmt.Errorf("unknown action: %q", n.Action)
 	}
-	if f.Table != "" {
-		q.Set("table", f.Table)
-	}
-	if f.Action != "" {
-		q.Set("action", f.Action)
-	}
-	return q
+	return changes.Change{Action: action, Schema: n.Schema, Table: n.Table, Row: n.Row, Data: n.Data}, nil
 }

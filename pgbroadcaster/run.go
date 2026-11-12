@@ -24,26 +24,38 @@ const (
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// Run listens for the notifications on the manager's channel, and sends
-// each, as an event, to the subscribers, logging with the logger, until the
-// context is cancelled. A notification which isn't an event is logged, and
+// Run listens for the notifications on the manager's channel, and publishes
+// each, as a change, to the broadcaster, logging with the logger, until the
+// context is cancelled, and runs the broadcaster, when it's the manager's,
+// so its watches end when it stops. A notification which isn't a change,
+// such as one whose action isn't INSERT, UPDATE or DELETE, is logged, and
 // skipped. When the connection which listens closes, such as when it fails,
 // it listens again, and the notifications in between are missed. When it
 // can't listen again, such as while the database restarts, it logs that,
 // and tries again, after a delay which doubles each time, until it can, or
 // the context is cancelled. When it can't listen at first, it returns the
-// error. When it stops, every subscription ends. Only one can run at a time.
+// error. Only one can run at a time.
 func (self *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 	if !self.running.CompareAndSwap(false, true) {
 		return pg.ErrConflict.With("broadcaster is already running")
 	}
 	defer self.running.Store(false)
-	defer self.unsubscribeAll()
-	self.mu.Lock()
-	self.stopped = false
-	self.mu.Unlock()
 	if logger == nil {
 		logger = slog.Default()
+	}
+
+	// Run the manager's broadcaster, until it stops, so its watches end
+	if !self.shared {
+		runCtx, cancel := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_ = self.broadcaster.Run(runCtx)
+		}()
+		defer func() {
+			cancel()
+			<-done
+		}()
 	}
 
 	listened, delay := false, reconnectDelay
@@ -59,7 +71,7 @@ func (self *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 			}
 
 			// Try to listen again, after the delay, which doubles each time
-			logger.WarnContext(ctx, "can't listen for events, trying again", "channel", self.channel, "delay", delay.String(), "error", err.Error())
+			logger.WarnContext(ctx, "can't listen for changes, trying again", "channel", self.channel, "delay", delay.String(), "error", err.Error())
 			select {
 			case <-ctx.Done():
 				return nil
@@ -70,24 +82,29 @@ func (self *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 		}
 		listened, delay = true, reconnectDelay
 		self.setListening(true)
-		logger.DebugContext(ctx, "listening for events", "channel", self.channel)
+		logger.DebugContext(ctx, "listening for changes", "channel", self.channel)
 
-		// Send each notification to the subscribers, until the connection
+		// Publish each notification to the broadcaster, until the connection
 		// closes
 		for notification := range notifications {
-			var event schema.Event
-			if err := json.Unmarshal(notification.Payload, &event); err != nil {
-				logger.WarnContext(ctx, "not an event", "channel", notification.Channel, "payload", string(notification.Payload), "error", err.Error())
+			var n schema.Notification
+			if err := json.Unmarshal(notification.Payload, &n); err != nil {
+				logger.WarnContext(ctx, "not a change", "channel", notification.Channel, "payload", string(notification.Payload), "error", err.Error())
 				continue
 			}
-			logger.DebugContext(ctx, "event", "channel", notification.Channel, "payload", string(notification.Payload))
-			if missed := self.broadcast(event); missed > 0 {
-				logger.DebugContext(ctx, "subscribers missed an event, as they weren't ready for it", "channel", notification.Channel, "subscribers", missed)
+			change, err := n.Change()
+			if err != nil {
+				logger.WarnContext(ctx, "not a change", "channel", notification.Channel, "payload", string(notification.Payload), "error", err.Error())
+				continue
+			}
+			logger.DebugContext(ctx, "change", "channel", notification.Channel, "payload", string(notification.Payload))
+			if missed := self.broadcaster.Publish(change); missed > 0 {
+				logger.DebugContext(ctx, "watchers missed a change, as they weren't ready for it", "channel", notification.Channel, "watchers", missed)
 			}
 		}
 		self.setListening(false)
 		if ctx.Err() == nil {
-			logger.WarnContext(ctx, "stopped listening for events, listening again", "channel", self.channel)
+			logger.WarnContext(ctx, "stopped listening for changes, listening again", "channel", self.channel)
 		}
 	}
 	return nil
@@ -99,13 +116,13 @@ func (self *Manager) Running() bool {
 }
 
 // Listening reports whether the manager is listening on its channel, so the
-// events published to it are sent to the subscribers
+// changes published to it are published to the broadcaster
 func (self *Manager) Listening() bool {
 	return self.listening.Load()
 }
 
 // WaitListening waits until the manager is listening on its channel, so the
-// changes made from then are sent to the subscribers, or returns the
+// changes made from then are published to the broadcaster, or returns the
 // context's error when it's cancelled first
 func (self *Manager) WaitListening(ctx context.Context) error {
 	self.mu.Lock()
@@ -117,13 +134,6 @@ func (self *Manager) WaitListening(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// Subscribers returns how many subscriptions there are
-func (self *Manager) Subscribers() int {
-	self.mu.Lock()
-	defer self.mu.Unlock()
-	return len(self.subscribers)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

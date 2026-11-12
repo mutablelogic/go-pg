@@ -34,7 +34,7 @@ type TaskRelease struct {
 type TaskMeta struct {
 	Payload   json.RawMessage `json:"payload,omitempty"`
 	DelayedAt *time.Time      `json:"delayed_at,omitempty"`
-	Priority  *uint16         `json:"priority,omitempty"` // higher runs first, none is 0, which is normal, at most MaxTaskPriority
+	Priority  *uint16         `json:"priority,omitempty"` // lower runs first, from 0, the highest, and the default, to MaxTaskPriority
 }
 
 type Task struct {
@@ -209,7 +209,7 @@ func (t TaskMeta) Update(bind *pg.Bind) error {
 }
 
 // validatePriority returns an error when the priority is more than the task
-// table's SMALLINT holds
+// table's SMALLINT holds, which is the lowest
 func (t TaskMeta) validatePriority() error {
 	if t.Priority != nil && *t.Priority > MaxTaskPriority {
 		return httpresponse.ErrBadRequest.Withf("priority is more than %d", MaxTaskPriority)

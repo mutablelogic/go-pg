@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS ${"schema"}."task" (
     "dies_at"           TIMESTAMPTZ,
     "retries"           INTEGER NOT NULL CHECK ("retries" >= 0),
     "initial_retries"   INTEGER NOT NULL CHECK ("initial_retries" >= 0),
-    "priority"          SMALLINT NOT NULL DEFAULT 0 CHECK ("priority" >= 0), -- higher runs first, 0 = normal
+    "priority"          SMALLINT NOT NULL DEFAULT 0 CHECK ("priority" >= 0), -- lower runs first, 0 = highest, and the default
     "hash"              BYTEA GENERATED ALWAYS AS (${"schema"}.task_hash("queue", "payload")) STORED, -- hash of the queue and payload, to find duplicate tasks
     PRIMARY KEY ("id"),
     FOREIGN KEY ("queue") REFERENCES ${"schema"}."queue" ("queue") ON DELETE CASCADE
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS ${"schema"}."task" (
 ALTER TABLE ${"schema"}."task"
     ADD COLUMN IF NOT EXISTS "hash" BYTEA GENERATED ALWAYS AS (${"schema"}.task_hash("queue", "payload")) STORED;
 
--- The priority of tasks from before is normal. A constant default doesn't
+-- The priority of tasks from before is the highest, 0. A constant default doesn't
 -- rewrite the task table's partitions.
 ALTER TABLE ${"schema"}."task"
     ADD COLUMN IF NOT EXISTS "priority" SMALLINT NOT NULL DEFAULT 0 CHECK ("priority" >= 0);
@@ -79,6 +79,15 @@ CREATE INDEX IF NOT EXISTS "task_queue_status_idx"
     ON ${"schema"}."task" ("queue", "delayed_at")
     WHERE "started_at" IS NULL 
       AND "finished_at" IS NULL 
+      AND "retries" > 0;
+
+-- pgqueue.task_priority_index
+-- Covers locking a queue's pending task with the highest priority, which is
+-- the lowest, and then the oldest
+CREATE INDEX IF NOT EXISTS "task_queue_priority_idx"
+    ON ${"schema"}."task" ("queue", "priority", "created_at")
+    WHERE "started_at" IS NULL
+      AND "finished_at" IS NULL
       AND "retries" > 0;
 
 -- pgqueue.task_queue_index
@@ -158,7 +167,7 @@ CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert_task(q TEXT, p JSONB, delaye
 $$ LANGUAGE SQL;
 
 -- pgqueue.queue_insert_func
--- Inserts a task into the queue, with its priority, where none is normal,
+-- Inserts a task into the queue, with its priority, where none is 0, the highest,
 -- and returns its id. When the queue deduplicates tasks, a pending task which
 -- is the same is returned instead.
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert(q TEXT, p JSONB, delayed_at TIMESTAMPTZ, priority SMALLINT) RETURNS BIGINT AS $$
@@ -194,7 +203,7 @@ $$ LANGUAGE PLPGSQL;
 -- running task isn't the same, and a change while it runs queues another. A
 -- new task, which hasn't been tried, runs at the earlier of the two delays;
 -- a task waiting to be retried keeps its backoff. The pending task gets the
--- higher of the two priorities. Inserts of the same task are
+-- higher of the two priorities, which is the lower. Inserts of the same task are
 -- serialized with a lock on its hash until the transaction ends, as the task
 -- table is partitioned by id, so a unique index can't prevent duplicates.
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert_dedupe(q TEXT, p JSONB, delayed_at TIMESTAMPTZ, priority SMALLINT) RETURNS BIGINT AS $$
@@ -248,8 +257,9 @@ BEGIN
         RETURN ${"schema"}.queue_insert_task(q, p, delayed_at, v_retries, v_priority);
     END IF;
 
-    -- Raise the pending task's priority to the inserted task's
-    UPDATE ${"schema"}."task" T SET "priority" = v_priority WHERE T."id" = v_id AND T."priority" < v_priority;
+    -- Raise the pending task's priority to the inserted task's, when it's
+    -- higher, which is lower
+    UPDATE ${"schema"}."task" T SET "priority" = v_priority WHERE T."id" = v_id AND T."priority" > v_priority;
 
     -- Run a new task at the earlier of the two delays, where no delay is the
     -- earliest
@@ -332,6 +342,7 @@ WITH selected AS (
     AND
         (queue."concurrency" = 0 OR COALESCE(retained."retained", 0) < queue."concurrency")
     ORDER BY
+        t."priority",
         t."created_at"
     FOR UPDATE OF t SKIP LOCKED LIMIT 1
 )

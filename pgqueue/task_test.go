@@ -102,7 +102,7 @@ func TestCreateTask(t *testing.T) {
 	})
 
 	t.Run("Priority", func(t *testing.T) {
-		// A task's priority is normal, 0, unless it's given, and can't be more
+		// A task's priority is the highest, 0, unless it's given, and can't be more
 		// than a SMALLINT holds
 		manager := taskManager(t, "priority", schema.QueueMeta{})
 		task, err := manager.CreateTask(ctx, "priority", payload(`{"n":1}`))
@@ -128,18 +128,23 @@ func TestCreateTask(t *testing.T) {
 	})
 
 	t.Run("DedupePriority", func(t *testing.T) {
-		// The same pending task gets the higher of the two priorities
+		// The same pending task gets the higher of the two priorities, which
+		// is the lower
 		manager := taskManager(t, "dedupe", schema.QueueMeta{Dedupe: types.Ptr(true)})
-		first, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(2))})
+		first, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(7))})
 		require.NoError(t, err)
-		higher, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(7))})
+		higher, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(2))})
 		require.NoError(t, err)
 		assert.Equal(t, first.Id, higher.Id)
-		assert.Equal(t, types.Ptr(uint16(7)), higher.Priority)
-		lower, err := manager.CreateTask(ctx, "dedupe", payload(`{}`))
+		assert.Equal(t, types.Ptr(uint16(2)), higher.Priority)
+		lower, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(5))})
 		require.NoError(t, err)
 		assert.Equal(t, first.Id, lower.Id)
-		assert.Equal(t, types.Ptr(uint16(7)), lower.Priority)
+		assert.Equal(t, types.Ptr(uint16(2)), lower.Priority)
+		highest, err := manager.CreateTask(ctx, "dedupe", payload(`{}`))
+		require.NoError(t, err)
+		assert.Equal(t, first.Id, highest.Id)
+		assert.Equal(t, types.Ptr(uint16(0)), highest.Priority)
 	})
 
 	t.Run("Invalid", func(t *testing.T) {
@@ -171,6 +176,27 @@ func TestNextTask(t *testing.T) {
 		require.NotNil(t, task.StartedAt)
 		require.NotNil(t, task.DiesAt)
 		assert.WithinDuration(t, task.StartedAt.Add(time.Minute), *task.DiesAt, time.Second)
+	})
+
+	t.Run("Priority", func(t *testing.T) {
+		// The task with the highest priority, which is the lowest, is retained
+		// first, and the oldest of those with the same priority
+		manager := taskManager(t, "priority", schema.QueueMeta{Concurrency: types.Ptr(uint64(0))})
+		low, err := manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{"n":1}`), Priority: types.Ptr(uint16(9))})
+		require.NoError(t, err)
+		first, err := manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{"n":2}`), Priority: types.Ptr(uint16(1))})
+		require.NoError(t, err)
+		second, err := manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{"n":3}`), Priority: types.Ptr(uint16(1))})
+		require.NoError(t, err)
+		highest, err := manager.CreateTask(ctx, "priority", payload(`{"n":4}`))
+		require.NoError(t, err)
+
+		for _, want := range []*schema.Task{highest, first, second, low} {
+			task, err := manager.NextTask(ctx, "worker")
+			require.NoError(t, err)
+			require.NotNil(t, task)
+			assert.Equal(t, want.Id, task.Id)
+		}
 	})
 
 	t.Run("Empty", func(t *testing.T) {

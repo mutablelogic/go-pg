@@ -203,6 +203,32 @@ func TestNextTask(t *testing.T) {
 		}
 	})
 
+	t.Run("RoundRobin", func(t *testing.T) {
+		// Queues take turns between tasks with the same priority, and the
+		// oldest task of a queue is locked on its turn, but a higher priority
+		// is locked first
+		manager := taskManager(t, "a", schema.QueueMeta{})
+		_, err := manager.RegisterQueue(ctx, "b", schema.QueueMeta{}, noopTask)
+		require.NoError(t, err)
+		a1, err := manager.CreateTask(ctx, "a", payload(`{"n":1}`))
+		require.NoError(t, err)
+		a2, err := manager.CreateTask(ctx, "a", payload(`{"n":2}`))
+		require.NoError(t, err)
+		a3, err := manager.CreateTask(ctx, "a", payload(`{"n":3}`))
+		require.NoError(t, err)
+		b1, err := manager.CreateTask(ctx, "b", payload(`{"n":4}`))
+		require.NoError(t, err)
+		b2, err := manager.CreateTask(ctx, "b", schema.TaskMeta{Payload: json.RawMessage(`{"n":5}`), Priority: types.Ptr(uint16(1))})
+		require.NoError(t, err)
+
+		for _, want := range []*schema.Task{a1, b1, a2, a3, b2} {
+			task, err := manager.NextTask(ctx, "worker")
+			require.NoError(t, err)
+			require.NotNil(t, task)
+			assert.Equal(t, want.Id, task.Id, "payload %s", task.Payload)
+		}
+	})
+
 	t.Run("Empty", func(t *testing.T) {
 		manager := taskManager(t, "empty", schema.QueueMeta{})
 		task, err := manager.NextTask(ctx, "worker")

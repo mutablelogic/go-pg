@@ -6,11 +6,15 @@ CREATE TABLE IF NOT EXISTS ${"schema"}."queue" (
     "retry_delay"   INTERVAL NOT NULL DEFAULT INTERVAL '2 minute',
     "concurrency"   INTEGER NOT NULL DEFAULT 0 CHECK ("concurrency" >= 0), -- 0 = unlimited
     "dedupe"        BOOLEAN NOT NULL DEFAULT false, -- true = a task is not inserted while the same task is pending
+    "locked_at"     TIMESTAMPTZ, -- when a task was last locked from the queue, to take turns between queues (NULL = never)
     PRIMARY KEY ("queue")
 );
 
 ALTER TABLE ${"schema"}."queue"
     ADD COLUMN IF NOT EXISTS "dedupe" BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE ${"schema"}."queue"
+    ADD COLUMN IF NOT EXISTS "locked_at" TIMESTAMPTZ;
 
 ALTER TABLE ${"schema"}."queue"
     ALTER COLUMN "ttl" SET DEFAULT INTERVAL '1 hour';
@@ -79,15 +83,6 @@ CREATE INDEX IF NOT EXISTS "task_queue_status_idx"
     ON ${"schema"}."task" ("queue", "delayed_at")
     WHERE "started_at" IS NULL 
       AND "finished_at" IS NULL 
-      AND "retries" > 0;
-
--- pgqueue.task_priority_index
--- Covers locking a queue's pending task with the highest priority, which is
--- the lowest, and then the oldest
-CREATE INDEX IF NOT EXISTS "task_queue_priority_idx"
-    ON ${"schema"}."task" ("queue", "priority", "created_at")
-    WHERE "started_at" IS NULL
-      AND "finished_at" IS NULL
       AND "retries" > 0;
 
 -- pgqueue.task_queue_index
@@ -301,10 +296,16 @@ CREATE OR REPLACE TRIGGER queue_insert_trigger
     FOR EACH ROW EXECUTE FUNCTION ${"schema"}.queue_notify();
 
 -- pgqueue.queue_lock_func
+-- Locks a task for the worker, from the queues, or any queue, and returns its
+-- id. The task with the highest priority, which is the lowest, is locked
+-- first. Queues take turns between tasks with the same priority: the queue
+-- which a task was locked from longest ago, or never, goes first, and then
+-- its oldest task. The queue's turn is taken when the task is locked.
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_lock(q TEXT[], w TEXT) RETURNS BIGINT AS $$
 WITH selected AS (
     SELECT
         t."id",
+        t."queue",
         queue."ttl"
     FROM
         ${"schema"}."task" t
@@ -345,8 +346,14 @@ WITH selected AS (
         (queue."concurrency" = 0 OR COALESCE(retained."retained", 0) < queue."concurrency")
     ORDER BY
         t."priority",
+        queue."locked_at" NULLS FIRST,
         t."created_at"
     FOR UPDATE OF t SKIP LOCKED LIMIT 1
+), turn AS (
+    UPDATE ${"schema"}."queue" SET
+        "locked_at" = CLOCK_TIMESTAMP()
+    FROM selected
+    WHERE ${"schema"}."queue"."queue" = selected."queue"
 )
 UPDATE ${"schema"}."task" SET
     "started_at" = NOW(),

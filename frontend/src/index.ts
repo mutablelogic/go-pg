@@ -33,7 +33,7 @@ import * as api from './pgmanager/httpclient.ts';
 import type { ObjectFilter } from './pgmanager/httpclient.ts';
 import { ListLimits, type Connection, type Database, type Extension, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
 import * as views from './pgmanager/views.ts';
-import type { AclRow } from './pgmanager/aclform.ts';
+import type { AclItem, AclRow } from './pgmanager/aclform.ts';
 import { roleForm, roleFormErrors, roleRequest, type RoleFormErrors } from './pgmanager/roleform.ts';
 import { roleFormView } from './pgmanager/roleformview.ts';
 import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest, type DatabaseFormErrors } from './pgmanager/databaseform.ts';
@@ -266,6 +266,12 @@ function roleView(role: Role): Omit<Item, 'kind'> {
 
 // editRole shows the form of a role, or a new one, in the panel, which saves
 // it, and shows it, or, when it's cancelled, shows the role again, or closes
+// aclRowsOf returns the rows of access which was asked for, such as a new
+// database's, with its owner's, so a form which saves it again keeps them
+function aclRowsOf(acl: readonly AclItem[]): AclRow[] {
+    return acl.map((item) => ({ role: item.role, priv: [...item.priv] }));
+}
+
 // allRoles returns the name of every role, yours, and then, unless only
 // yours, PostgreSQL's own, which roles are members of, rather than which own
 // things, or are granted access to them
@@ -327,7 +333,7 @@ async function editDatabase(db?: Database, acl?: AclRow[]) {
                             // which was asked for, to save again
                             notifications.error(`The database ${saved.name} was created, but its access couldn't be set`, error);
                             await databases.refresh();
-                            void editDatabase(saved, form.acl);
+                            void editDatabase(saved, aclRowsOf(acl));
                             return;
                         }
                     }
@@ -554,7 +560,7 @@ async function editTablespace(space?: Tablespace, acl?: AclRow[]) {
                             // which was asked for, to save again
                             notifications.error(`The tablespace ${saved.name} was created, but its access couldn't be set`, error);
                             void tablespaces.refresh();
-                            void editTablespace(saved, form.acl);
+                            void editTablespace(saved, aclRowsOf(acl));
                             return;
                         }
                     }
@@ -692,7 +698,7 @@ async function editSchema(schema?: Schema, acl?: AclRow[]) {
                             // which was asked for, to save again
                             notifications.error(`The schema ${saved.schema} was created, but its access couldn't be set`, error);
                             await schemas.refresh();
-                            void editSchema(saved, form.acl);
+                            void editSchema(saved, aclRowsOf(acl));
                             return;
                         }
                     }

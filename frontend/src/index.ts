@@ -6,7 +6,8 @@
 
 import '@carbon/styles/css/styles.min.css';
 import './fonts.css';
-import { render, type TemplateResult } from 'lit';
+import { html, render, type TemplateResult } from 'lit';
+import iconLoader from '@carbon/web-components/es/globals/internal/icon-loader.js';
 
 // go-server's components
 import { ApiError } from '@mutablelogic/go-server/api';
@@ -36,6 +37,8 @@ import { roleForm, roleFormErrors, roleRequest, type RoleFormErrors } from './pg
 import { roleFormView } from './pgmanager/roleformview.ts';
 import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest, type DatabaseFormErrors } from './pgmanager/databaseform.ts';
 import { databaseFormView } from './pgmanager/databaseformview.ts';
+import { schemaCreateAcl, schemaForm, schemaFormErrors, schemaRequest, type SchemaFormErrors } from './pgmanager/schemaform.ts';
+import { schemaFormView } from './pgmanager/schemaformview.ts';
 
 // Carbon components, and icons
 import '@carbon/web-components/es/components/ui-shell/index.js';
@@ -437,7 +440,117 @@ schemas.subscribe(({ items }) => {
     if (items && filter?.schema !== undefined && !items.some((schema) => schema.schema === filter?.schema)) {
         filterObjects({ ...filter, schema: undefined });
     }
+    renderSchemaActions();
 });
+
+// The buttons beneath the schemas, which create one, and change, or delete,
+// the one which is chosen
+// They're found when they're rendered, as the schemas are watched before
+// this is reached
+function renderSchemaActions() {
+    const schemaActions = document.getElementById('schema-actions');
+    if (!schemaActions) {
+        return;
+    }
+    const chosen = schemas.current.items?.find((schema) => schema.schema === filter?.schema);
+    const failed = (what: string) => (error: unknown) => notifications.error(what, error);
+    render(html`
+        ${chosen ? html`
+            <cds-button kind="ghost" size="sm" @click=${() => void deleteSchema(chosen).catch(failed(`The schema ${chosen.schema} couldn't be deleted`))}>
+                Delete ${chosen.schema} ${iconLoader(TrashIcon, { slot: 'icon' })}
+            </cds-button>
+            <cds-button kind="ghost" size="sm" @click=${() => void editSchema(chosen).catch(failed("The form couldn't be opened"))}>
+                Change ${chosen.schema} ${iconLoader(EditIcon, { slot: 'icon' })}
+            </cds-button>
+        ` : ''}
+        <cds-button kind="ghost" size="sm" @click=${() => void editSchema().catch(failed("The form couldn't be opened"))}>
+            Create a schema ${iconLoader(AddIcon, { slot: 'icon' })}
+        </cds-button>
+    `, schemaActions);
+}
+
+// editSchema shows the form of a schema, or a new one, in the database which
+// is shown, in the panel, which saves it, and chooses it
+async function editSchema(schema?: Schema) {
+    const database = filter?.database;
+    if (!database) {
+        return;
+    }
+    const roleNames = await allRoles();
+    const form = schemaForm(schema);
+    let errors: SchemaFormErrors = {};
+    const view = (): TemplateResult => schemaFormView(form, roleNames, !schema, rerender, errors);
+    const rerender = () => {
+        if (panelView) {
+            render(view(), panelView);
+        }
+    };
+    open({
+        kind: 'schema-form',
+        title: schema ? `Change ${schema.schema}` : 'Create a schema',
+        subtitle: `Schema · ${database}`,
+        body: view(),
+        actions: [
+            { label: 'Cancel', kind: 'secondary' },
+            {
+                label: schema ? 'Save' : 'Create',
+                kind: 'primary',
+                close: false,
+                run: async () => {
+                    errors = schemaFormErrors(form);
+                    rerender();
+                    if (Object.keys(errors).length) {
+                        return;
+                    }
+                    let saved = schema ? await api.updateSchema(client, database, schema.schema, schemaRequest(form, schema)) : await api.createSchema(client, database, schemaRequest(form));
+                    const acl = schema ? undefined : schemaCreateAcl(form, saved);
+                    if (acl) {
+                        saved = await api.updateSchema(client, database, saved.schema, { acl });
+                    }
+                    await schemas.refresh();
+                    panel.close();
+                    if (filter?.database === database) {
+                        filterObjects({ ...filter, schema: saved.schema });
+                    }
+                },
+            },
+        ],
+    });
+}
+
+// deleteSchema deletes a schema, once its name is typed, which is asked
+// for, as it can't be undone, and, when it has objects, which it can't be
+// deleted with, once it's confirmed that they're deleted too
+async function deleteSchema(schema: Schema) {
+    const database = filter?.database;
+    if (!database) {
+        return;
+    }
+    const typed = prompt(`Delete the schema ${schema.schema}, in ${database}? This can't be undone. Type its name to delete it.`);
+    if (typed === null) {
+        return;
+    }
+    if (typed.trim() !== schema.schema) {
+        notifications.push({ kind: 'warning', title: `The schema ${schema.schema} wasn't deleted`, subtitle: "The name you typed isn't its name" });
+        return;
+    }
+    try {
+        await api.deleteSchema(client, database, schema.schema);
+    } catch (error) {
+        if (!(error instanceof ApiError && error.status === 409)) {
+            throw error;
+        }
+        if (!confirm(`The schema ${schema.schema} has objects in it, such as tables. Delete them too?`)) {
+            return;
+        }
+        await api.deleteSchema(client, database, schema.schema, true);
+    }
+    notifications.push({ kind: 'success', title: `The schema ${schema.schema} was deleted` });
+    if (filter?.database === database) {
+        filterObjects({ ...filter, schema: undefined });
+    }
+    await schemas.refresh();
+}
 
 // showDatabase shows the database's schemas, and all its objects, with its
 // owner, and size, beneath its name
@@ -472,6 +585,7 @@ function filterObjects(next: ObjectFilter) {
         panel.close();
     }
     renderTypes();
+    renderSchemaActions();
     void objects.reset();
 }
 

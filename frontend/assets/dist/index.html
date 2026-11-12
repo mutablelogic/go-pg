@@ -26,6 +26,15 @@
             --gs-page-header-margin: -2rem -2rem 1.5rem;
         }
 
+        /* Buttons beneath tiles, such as those of the schema which is chosen,
+           at the end of the row */
+        .actions-row {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1px;
+            margin: -1.5rem 0 1rem;
+        }
+
         /* The filters of a table, above it */
         .filters {
             margin: 0 0 1rem;
@@ -184,6 +193,7 @@
         <section id="page-database" hidden>
             <gs-page-header id="database-header" heading="Database"></gs-page-header>
             <gs-tiles id="schema-tiles" label="Schemas"></gs-tiles>
+            <div id="schema-actions" class="actions-row"></div>
             <div id="object-types" class="filters"></div>
             <gs-table id="object-table" empty="No objects"></gs-table>
         </section>

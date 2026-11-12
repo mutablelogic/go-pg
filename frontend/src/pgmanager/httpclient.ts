@@ -3,6 +3,7 @@
 import type { Client } from '@mutablelogic/go-server/api';
 import { request } from '@mutablelogic/go-server/api';
 import type { DatabaseRequest } from './databaseform.ts';
+import type { SchemaRequest } from './schemaform.ts';
 import type { RoleRequest } from './roleform.ts';
 import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './schema.ts';
 
@@ -92,6 +93,22 @@ export function listAllDatabases(client: Client): Promise<List<Database>> {
 // listAllSchemas returns every schema of a database
 export function listAllSchemas(client: Client, database: string): Promise<List<Schema>> {
     return listAll((offset, limit) => listSchemas(client, database, offset, limit), ListLimits.schema);
+}
+
+// createSchema creates a schema in a database, and returns it
+export function createSchema(client: Client, database: string, schema: SchemaRequest): Promise<Schema> {
+    return request<Schema>(client, 'POST', `schema/${encodeURIComponent(database)}`, { body: schema });
+}
+
+// updateSchema changes a schema in a database, by its name, and returns it
+export function updateSchema(client: Client, database: string, name: string, schema: SchemaRequest): Promise<Schema> {
+    return request<Schema>(client, 'PATCH', `schema/${encodeURIComponent(database)}/${encodeURIComponent(name)}`, { body: schema });
+}
+
+// deleteSchema deletes a schema in a database, by its name, and returns it as
+// it was. It fails while it has objects, unless force, which deletes them.
+export function deleteSchema(client: Client, database: string, name: string, force = false): Promise<Schema> {
+    return request<Schema>(client, 'DELETE', `schema/${encodeURIComponent(database)}/${encodeURIComponent(name)}`, { query: { force: force || undefined } });
 }
 
 // listSchemas returns a page of the schemas of a database

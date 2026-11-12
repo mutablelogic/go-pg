@@ -55,6 +55,19 @@ export function aclRequest(rows: readonly AclRow[]): AclItem[] {
     return [...items].filter(([, priv]) => priv.size).map(([role, priv]) => ({ role, priv: [...priv] }));
 }
 
+// aclAfterCreate returns the access of something which was created, such as
+// a database, when the rows aren't what it was given, with its owner's,
+// which the rows don't have, unless they've a row of its owner, or else
+// undefined. Creating something only adds to PostgreSQL's defaults, so its
+// access is set once it's created.
+export function aclAfterCreate(rows: readonly AclRow[], created: { owner?: string; acl?: string[] }): AclItem[] | undefined {
+    const all = [...rows];
+    if (created.owner && !all.some((row) => row.role === created.owner)) {
+        all.push(...aclRows(created.acl).filter((row) => row.role === created.owner));
+    }
+    return aclChanged(all, created.acl) ? aclRequest(all) : undefined;
+}
+
 // aclChanged is true when the rows give other privileges than the access
 // privileges, as pgmanager returns them
 export function aclChanged(rows: readonly AclRow[], acl: readonly string[] | undefined): boolean {

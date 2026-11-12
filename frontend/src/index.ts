@@ -455,10 +455,14 @@ async function cancelConnection(conn: Connection) {
     if (!confirm(`Cancel the query connection ${conn.pid} is running? It stays connected, and its transaction, if it's in one, fails.${pgmanagers(conn)}`)) {
         return;
     }
+    const item = panel.current.item;
     const cancelled = await api.cancelConnection(client, conn.pid);
     notifications.push({ kind: 'success', title: `Connection ${conn.pid}'s query was cancelled` });
     void connections.refresh();
-    open({ kind: 'connection-table', ...connectionView(cancelled) });
+    // It's shown again, unless the panel was closed, or shows another
+    if (panel.current.open && panel.current.item === item) {
+        open({ kind: 'connection-table', ...connectionView(cancelled) });
+    }
 }
 
 // endConnection ends a connection, once it's confirmed, and closes the panel
@@ -466,11 +470,15 @@ async function endConnection(conn: Connection) {
     if (!confirm(`End connection ${conn.pid}, of ${conn.role ?? 'its role'}? Its query is cancelled, and its transaction, if it's in one, is rolled back.${pgmanagers(conn)}`)) {
         return;
     }
+    const item = panel.current.item;
     await api.endConnection(client, conn.pid);
     notifications.push({ kind: 'success', title: `Connection ${conn.pid} was ended` });
-    connections.close();
-    panel.close();
     void connections.refresh();
+    // The panel's closed, unless it was, or shows another
+    if (panel.current.open && panel.current.item === item) {
+        connections.close();
+        panel.close();
+    }
 }
 table('setting-table', settings, ListLimits.setting, views.settingColumns, (setting) => ({ title: setting.name, subtitle: setting.category, body: views.settingBody(setting) }));
 table('tablespace-table', tablespaces, ListLimits.tablespace, views.tablespaceColumns, tablespaceView);

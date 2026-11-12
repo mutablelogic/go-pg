@@ -285,7 +285,10 @@ const (
 	connectionGet    = `WITH q AS (` + connectionSelect + `) SELECT *, false FROM q WHERE "pid" = @pid`
 	connectionList   = `WITH q AS (` + connectionSelect + `) SELECT *, false FROM q ${where} ${orderby}`
 	// connectionDelete ends a connection, by its pid, unless it's this one,
-	// and connectionCancel cancels its query, and both return it
-	connectionDelete = `WITH q AS (` + connectionSelect + `) SELECT *, pg_terminate_backend(pid) FROM q WHERE pid = @pid AND pid <> pg_backend_pid()`
-	connectionCancel = `WITH q AS (` + connectionSelect + `) SELECT *, pg_cancel_backend(pid) FROM q WHERE pid = @pid AND pid <> pg_backend_pid()`
+	// and connectionCancel cancels its query, and both return it, when it
+	// was signalled, which it isn't, when it's ended since it was read, so
+	// it's not found. The signal is sent once, in a CTE which is
+	// materialized, and its result is the row's last column.
+	connectionDelete = `WITH q AS (` + connectionSelect + `), s AS MATERIALIZED (SELECT *, pg_terminate_backend(pid) AS "signalled" FROM q WHERE pid = @pid AND pid <> pg_backend_pid()) SELECT * FROM s WHERE "signalled"`
+	connectionCancel = `WITH q AS (` + connectionSelect + `), s AS MATERIALIZED (SELECT *, pg_cancel_backend(pid) AS "signalled" FROM q WHERE pid = @pid AND pid <> pg_backend_pid()) SELECT * FROM s WHERE "signalled"`
 )

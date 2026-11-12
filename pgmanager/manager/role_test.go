@@ -60,3 +60,21 @@ func TestRoleInRoleQuoted(t *testing.T) {
 	}
 	_, _ = mgr.DeleteRole(ctx, "quoted_role")
 }
+
+func TestPredefinedRoleDescriptions(t *testing.T) {
+	mgr, ctx := harness.Begin(t)
+	defer harness.End(t)
+
+	// The bootstrap describes the predefined roles which have no description
+	role, err := mgr.GetRole(ctx, "pg_monitor")
+	require.NoError(t, err)
+	assert.True(t, role.Predefined)
+	assert.Contains(t, types.Value(role.Comment), "Monitors the server")
+
+	// Every one of them which this version of PostgreSQL has is described
+	list, err := mgr.ListRoles(ctx, schema.RoleListRequest{Predefined: types.Ptr(true)})
+	require.NoError(t, err)
+	for _, role := range list.Body {
+		assert.NotEmpty(t, types.Value(role.Comment), role.Name)
+	}
+}

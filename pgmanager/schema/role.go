@@ -25,11 +25,11 @@ type RoleMeta struct {
 	CreateRoles            *bool      `json:"createrole,omitempty" help:"Create roles permission" negatable:""`
 	CreateDatabases        *bool      `json:"createdb,omitempty" help:"Create databases permission" negatable:""`
 	Replication            *bool      `json:"replication,omitempty" help:"Replication permission" negatable:""`
-	ConnectionLimit        *uint64    `json:"conlimit,omitempty" help:"Connection limit"`
+	ConnectionLimit        *int64     `json:"conlimit,omitempty" help:"Connection limit, or -1 for no limit"`
 	BypassRowLevelSecurity *bool      `json:"bypassrls,omitempty" help:"Bypass row-level security" negatable:""`
 	Login                  *bool      `json:"login,omitempty" help:"Login permission" negatable:""`
 	Password               *string    `json:"password,omitempty" help:"Password"`
-	Expires                *time.Time `json:"expires,omitzero" help:"Password expiration"`
+	Expires                *time.Time `json:"expires,omitempty" help:"Password expiration, or the zero time for none"`
 	Groups                 []string   `json:"memberof,omitempty" help:"Group memberships"`
 	Comment                *string    `json:"comment,omitempty" help:"Comment, which an empty one removes"`
 }
@@ -283,7 +283,7 @@ func (r *Role) Scan(row pg.Row) error {
 		return err
 	}
 	if connlimit >= 0 {
-		r.ConnectionLimit = types.Uint64Ptr(uint64(connlimit))
+		r.ConnectionLimit = types.Ptr(connlimit)
 	} else {
 		r.ConnectionLimit = nil
 	}
@@ -391,7 +391,8 @@ func (r RoleMeta) with(insert bool) string {
 		with = append(with, opt("BYPASSRLS", types.Value(r.BypassRowLevelSecurity)))
 	}
 	if r.ConnectionLimit != nil {
-		with = append(with, fmt.Sprintf("CONNECTION LIMIT %v", types.Value(r.ConnectionLimit)))
+		// -1 is no limit
+		with = append(with, fmt.Sprintf("CONNECTION LIMIT %d", max(types.Value(r.ConnectionLimit), -1)))
 	}
 	if r.Password != nil {
 		if password := types.Value(r.Password); password == pgObfuscatedPassword {
@@ -402,11 +403,21 @@ func (r RoleMeta) with(insert bool) string {
 			with = append(with, fmt.Sprintf("PASSWORD %v", types.Quote(password)))
 		}
 	}
-	if expires := types.Value(r.Expires).UTC(); !expires.IsZero() {
-		with = append(with, fmt.Sprintf("VALID UNTIL %v", types.Quote(expires.Format(pgTimestampFormat))))
+	if r.Expires != nil {
+		// The zero time is no expiry, which only an update sets, as a new
+		// role has none
+		if expires := r.Expires.UTC(); !expires.IsZero() {
+			with = append(with, fmt.Sprintf("VALID UNTIL %v", types.Quote(expires.Format(pgTimestampFormat))))
+		} else if !insert {
+			with = append(with, "VALID UNTIL 'infinity'")
+		}
 	}
 	if len(r.Groups) > 0 && insert {
-		with = append(with, "IN ROLE "+strings.Join(r.Groups, ", "))
+		groups := make([]string, 0, len(r.Groups))
+		for _, group := range r.Groups {
+			groups = append(groups, types.DoubleQuote(group))
+		}
+		with = append(with, "IN ROLE "+strings.Join(groups, ", "))
 	}
 
 	// Return the with clause

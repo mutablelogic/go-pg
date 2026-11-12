@@ -36,6 +36,16 @@ function description(comment?: string) {
     return comment ? html`<span style="display: block; max-width: 20rem; overflow: hidden; text-overflow: ellipsis" title=${comment}>${comment}</span>` : '';
 }
 
+// roleName is a role's name, with a person before it, so it's seen to be a
+// role, in a table, whose cells are styled here, as the page's styles don't
+// reach into the table
+export function roleName(name?: string) {
+    if (!name) {
+        return '';
+    }
+    return html`<span style="display: inline-flex; align-items: center; gap: 0.25rem">${iconLoader(UserIcon, { width: '12', height: '12', 'aria-hidden': 'true', style: 'flex: none; fill: currentColor' })}${name}</span>`;
+}
+
 // ownerBadge is a tile's badge of its owner, with a person, which says it's
 // the owner, when it's hovered
 export function ownerBadge(owner?: string): Pick<Tile, 'badge' | 'badgeIcon' | 'badgeTitle'> {
@@ -69,7 +79,7 @@ export const objectColumns: Column<PgObject>[] = [
     { header: 'Name', cell: (object) => object.name ?? '' },
     { header: 'Description', cell: (object) => description(object.comment) },
     { header: 'Type', cell: (object) => object.type ? html`<cds-tag size="sm" type="gray">${object.type.toLowerCase()}</cds-tag>` : '' },
-    { header: 'Owner', cell: (object) => object.owner ?? '' },
+    { header: 'Owner', cell: (object) => roleName(object.owner) },
     { header: 'Rows', cell: (object) => object.table?.live_tuples?.toLocaleString() ?? '' },
     { header: 'Size', cell: (object) => formatBytes(object.bytes) },
 ];
@@ -90,15 +100,16 @@ function roleLinks(names: readonly string[] | undefined, onRole: (name: string) 
         event.preventDefault();
         event.stopPropagation();
         onRole(name);
-    }}>${name}</cds-link>`)}</span>`;
+    }}>${roleName(name)}</cds-link>`)}</span>`;
 }
 
 // roleColumns are the roles' columns, whose roles they're members of open
-// with the function
-export const roleColumns = (onRole: (name: string) => void): Column<Role>[] => [
-    { header: 'Role', cell: (role) => role.name },
+// with the function. PostgreSQL's own roles have no permissions, so they've
+// no column of them.
+export const roleColumns = (onRole: (name: string) => void, predefined = false): Column<Role>[] => [
+    { header: 'Role', cell: (role) => roleName(role.name) },
     { header: 'Description', cell: (role) => description(role.comment) },
-    { header: 'Permissions', cell: (role) => roleFlags(role).map((flag) => html`<cds-tag size="sm" type="gray">${flag}</cds-tag>`) },
+    ...(predefined ? [] : [{ header: 'Permissions', cell: (role: Role) => roleFlags(role).map((flag) => html`<cds-tag size="sm" type="gray">${flag}</cds-tag>`) }]),
     { header: 'Member of', cell: (role) => roleLinks(role.memberof, onRole) },
 ];
 
@@ -123,15 +134,51 @@ export function objectBody(object: PgObject): TemplateResult {
     ]);
 }
 
-export function roleBody(role: Role, onRole: (name: string) => void): TemplateResult {
-    return fields([
-        ['Description', role.comment],
-        ['Permissions', roleFlags(role).join(', ') || 'none'],
-        ['Member of', role.memberof?.length ? roleLinks(role.memberof, onRole) : undefined],
-        ['Connection limit', role.conlimit],
-        ['Expires', role.expires],
-        ['OID', role.oid],
-    ]);
+// roleMembers is a table of roles, such as those a role is a member of,
+// with their descriptions, whose names open them, with a button on each,
+// which removes it, when there's onRemove
+export function roleMembers(names: readonly string[], describe: (name: string) => string | undefined, onRole: (name: string) => void, onRemove?: (name: string) => void): TemplateResult {
+    return html`
+        <cds-table size="sm" class="members">
+            <cds-table-head>
+                <cds-table-header-row>
+                    <cds-table-header-cell>Role</cds-table-header-cell>
+                    <cds-table-header-cell>Description</cds-table-header-cell>
+                    ${onRemove ? html`<cds-table-header-cell><span class="visually-hidden">Remove</span></cds-table-header-cell>` : ''}
+                </cds-table-header-row>
+            </cds-table-head>
+            <cds-table-body>
+                ${names.map((name) => html`
+                    <cds-table-row>
+                        <cds-table-cell>${roleLinks([name], onRole)}</cds-table-cell>
+                        <cds-table-cell>${describe(name) ?? ''}</cds-table-cell>
+                        ${onRemove ? html`
+                            <cds-table-cell class="remove">
+                                <cds-button kind="ghost" size="sm" @click=${() => onRemove(name)}>Remove</cds-button>
+                            </cds-table-cell>
+                        ` : ''}
+                    </cds-table-row>
+                `)}
+            </cds-table-body>
+        </cds-table>
+    `;
+}
+
+export function roleBody(role: Role, onRole: (name: string) => void, describe: (name: string) => string | undefined = () => undefined): TemplateResult {
+    return html`
+        ${fields([
+            ['Description', role.comment],
+            ['Permissions', roleFlags(role).join(', ') || 'none'],
+            ['Connection limit', role.conlimit],
+            // An expiry is a day, which the form sets at its start, in UTC
+        ['Expires', role.expires ? new Date(role.expires).toLocaleDateString(undefined, { dateStyle: 'medium', timeZone: 'UTC' }) : undefined],
+            ['OID', role.oid],
+        ])}
+        ${role.memberof?.length ? html`
+            <h4 class="section">Member of</h4>
+            ${roleMembers(role.memberof, describe, onRole)}
+        ` : ''}
+    `;
 }
 
 
@@ -155,7 +202,7 @@ const stateColours: Record<string, string> = { active: 'green', idle: 'gray', 'i
 export const connectionColumns: Column<Connection>[] = [
     { header: 'PID', cell: (conn) => conn.pid },
     { header: 'Database', cell: (conn) => conn.database, sort: 'database', sortFirst: 'ascending' },
-    { header: 'Role', cell: (conn) => conn.role, sort: 'role', sortFirst: 'ascending' },
+    { header: 'Role', cell: (conn) => roleName(conn.role), sort: 'role', sortFirst: 'ascending' },
     { header: 'Application', cell: (conn) => conn.application ?? '', sort: 'application', sortFirst: 'ascending' },
     { header: 'Client', cell: (conn) => conn.client_addr ? `${conn.client_addr}:${conn.client_port ?? ''}` : 'local', sort: 'client', sortFirst: 'ascending' },
     { header: 'State', cell: (conn) => tag(conn.state, stateColours[conn.state ?? ''] ?? 'gray'), sort: 'state', sortFirst: 'ascending' },
@@ -210,7 +257,7 @@ export function settingCategories(categories: readonly string[], category: strin
 export const tablespaceColumns: Column<Tablespace>[] = [
     { header: 'Tablespace', cell: (space) => space.name },
     { header: 'Description', cell: (space) => description(space.comment) },
-    { header: 'Owner', cell: (space) => space.owner ?? '' },
+    { header: 'Owner', cell: (space) => roleName(space.owner) },
     { header: 'Location', cell: (space) => space.location || 'default' },
     { header: 'Size', cell: (space) => formatBytes(space.bytes) },
 ];
@@ -268,7 +315,7 @@ function formatMs(ms: number): string {
 export const statementColumns: Column<Statement>[] = [
     { header: 'Query', cell: (stmt) => html`<span style="display: block; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" title=${stmt.query}>${stmt.query}</span>` },
     { header: 'Database', cell: (stmt) => stmt.database ?? '' },
-    { header: 'Role', cell: (stmt) => stmt.role ?? '' },
+    { header: 'Role', cell: (stmt) => roleName(stmt.role) },
     { header: 'Calls', cell: (stmt) => stmt.calls.toLocaleString(), sort: 'calls' },
     { header: 'Rows', cell: (stmt) => stmt.rows.toLocaleString(), sort: 'rows' },
     { header: 'Total', cell: (stmt) => formatMs(stmt.total_ms), sort: 'total_ms' },

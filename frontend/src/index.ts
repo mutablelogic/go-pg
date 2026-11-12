@@ -15,7 +15,7 @@ import { ConfigController, configClient, getConfig } from '@mutablelogic/go-serv
 import '@mutablelogic/go-server/config/view';
 import { NotificationController } from '@mutablelogic/go-server/notification';
 import '@mutablelogic/go-server/notification/view';
-import { PanelController } from '@mutablelogic/go-server/panel';
+import { PanelController, type PanelAction } from '@mutablelogic/go-server/panel';
 import '@mutablelogic/go-server/panel/view';
 
 // Candidates for go-server, and pgmanager's own
@@ -32,6 +32,8 @@ import * as api from './pgmanager/httpclient.ts';
 import type { ObjectFilter } from './pgmanager/httpclient.ts';
 import { ListLimits, type Connection, type Database, type Extension, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
 import * as views from './pgmanager/views.ts';
+import { roleForm, roleFormErrors, roleRequest, type RoleFormErrors } from './pgmanager/roleform.ts';
+import { roleFormView } from './pgmanager/roleformview.ts';
 
 // Carbon components, and icons
 import '@carbon/web-components/es/components/ui-shell/index.js';
@@ -39,6 +41,7 @@ import ConnectIcon from '@carbon/icons/es/connect/32.js';
 import DatabaseIcon from '@carbon/icons/es/data--base/32.js';
 import GroupIcon from '@carbon/icons/es/group/32.js';
 import PlugIcon from '@carbon/icons/es/plug/32.js';
+import AddIcon from '@carbon/icons/es/add/16.js';
 import ReplicateIcon from '@carbon/icons/es/replicate/32.js';
 import ResetIcon from '@carbon/icons/es/reset/16.js';
 import SettingsIcon from '@carbon/icons/es/settings/32.js';
@@ -77,8 +80,11 @@ interface Item {
     title: string;
     subtitle?: string;
     body: TemplateResult;
+    actions?: PanelAction[];
 }
-const panel = new PanelController<Item>({ actions: [{ label: 'Close', kind: 'secondary' }] });
+const closeAction: PanelAction = { label: 'Close', kind: 'secondary' };
+const panel = new PanelController<Item>({ actions: [closeAction] })
+    .onError((error, action) => notifications.error(`${action.label} didn't work`, error));
 const panelView = document.querySelector('gs-panel');
 if (panelView) {
     panelView.controller = panel as PanelController<unknown>;
@@ -231,9 +237,77 @@ function table<T>(id: string, controller: ListController<T>, limit: number, colu
 table('object-table', objects, ListLimits.object, views.objectColumns, (object) => ({
     title: object.name ?? '', subtitle: [object.database, object.schema].filter(Boolean).join(' · '), body: views.objectBody(object),
 }));
-table('role-table', roles, ListLimits.role, views.roleColumns(openRole), (role) => ({
-    title: role.name, subtitle: role.predefined ? 'Predefined role' : 'Role', body: views.roleBody(role, openRole),
-}));
+table('role-table', roles, ListLimits.role, views.roleColumns(openRole), roleView);
+
+// roleView is a role in the panel, which, unless it's PostgreSQL's own, can
+// be deleted, or changed
+function roleView(role: Role): Omit<Item, 'kind'> {
+    return {
+        title: role.name,
+        subtitle: role.predefined ? 'Predefined role' : 'Role',
+        body: views.roleBody(role, openRole, describeRole),
+        actions: role.predefined ? undefined : [
+            { label: 'Delete', kind: 'danger', close: false, run: () => deleteRole(role) },
+            { label: 'Edit', kind: 'secondary', close: false, run: () => editRole(role) },
+            closeAction,
+        ],
+    };
+}
+
+// editRole shows the form of a role, or a new one, in the panel, which saves
+// it, and shows it, or, when it's cancelled, shows the role again, or closes
+async function editRole(role?: Role) {
+    const names = (await Promise.all([false, true].map((predefined) => api.listAll((offset, limit) => api.listRoles(client, predefined, offset, limit), ListLimits.role))))
+        .flatMap((list) => (list.body ?? []).map((r) => r.name));
+    const form = roleForm(role);
+    let errors: RoleFormErrors = {};
+    const view = (): TemplateResult => roleFormView(form, names, !role, rerender, errors, describeRole, openRole);
+    const rerender = () => {
+        if (panelView) {
+            render(view(), panelView);
+        }
+    };
+    open({
+        kind: 'role-form',
+        title: role ? `Change ${role.name}` : 'Create a role',
+        subtitle: 'Role',
+        body: view(),
+        actions: [
+            role ? { label: 'Cancel', kind: 'secondary', close: false, run: () => open({ kind: 'role', ...roleView(role) }) } : { label: 'Cancel', kind: 'secondary' },
+            {
+                label: role ? 'Save' : 'Create',
+                kind: 'primary',
+                close: false,
+                run: async () => {
+                    // What's wrong is shown by its input, and isn't sent
+                    errors = roleFormErrors(form);
+                    rerender();
+                    if (Object.keys(errors).length) {
+                        return;
+                    }
+                    const saved = role ? await api.updateRole(client, role.name, roleRequest(form, role)) : await api.createRole(client, roleRequest(form));
+                    void roles.refresh();
+                    open({ kind: 'role', ...roleView(saved) });
+                },
+            },
+        ],
+    });
+    // The roles table's selection is closed, once the form's open, so a
+    // refresh doesn't show the role again in place of the form
+    roles.close();
+}
+
+// deleteRole deletes a role, once it's confirmed, and closes the panel
+async function deleteRole(role: Role) {
+    if (!confirm(`Delete the role ${role.name}? This can't be undone.`)) {
+        return;
+    }
+    await api.deleteRole(client, role.name);
+    notifications.push({ kind: 'success', title: `The role ${role.name} was deleted` });
+    roles.close();
+    panel.close();
+    void roles.refresh();
+}
 
 // openRole opens a role, by its name, such as one a role is a member of,
 // which mayn't be on the page, so it isn't the table's. Only the role which
@@ -244,7 +318,7 @@ function openRole(name: string) {
     const lookup = ++roleLookup;
     api.getRole(client, name).then((role) => {
         if (lookup === roleLookup) {
-            open({ kind: 'role', title: role.name, subtitle: role.predefined ? 'Predefined role' : 'Role', body: views.roleBody(role, openRole) });
+            open({ kind: 'role', ...roleView(role) });
         }
     }).catch((error) => {
         if (lookup === roleLookup) {
@@ -269,6 +343,7 @@ panel.onClose(() => lists.forEach((list) => list.close()));
 // open shows the item in the panel
 function open(item: Item) {
     panel.setHeader({ title: item.title, subtitle: item.subtitle });
+    panel.setActions(item.actions ?? [closeAction]);
     if (panelView) {
         render(item.body, panelView);
     }
@@ -365,6 +440,10 @@ for (const [page, icon] of Object.entries(icons)) {
         header.icon = icon;
     }
 }
+const rolesHeader = pageHeader('roles');
+if (rolesHeader) {
+    rolesHeader.actions = [{ label: 'Create a role', icon: AddIcon, run: () => void editRole().catch((error) => notifications.error("The form couldn't be opened", error)) }];
+}
 const statementsHeader = pageHeader('statements');
 if (statementsHeader) {
     statementsHeader.actions = [{
@@ -460,18 +539,39 @@ if (roleTiles) {
         if (panel.current.item?.kind === 'role-table') {
             panel.close();
         }
+        const roleTable = document.getElementById('role-table') as TableElement<Role> | null;
+        if (roleTable) {
+            roleTable.columns = views.roleColumns(openRole, predefinedRoles);
+        }
         renderRoleTiles();
         void roles.reset();
     });
     renderRoleTiles();
     void roleKinds.load();
 }
+// The descriptions of every role, yours and PostgreSQL's own, which a role's
+// memberships show, and which are loaded again whenever the roles are
+const roleDescriptions = new Map<string, string | undefined>();
+function describeRole(name: string): string | undefined {
+    return roleDescriptions.get(name);
+}
+function loadRoleDescriptions() {
+    Promise.all([false, true].map((predefined) => api.listAll((offset, limit) => api.listRoles(client, predefined, offset, limit), ListLimits.role))).then((lists) => {
+        roleDescriptions.clear();
+        lists.flatMap((list) => list.body ?? []).forEach((role) => roleDescriptions.set(role.name, role.comment));
+    }).catch(() => {
+        // The descriptions are left out, as the roles say why they can't be
+        // loaded
+    });
+}
+
 let countedRoles: unknown;
 roles.subscribe(({ items }) => {
     if (!items || items === countedRoles) {
         return;
     }
     countedRoles = items;
+    loadRoleDescriptions();
     Promise.all([false, true].map((predefined) => api.listRoles(client, predefined, 0, 1))).then(([own, predefined]) => {
         roleCounts.set('', own.count);
         roleCounts.set('predefined', predefined.count);

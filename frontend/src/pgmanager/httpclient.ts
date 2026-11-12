@@ -2,6 +2,7 @@
 
 import type { Client } from '@mutablelogic/go-server/api';
 import { request } from '@mutablelogic/go-server/api';
+import type { RoleRequest } from './roleform.ts';
 import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './schema.ts';
 
 // listAll returns every page of a list, a page at a time, of at most the
@@ -31,6 +32,21 @@ export function getDatabase(client: Client, name: string): Promise<Database> {
 // pg_monitor, when predefined is true, or else the others
 export function listRoles(client: Client, predefined: boolean, offset: number, limit: number): Promise<List<Role>> {
     return request<List<Role>>(client, 'GET', 'role', { query: { predefined, offset, limit } });
+}
+
+// createRole creates a role, and returns it
+export function createRole(client: Client, role: RoleRequest): Promise<Role> {
+    return request<Role>(client, 'POST', 'role', { body: role });
+}
+
+// updateRole changes a role, by its name, and returns it
+export function updateRole(client: Client, name: string, role: RoleRequest): Promise<Role> {
+    return request<Role>(client, 'PATCH', `role/${encodeURIComponent(name)}`, { body: role });
+}
+
+// deleteRole deletes a role, by its name, and returns it as it was
+export function deleteRole(client: Client, name: string): Promise<Role> {
+    return request<Role>(client, 'DELETE', `role/${encodeURIComponent(name)}`);
 }
 
 // getRole returns a role, by its name

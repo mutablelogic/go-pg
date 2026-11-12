@@ -75,6 +75,72 @@
             margin: 0 0 1rem;
         }
 
+        /* A form in a panel, its inputs one beneath another, with a group's
+           legend, such as Permissions */
+        gs-panel .form {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        gs-panel fieldset {
+            margin: 0;
+            padding: 0;
+            border: 0;
+        }
+
+        gs-panel fieldset .helper {
+            margin: 0.5rem 0 0;
+            color: var(--cds-text-helper, #6f6f6f);
+            font-size: 0.75rem;
+        }
+
+        /* A section of a panel, such as a role's memberships, beneath its
+           fields */
+        gs-panel .section {
+            margin: 1.5rem 0 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        /* A field of a form which is a table, such as memberships, with its
+           label, and what adds to it, beneath */
+        gs-panel .members-field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        gs-panel .members-field > .label {
+            color: var(--cds-text-secondary);
+            font-size: 0.75rem;
+        }
+
+        gs-panel .members-field .helper {
+            margin: 0;
+            color: var(--cds-text-helper, #6f6f6f);
+            font-size: 0.75rem;
+        }
+
+        gs-panel cds-table.members .remove {
+            text-align: right;
+        }
+
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+
+        gs-panel legend {
+            margin: 0 0 0.5rem;
+            color: var(--cds-text-secondary);
+            font-size: 0.75rem;
+        }
+
         /* A panel's fields */
         gs-panel dl {
             display: grid;

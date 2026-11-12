@@ -448,10 +448,14 @@ function tablespaceView(space: Tablespace): Omit<Item, 'kind'> {
 }
 
 // editTablespace shows the form of a tablespace, or a new one, in the
-// panel, which saves it, and shows it
-async function editTablespace(space?: Tablespace) {
+// panel, which saves it, and shows it. Its access is acl, when it's set,
+// such as when a new one's couldn't be, so it can be saved again.
+async function editTablespace(space?: Tablespace, acl?: AclRow[]) {
     const roleNames = await ownerRoles(space?.owner);
     const form = tablespaceForm(space);
+    if (acl) {
+        form.acl = acl;
+    }
     let errors: TablespaceFormErrors = {};
     const view = (): TemplateResult => tablespaceFormView(form, roleNames, !space, rerender, errors);
     const rerender = () => {
@@ -479,7 +483,16 @@ async function editTablespace(space?: Tablespace) {
                     let saved = space ? await api.updateTablespace(client, space.name, tablespaceRequest(form, space)) : await api.createTablespace(client, tablespaceRequest(form));
                     const acl = space ? undefined : tablespaceCreateAcl(form, saved);
                     if (acl) {
-                        saved = await api.updateTablespace(client, saved.name, { acl });
+                        try {
+                            saved = await api.updateTablespace(client, saved.name, { acl });
+                        } catch (error) {
+                            // It's created, so it's changed, with the access
+                            // which was asked for, to save again
+                            notifications.error(`The tablespace ${saved.name} was created, but its access couldn't be set`, error);
+                            void tablespaces.refresh();
+                            void editTablespace(saved, form.acl);
+                            return;
+                        }
                     }
                     void tablespaces.refresh();
                     open({ kind: 'tablespace', ...tablespaceView(saved) });

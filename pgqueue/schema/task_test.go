@@ -224,8 +224,8 @@ func TestTaskFailed(t *testing.T) {
 		RetryDelay: types.Ptr(24 * time.Hour),
 	}}))
 
-	// A task which fails with no retries left is delayed until now, when it
-	// failed, rather than for a backoff, so its retention starts now
+	// A task which fails with no retries left finishes now, rather than being
+	// delayed for a backoff, so its retention starts now
 	var id schema.TaskId
 	require.NoError(t, manager.With("id", "failed").Insert(ctx, &id, schema.TaskMeta{Payload: json.RawMessage(`{}`)}))
 	var retained schema.TaskId
@@ -237,6 +237,7 @@ func TestTaskFailed(t *testing.T) {
 	var task schema.TaskWithStatus
 	require.NoError(t, manager.Get(ctx, &task, id))
 	assert.Equal(t, "failed", task.Status)
-	require.NotNil(t, task.DelayedAt)
-	assert.WithinDuration(t, time.Now(), *task.DelayedAt, time.Minute)
+	assert.Nil(t, task.DelayedAt)
+	require.NotNil(t, task.FinishedAt)
+	assert.WithinDuration(t, time.Now(), *task.FinishedAt, time.Minute)
 }

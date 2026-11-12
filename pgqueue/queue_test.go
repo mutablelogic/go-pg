@@ -204,10 +204,10 @@ func TestCleanQueue(t *testing.T) {
 	ids := map[string]uint64{}
 	for status, columns := range map[string]string{
 		"new":     ``,
+		"delayed": `"delayed_at" = NOW() + INTERVAL '1 hour'`,
 		"retry":   `"retries" = "retries" - 1`,
 		"running": `"started_at" = NOW(), "dies_at" = NOW() + INTERVAL '1 hour'`,
-		"expired": `"started_at" = NOW(), "dies_at" = NOW() - INTERVAL '1 minute'`,
-		"failed":  `"retries" = 0`,
+		"failed":  `"retries" = 0, "started_at" = NOW(), "finished_at" = NOW()`,
 		"done":    `"started_at" = NOW(), "finished_at" = NOW()`,
 	} {
 		var id schema.TaskId
@@ -224,7 +224,7 @@ func TestCleanQueue(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, statuses, 1)
 		assert.Equal(t, "clean", statuses[0].Name)
-		assert.Equal(t, map[string]uint64{"new": 1, "retry": 1, "running": 1, "expired": 1, "failed": 1, "done": 1}, counts(statuses[0]))
+		assert.Equal(t, map[string]uint64{"new": 1, "delayed": 1, "retry": 1, "running": 1, "failed": 1, "done": 1}, counts(statuses[0]))
 
 		// Getting the queue has the same counts
 		queue, err := manager.GetQueue(ctx, "clean")
@@ -246,9 +246,9 @@ func TestCleanQueue(t *testing.T) {
 	})
 
 	t.Run("Clean", func(t *testing.T) {
-		// The expired, failed and done tasks are removed once they finished
-		// longer ago than the retention period
-		for _, status := range []string{"expired", "failed", "done"} {
+		// The failed and done tasks are removed once they finished longer ago
+		// than the retention period
+		for _, status := range []string{"failed", "done"} {
 			require.NoError(t, manager.With("tid", ids[status]).Exec(ctx, `UPDATE ${"schema"}."task" SET
 				"created_at" = "created_at" - INTERVAL '2 days',
 				"delayed_at" = "delayed_at" - INTERVAL '2 days',
@@ -263,13 +263,13 @@ func TestCleanQueue(t *testing.T) {
 		for _, task := range removed {
 			got = append(got, task.Id)
 		}
-		assert.ElementsMatch(t, []uint64{ids["expired"], ids["failed"], ids["done"]}, got)
+		assert.ElementsMatch(t, []uint64{ids["failed"], ids["done"]}, got)
 
 		// The other tasks are kept
 		statuses, err := manager.ListQueueStatuses(ctx)
 		require.NoError(t, err)
 		require.Len(t, statuses, 1)
-		assert.Equal(t, map[string]uint64{"new": 1, "retry": 1, "running": 1, "expired": 0, "failed": 0, "done": 0}, counts(statuses[0]))
+		assert.Equal(t, map[string]uint64{"new": 1, "delayed": 1, "retry": 1, "running": 1, "failed": 0, "done": 0}, counts(statuses[0]))
 	})
 }
 
@@ -455,12 +455,67 @@ func hasRetried(t *testing.T, ctx context.Context, manager *pgqueue.Manager) boo
 func counts(queue schema.QueueWithStatus) map[string]uint64 {
 	return map[string]uint64{
 		"new":     queue.New,
+		"delayed": queue.Delayed,
 		"running": queue.Running,
 		"retry":   queue.Retry,
-		"expired": queue.Expired,
 		"failed":  queue.Failed,
 		"done":    queue.Done,
 	}
+}
+
+func TestTaskStatusUpgrade(t *testing.T) {
+	// A database from before, whose statuses have expired, and whose failed
+	// tasks have no finish time, has its statuses, status view and index
+	// replaced, and its failed tasks finished, when a manager starts
+	shared, ctx := test.Begin(t)
+	defer test.End(t)
+	name := "test_" + strings.ToLower(rand.Text())
+	t.Cleanup(func() { assert.NoError(t, pg.SchemaDrop(context.Background(), shared.PoolConn, name)) })
+
+	manager, err := pgqueue.New(ctx, shared.PoolConn, pgqueue.WithSchema(name))
+	require.NoError(t, err)
+	_, err = manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+	failed, err := manager.CreateTask(ctx, "queue", payload(`{}`))
+	require.NoError(t, err)
+	failedAt := time.Now().Add(-time.Hour).Truncate(time.Microsecond)
+	require.NoError(t, manager.With("tid", failed.Id, "failed_at", failedAt).Exec(ctx, `UPDATE ${"schema"}."task" SET "retries" = 0, "delayed_at" = @failed_at WHERE "id" = @tid`))
+	for _, sql := range []string{
+		`DROP TYPE ${"schema"}."task_status" CASCADE`,
+		`CREATE TYPE ${"schema"}."task_status" AS ENUM('new', 'running', 'retry', 'expired', 'failed', 'done')`,
+		`CREATE FUNCTION ${"schema"}.queue_task_status(dies_at TIMESTAMPTZ, started_at TIMESTAMPTZ, finished_at TIMESTAMPTZ, retries INTEGER, initial_retries INTEGER) RETURNS ${"schema"}.task_status AS $$ SELECT 'expired'::${"schema"}.task_status $$ LANGUAGE SQL STABLE`,
+		`CREATE VIEW ${"schema"}."queue_status" AS SELECT Q."queue", 0::BIGINT AS "new", 0::BIGINT AS "running", 0::BIGINT AS "retry", COUNT(${"schema"}.queue_task_status(NULL, NULL, NULL, 0, 0)) AS "expired", 0::BIGINT AS "failed", 0::BIGINT AS "done" FROM ${"schema"}."queue" Q GROUP BY Q."queue"`,
+		`CREATE INDEX "task_queue_idx" ON ${"schema"}."task" ("queue")`,
+	} {
+		require.NoError(t, manager.Exec(ctx, sql))
+	}
+
+	// The pool's connections have plans of the status from before, which a
+	// process which starts doesn't
+	manager, err = pgqueue.New(ctx, shared.PoolConn, pgqueue.WithSchema(name))
+	require.NoError(t, err)
+	shared.PoolConn.Reset()
+	require.NoError(t, manager.Exec(ctx, `DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM pg_enum E JOIN pg_type T ON T.oid = E.enumtypid JOIN pg_namespace N ON N.oid = T.typnamespace WHERE N.nspname = ${'schema'} AND T.typname = 'task_status' AND E.enumlabel = 'delayed') THEN
+			RAISE EXCEPTION 'no delayed status';
+		END IF;
+		IF EXISTS (SELECT 1 FROM pg_enum E JOIN pg_type T ON T.oid = E.enumtypid JOIN pg_namespace N ON N.oid = T.typnamespace WHERE N.nspname = ${'schema'} AND T.typname = 'task_status' AND E.enumlabel = 'expired') THEN
+			RAISE EXCEPTION 'an expired status';
+		END IF;
+		IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = ${'schema'} AND indexname = 'task_queue_idx') THEN
+			RAISE EXCEPTION 'the index from before';
+		END IF;
+	END $$`))
+
+	// The failed task finished when it failed, and is counted
+	task, err := manager.GetTask(ctx, failed.Id)
+	require.NoError(t, err)
+	assert.Equal(t, "failed", task.Status)
+	require.NotNil(t, task.FinishedAt)
+	assert.True(t, failedAt.Equal(*task.FinishedAt), "%v != %v", failedAt, *task.FinishedAt)
+	queue, err := manager.GetQueue(ctx, "queue")
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, queue.Failed)
 }
 
 func TestQueueStatusViewUpgrade(t *testing.T) {

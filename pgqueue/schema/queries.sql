@@ -64,9 +64,9 @@ SELECT
     q."concurrency",
     q."dedupe",
     s."new",
+    s."delayed",
     s."running",
     s."retry",
-    s."expired",
     s."failed",
     s."done"
 FROM
@@ -106,7 +106,7 @@ SELECT
     "dies_at",
 	"retries",
 	"priority",
-	${"schema"}.queue_task_status("dies_at", "started_at", "finished_at", "retries", "initial_retries") AS "status"
+	${"schema"}.queue_task_status("delayed_at", "started_at", "finished_at", "retries", "initial_retries") AS "status"
 FROM
     ${"schema"}."task"
 WHERE
@@ -173,7 +173,7 @@ FROM (
         t."dies_at",
         t."retries",
         t."priority",
-		${"schema"}.queue_task_status(t."dies_at", t."started_at", t."finished_at", t."retries", t."initial_retries") AS "status"
+		${"schema"}.queue_task_status(t."delayed_at", t."started_at", t."finished_at", t."retries", t."initial_retries") AS "status"
     FROM
         ${"schema"}."task" t
     ${taskwhere}
@@ -275,9 +275,9 @@ SELECT
     q."concurrency",
     q."dedupe",
     s."new",
+    s."delayed",
     s."running",
     s."retry",
-    s."expired",
     s."failed",
     s."done"
 FROM
@@ -297,9 +297,9 @@ SELECT
     q."concurrency",
     q."dedupe",
     s."new",
+    s."delayed",
     s."running",
     s."retry",
-    s."expired",
     s."failed",
     s."done"
 FROM

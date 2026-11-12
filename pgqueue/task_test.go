@@ -58,6 +58,15 @@ func TestCreateTask(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, task.DelayedAt)
 		assert.WithinDuration(t, later, *task.DelayedAt, time.Second)
+
+		// It's delayed until it's ready, when it's new
+		got, err := manager.GetTask(ctx, task.Id)
+		require.NoError(t, err)
+		assert.Equal(t, "delayed", got.Status)
+		require.NoError(t, manager.With("tid", task.Id).Exec(ctx, `UPDATE ${"schema"}."task" SET "delayed_at" = NOW() - INTERVAL '1 second' WHERE "id" = @tid`))
+		got, err = manager.GetTask(ctx, task.Id)
+		require.NoError(t, err)
+		assert.Equal(t, "new", got.Status)
 	})
 
 	t.Run("Dedupe", func(t *testing.T) {
@@ -385,22 +394,61 @@ func TestNextTask(t *testing.T) {
 		}
 	})
 
-	t.Run("Expired", func(t *testing.T) {
-		// A task which ran past its TTL is retained again, and doesn't count
-		// towards the queue's concurrency
-		manager := taskManager(t, "expired", schema.QueueMeta{Concurrency: types.Ptr(uint64(1))})
-		task, err := manager.CreateTask(ctx, "expired", payload(`{}`))
+	t.Run("Stalled", func(t *testing.T) {
+		// A task which runs past its TTL is running, and counts towards its
+		// queue's concurrency, while its worker may still release it. Once
+		// it stalls, past its grace period, it fails as if its worker failed
+		// it, and is retried after a backoff.
+		manager := taskManager(t, "stalled", schema.QueueMeta{Concurrency: types.Ptr(uint64(1)), RetryDelay: types.Ptr(time.Minute)})
+		task, err := manager.CreateTask(ctx, "stalled", payload(`{}`))
+		require.NoError(t, err)
+		_, err = manager.CreateTask(ctx, "stalled", payload(`{"n":2}`))
 		require.NoError(t, err)
 		next, err := manager.NextTask(ctx, "first")
 		require.NoError(t, err)
 		require.NotNil(t, next)
-		require.NoError(t, manager.With("tid", task.Id).Exec(ctx, `UPDATE ${"schema"}."task" SET "dies_at" = NOW() - INTERVAL '1 second' WHERE "id" = @tid`))
+		require.Equal(t, task.Id, next.Id)
 
+		require.NoError(t, manager.With("tid", task.Id).Exec(ctx, `UPDATE ${"schema"}."task" SET "dies_at" = NOW() - INTERVAL '1 minute' WHERE "id" = @tid`))
+		next, err = manager.NextTask(ctx, "second")
+		require.NoError(t, err)
+		assert.Nil(t, next)
+		got, err := manager.GetTask(ctx, task.Id)
+		require.NoError(t, err)
+		assert.Equal(t, "running", got.Status)
+
+		require.NoError(t, manager.With("tid", task.Id).Exec(ctx, `UPDATE ${"schema"}."task" SET "dies_at" = NOW() - INTERVAL '3 minutes' WHERE "id" = @tid`))
 		next, err = manager.NextTask(ctx, "second")
 		require.NoError(t, err)
 		require.NotNil(t, next)
-		assert.Equal(t, task.Id, next.Id)
-		assert.Equal(t, "second", *next.Worker)
+		assert.NotEqual(t, task.Id, next.Id)
+		got, err = manager.GetTask(ctx, task.Id)
+		require.NoError(t, err)
+		assert.Equal(t, "retry", got.Status)
+		assert.Equal(t, types.Ptr(uint64(2)), got.Retries)
+		assert.Contains(t, string(got.Result), "stalled")
+		require.NotNil(t, got.DelayedAt)
+		assert.WithinDuration(t, time.Now().Add(time.Minute), *got.DelayedAt, 10*time.Second)
+	})
+
+	t.Run("StalledFailed", func(t *testing.T) {
+		// A task which stalls with no retries left has failed, and finished
+		manager := taskManager(t, "stalledfailed", schema.QueueMeta{Retries: types.Ptr(uint64(1))})
+		task, err := manager.CreateTask(ctx, "stalledfailed", payload(`{}`))
+		require.NoError(t, err)
+		next, err := manager.NextTask(ctx, "first")
+		require.NoError(t, err)
+		require.NotNil(t, next)
+		require.NoError(t, manager.With("tid", task.Id).Exec(ctx, `UPDATE ${"schema"}."task" SET "dies_at" = NOW() - INTERVAL '3 minutes' WHERE "id" = @tid`))
+		next, err = manager.NextTask(ctx, "second")
+		require.NoError(t, err)
+		assert.Nil(t, next)
+		got, err := manager.GetTask(ctx, task.Id)
+		require.NoError(t, err)
+		assert.Equal(t, "failed", got.Status)
+		assert.NotNil(t, got.StartedAt)
+		require.NotNil(t, got.FinishedAt)
+		assert.WithinDuration(t, time.Now(), *got.FinishedAt, 10*time.Second)
 	})
 
 	t.Run("NoRetries", func(t *testing.T) {
@@ -462,9 +510,12 @@ func TestReleaseTask(t *testing.T) {
 		next, err = manager.NextTask(ctx, "worker")
 		require.NoError(t, err)
 		require.NotNil(t, next)
-		_, err = manager.ReleaseTask(ctx, next.Id, false, json.RawMessage(`"boom"`), &status)
+		task, err = manager.ReleaseTask(ctx, next.Id, false, json.RawMessage(`"boom"`), &status)
 		require.NoError(t, err)
 		assert.Equal(t, "failed", status)
+		assert.Equal(t, types.Ptr(uint64(0)), task.Retries)
+		require.NotNil(t, task.FinishedAt)
+		assert.WithinDuration(t, time.Now(), *task.FinishedAt, 10*time.Second)
 	})
 
 	t.Run("NotRunning", func(t *testing.T) {

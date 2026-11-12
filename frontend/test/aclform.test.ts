@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { aclChanged, aclRequest, aclRows } from '../src/pgmanager/aclform.ts';
 import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest } from '../src/pgmanager/databaseform.ts';
-import type { Database } from '../src/pgmanager/schema.ts';
+import type { Database, Schema } from '../src/pgmanager/schema.ts';
+import { schemaCreateAcl, schemaForm, schemaFormErrors, schemaRequest } from '../src/pgmanager/schemaform.ts';
 
 test('aclRows', () => {
     // Rows are a role, which is quoted when it needs it, or PUBLIC, and its
@@ -55,4 +56,23 @@ test('databaseRequest', async (t) => {
         form.acl = form.acl.filter((row) => row.role !== 'PUBLIC');
         assert.deepEqual(databaseRequest(form, db), { name: 'store', comment: '', acl: [{ role: 'postgres', priv: ['CONNECT', 'CREATE', 'TEMPORARY'] }] });
     });
+});
+
+test('schemaRequest', () => {
+    // A new schema is named schema, not name, isn't PostgreSQL's, and a
+    // changed one has only what's changed
+    const form = schemaForm();
+    assert.equal(form.acl.length, 0);
+    assert.deepEqual(schemaFormErrors(form), { name: 'A schema needs a name' });
+    form.name = 'pg_mine';
+    assert.deepEqual(schemaFormErrors(form), { name: "A schema's name can't start with pg_" });
+    form.name = 'sales';
+    assert.deepEqual(schemaRequest(form), { schema: 'sales' });
+    const created: Schema = { oid: 1, schema: 'sales', owner: 'app', acl: ['app:USAGE,CREATE'] };
+    assert.equal(schemaCreateAcl(form, created), undefined);
+    form.acl.push({ role: 'reporter', priv: ['USAGE'] });
+    assert.deepEqual(schemaCreateAcl(form, created), [{ role: 'reporter', priv: ['USAGE'] }, { role: 'app', priv: ['USAGE', 'CREATE'] }]);
+    const changed = schemaForm(created);
+    changed.comment = 'Orders';
+    assert.deepEqual(schemaRequest(changed, created), { comment: 'Orders' });
 });

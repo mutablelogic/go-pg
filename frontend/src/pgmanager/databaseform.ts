@@ -2,7 +2,7 @@
 // name, owner, description, and access privileges. The request has only
 // what's changed, when an existing database is changed.
 
-import { aclChanged, aclRequest, aclRows, Public, type AclItem, type AclRow } from './aclform.ts';
+import { aclAfterCreate, aclChanged, aclRequest, aclRows, Public, type AclItem, type AclRow } from './aclform.ts';
 import type { Database } from './schema.ts';
 
 // DatabaseForm is what the form's inputs set: its owner, which is empty for
@@ -72,9 +72,5 @@ export function databaseRequest(form: DatabaseForm, db?: Database): DatabaseRequ
 // when the form's isn't what it was given, with its owner's, which the form
 // doesn't have, unless it has a row of its owner, or else undefined
 export function databaseCreateAcl(form: DatabaseForm, created: Database): AclItem[] | undefined {
-    const rows = [...form.acl];
-    if (created.owner && !rows.some((row) => row.role === created.owner)) {
-        rows.push(...aclRows(created.acl).filter((row) => row.role === created.owner));
-    }
-    return aclChanged(rows, created.acl) ? aclRequest(rows) : undefined;
+    return aclAfterCreate(form.acl, created);
 }

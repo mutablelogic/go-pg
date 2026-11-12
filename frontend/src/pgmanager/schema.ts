@@ -54,6 +54,7 @@ export interface Schema {
     schema: string;
     comment?: string;
     owner?: string;
+    acl?: string[];
     bytes?: number;
 }
 

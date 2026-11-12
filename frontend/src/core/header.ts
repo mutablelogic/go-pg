@@ -30,6 +30,7 @@ export class PageHeaderElement extends LitElement {
     static override properties = {
         heading: { type: String },
         subtitle: { type: String },
+        details: { attribute: false },
         icon: { attribute: false },
         actions: { attribute: false },
     };
@@ -37,6 +38,10 @@ export class PageHeaderElement extends LitElement {
     // heading is the page's title, and subtitle what's beneath it
     declare heading: string;
     declare subtitle: string;
+
+    // details are beneath the title, in place of the subtitle, when they're
+    // set, such as a template, with icons
+    declare details?: unknown;
 
     // icon is a 32px Carbon icon, before the title
     declare icon?: CarbonIconDescriptor;
@@ -127,7 +132,7 @@ export class PageHeaderElement extends LitElement {
                 ${this.icon ? html`<span class="icon">${iconLoader(this.icon)}</span>` : nothing}
                 <div class="text">
                     <h1>${this.heading}</h1>
-                    ${this.subtitle ? html`<p>${this.subtitle}</p>` : nothing}
+                    ${this.details ? html`<p>${this.details}</p>` : this.subtitle ? html`<p>${this.subtitle}</p>` : nothing}
                 </div>
                 <slot></slot>
                 ${this.actions.length ? html`

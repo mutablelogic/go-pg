@@ -24,6 +24,20 @@ export const DatabasePrivileges = ['CONNECT', 'CREATE', 'TEMPORARY'] as const;
 export const SchemaPrivileges = ['USAGE', 'CREATE'] as const;
 export const TablespacePrivileges = ['CREATE'] as const;
 
+// What each privilege of each kind of thing lets a role do
+export const DatabasePrivilegeHelp: Record<string, string> = {
+    CONNECT: 'Connect to the database',
+    CREATE: 'Create schemas in the database',
+    TEMPORARY: 'Create temporary tables, while it is connected',
+};
+export const SchemaPrivilegeHelp: Record<string, string> = {
+    USAGE: 'Use what is in the schema, such as its tables, which each need privileges of their own too. Without it, nothing in the schema can be used',
+    CREATE: 'Create tables, views, functions and other objects in the schema',
+};
+export const TablespacePrivilegeHelp: Record<string, string> = {
+    CREATE: 'Create tables, indexes and databases in the tablespace',
+};
+
 // The option which lets a role grant a privilege it has, which pgmanager
 // returns after it, such as CONNECT WITH GRANT OPTION, but doesn't take
 // back, so it's left out
@@ -53,6 +67,19 @@ export function aclRequest(rows: readonly AclRow[]): AclItem[] {
         items.set(row.role, priv);
     }
     return [...items].filter(([, priv]) => priv.size).map(([role, priv]) => ({ role, priv: [...priv] }));
+}
+
+// aclAfterCreate returns the access of something which was created, such as
+// a database, when the rows aren't what it was given, with its owner's,
+// which the rows don't have, unless they've a row of its owner, or else
+// undefined. Creating something only adds to PostgreSQL's defaults, so its
+// access is set once it's created.
+export function aclAfterCreate(rows: readonly AclRow[], created: { owner?: string; acl?: string[] }): AclItem[] | undefined {
+    const all = [...rows];
+    if (created.owner && !all.some((row) => row.role === created.owner)) {
+        all.push(...aclRows(created.acl).filter((row) => row.role === created.owner));
+    }
+    return aclChanged(all, created.acl) ? aclRequest(all) : undefined;
 }
 
 // aclChanged is true when the rows give other privileges than the access

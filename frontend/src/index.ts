@@ -6,7 +6,8 @@
 
 import '@carbon/styles/css/styles.min.css';
 import './fonts.css';
-import { render, type TemplateResult } from 'lit';
+import { html, render, type TemplateResult } from 'lit';
+import iconLoader from '@carbon/web-components/es/globals/internal/icon-loader.js';
 
 // go-server's components
 import { ApiError } from '@mutablelogic/go-server/api';
@@ -32,10 +33,13 @@ import * as api from './pgmanager/httpclient.ts';
 import type { ObjectFilter } from './pgmanager/httpclient.ts';
 import { ListLimits, type Connection, type Database, type Extension, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
 import * as views from './pgmanager/views.ts';
+import type { AclRow } from './pgmanager/aclform.ts';
 import { roleForm, roleFormErrors, roleRequest, type RoleFormErrors } from './pgmanager/roleform.ts';
 import { roleFormView } from './pgmanager/roleformview.ts';
 import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest, type DatabaseFormErrors } from './pgmanager/databaseform.ts';
 import { databaseFormView } from './pgmanager/databaseformview.ts';
+import { schemaCreateAcl, schemaForm, schemaFormErrors, schemaRequest, type SchemaFormErrors } from './pgmanager/schemaform.ts';
+import { schemaFormView } from './pgmanager/schemaformview.ts';
 
 // Carbon components, and icons
 import '@carbon/web-components/es/components/ui-shell/index.js';
@@ -260,18 +264,31 @@ function roleView(role: Role): Omit<Item, 'kind'> {
 
 // editRole shows the form of a role, or a new one, in the panel, which saves
 // it, and shows it, or, when it's cancelled, shows the role again, or closes
-// allRoles returns the name of every role, yours, and then PostgreSQL's
-// own, which can own things, or be granted access to them
-async function allRoles(): Promise<string[]> {
-    const lists = await Promise.all([false, true].map((predefined) => api.listAll((offset, limit) => api.listRoles(client, predefined, offset, limit), ListLimits.role)));
+// allRoles returns the name of every role, yours, and then, unless only
+// yours, PostgreSQL's own, which roles are members of, rather than which own
+// things, or are granted access to them
+async function allRoles(yours = false): Promise<string[]> {
+    const lists = await Promise.all((yours ? [false] : [false, true]).map((predefined) => api.listAll((offset, limit) => api.listRoles(client, predefined, offset, limit), ListLimits.role)));
     return lists.flatMap((list) => (list.body ?? []).map((role) => role.name));
 }
 
+// ownerRoles returns your roles, which can own something, or be granted
+// access to it, with its owner, when it's PostgreSQL's own, such as
+// pg_database_owner, so the form keeps it
+async function ownerRoles(owner?: string): Promise<string[]> {
+    const names = await allRoles(true);
+    return owner && !names.includes(owner) ? [owner, ...names] : names;
+}
+
 // editDatabase shows the form of a database, or a new one, in the panel,
-// which saves it, and shows its page
-async function editDatabase(db?: Database) {
-    const roleNames = await allRoles();
+// which saves it, and shows its page. Its access is acl, when it's set,
+// such as when a new one's couldn't be, so it can be saved again.
+async function editDatabase(db?: Database, acl?: AclRow[]) {
+    const roleNames = await ownerRoles(db?.owner);
     const form = databaseForm(db);
+    if (acl) {
+        form.acl = acl;
+    }
     let errors: DatabaseFormErrors = {};
     const view = (): TemplateResult => databaseFormView(form, roleNames, rerender, errors);
     const rerender = () => {
@@ -301,7 +318,16 @@ async function editDatabase(db?: Database) {
                     // it isn't what PostgreSQL gave it
                     const acl = db ? undefined : databaseCreateAcl(form, saved);
                     if (acl) {
-                        saved = await api.updateDatabase(client, saved.name, { acl });
+                        try {
+                            saved = await api.updateDatabase(client, saved.name, { acl });
+                        } catch (error) {
+                            // It's created, so it's changed, with the access
+                            // which was asked for, to save again
+                            notifications.error(`The database ${saved.name} was created, but its access couldn't be set`, error);
+                            await databases.refresh();
+                            void editDatabase(saved, form.acl);
+                            return;
+                        }
                     }
                     await databases.refresh();
                     panel.close();
@@ -437,7 +463,131 @@ schemas.subscribe(({ items }) => {
     if (items && filter?.schema !== undefined && !items.some((schema) => schema.schema === filter?.schema)) {
         filterObjects({ ...filter, schema: undefined });
     }
+    renderSchemaActions();
 });
+
+// The buttons beneath the schemas, which create one, and change, or delete,
+// the one which is chosen
+// They're found when they're rendered, as the schemas are watched before
+// this is reached
+function renderSchemaActions() {
+    const schemaActions = document.getElementById('schema-actions');
+    if (!schemaActions) {
+        return;
+    }
+    const chosen = schemas.current.items?.find((schema) => schema.schema === filter?.schema);
+    const failed = (what: string) => (error: unknown) => notifications.error(what, error);
+    render(html`
+        ${chosen ? html`
+            <cds-button kind="ghost" size="sm" @click=${() => void deleteSchema(chosen).catch(failed(`The schema ${chosen.schema} couldn't be deleted`))}>
+                Delete ${chosen.schema} ${iconLoader(TrashIcon, { slot: 'icon' })}
+            </cds-button>
+            <cds-button kind="ghost" size="sm" @click=${() => void editSchema(chosen).catch(failed("The form couldn't be opened"))}>
+                Change ${chosen.schema} ${iconLoader(EditIcon, { slot: 'icon' })}
+            </cds-button>
+        ` : ''}
+        <cds-button kind="ghost" size="sm" @click=${() => void editSchema().catch(failed("The form couldn't be opened"))}>
+            Create a schema ${iconLoader(AddIcon, { slot: 'icon' })}
+        </cds-button>
+    `, schemaActions);
+}
+
+// editSchema shows the form of a schema, or a new one, in the database which
+// is shown, in the panel, which saves it, and chooses it. Its access is
+// acl, when it's set, such as when a new one's couldn't be, so it can be
+// saved again.
+async function editSchema(schema?: Schema, acl?: AclRow[]) {
+    const database = filter?.database;
+    if (!database) {
+        return;
+    }
+    const roleNames = await ownerRoles(schema?.owner);
+    const form = schemaForm(schema);
+    if (acl) {
+        form.acl = acl;
+    }
+    let errors: SchemaFormErrors = {};
+    const view = (): TemplateResult => schemaFormView(form, roleNames, !schema, rerender, errors);
+    const rerender = () => {
+        if (panelView) {
+            render(view(), panelView);
+        }
+    };
+    open({
+        kind: 'schema-form',
+        title: schema ? `Change ${schema.schema}` : 'Create a schema',
+        subtitle: `Schema · ${database}`,
+        body: view(),
+        actions: [
+            { label: 'Cancel', kind: 'secondary' },
+            {
+                label: schema ? 'Save' : 'Create',
+                kind: 'primary',
+                close: false,
+                run: async () => {
+                    errors = schemaFormErrors(form);
+                    rerender();
+                    if (Object.keys(errors).length) {
+                        return;
+                    }
+                    let saved = schema ? await api.updateSchema(client, database, schema.schema, schemaRequest(form, schema)) : await api.createSchema(client, database, schemaRequest(form));
+                    const acl = schema ? undefined : schemaCreateAcl(form, saved);
+                    if (acl) {
+                        try {
+                            saved = await api.updateSchema(client, database, saved.schema, { acl });
+                        } catch (error) {
+                            // It's created, so it's changed, with the access
+                            // which was asked for, to save again
+                            notifications.error(`The schema ${saved.schema} was created, but its access couldn't be set`, error);
+                            await schemas.refresh();
+                            void editSchema(saved, form.acl);
+                            return;
+                        }
+                    }
+                    await schemas.refresh();
+                    panel.close();
+                    if (filter?.database === database) {
+                        filterObjects({ ...filter, schema: saved.schema });
+                    }
+                },
+            },
+        ],
+    });
+}
+
+// deleteSchema deletes a schema, once its name is typed, which is asked
+// for, as it can't be undone, and, when it has objects, which it can't be
+// deleted with, once it's confirmed that they're deleted too
+async function deleteSchema(schema: Schema) {
+    const database = filter?.database;
+    if (!database) {
+        return;
+    }
+    const typed = prompt(`Delete the schema ${schema.schema}, in ${database}? This can't be undone. Type its name to delete it.`);
+    if (typed === null) {
+        return;
+    }
+    if (typed.trim() !== schema.schema) {
+        notifications.push({ kind: 'warning', title: `The schema ${schema.schema} wasn't deleted`, subtitle: "The name you typed isn't its name" });
+        return;
+    }
+    try {
+        await api.deleteSchema(client, database, schema.schema);
+    } catch (error) {
+        if (!(error instanceof ApiError && error.status === 409)) {
+            throw error;
+        }
+        if (!confirm(`The schema ${schema.schema} has objects in it, such as tables. Delete them too?`)) {
+            return;
+        }
+        await api.deleteSchema(client, database, schema.schema, true);
+    }
+    notifications.push({ kind: 'success', title: `The schema ${schema.schema} was deleted` });
+    if (filter?.database === database) {
+        filterObjects({ ...filter, schema: undefined });
+    }
+    await schemas.refresh();
+}
 
 // showDatabase shows the database's schemas, and all its objects, with its
 // owner, and size, beneath its name
@@ -446,7 +596,10 @@ function showDatabase(name: string) {
     const header = pageHeader('database');
     if (header) {
         header.heading = name;
-        header.subtitle = db ? [db.comment, db.owner && `Owned by ${db.owner}`, views.formatBytes(db.bytes)].filter(Boolean).join(' · ') : '';
+        // Its description, its owner, as a role is shown, and its size
+        header.details = db ? html`${[db.comment, db.owner && html`<span title="Owner">${views.roleName(db.owner)}</span>`, views.formatBytes(db.bytes)]
+            .filter(Boolean)
+            .map((part, i) => html`${i ? ' · ' : ''}${part}`)}` : undefined;
         header.actions = [
             ...(db ? [
                 { label: 'Delete', kind: 'danger' as const, icon: TrashIcon, run: () => void deleteDatabase(db).catch((error) => notifications.error(`The database ${db.name} couldn't be deleted`, error)) },
@@ -472,6 +625,7 @@ function filterObjects(next: ObjectFilter) {
         panel.close();
     }
     renderTypes();
+    renderSchemaActions();
     void objects.reset();
 }
 

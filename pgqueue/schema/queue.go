@@ -19,11 +19,11 @@ import (
 type QueueName string
 
 type QueueMeta struct {
-	TTL         *time.Duration `json:"ttl,omitempty" help:"Time-to-live for queue messages"`
-	Retries     *uint64        `json:"retries" help:"Number of retries before failing"`
-	RetryDelay  *time.Duration `json:"retry_delay" help:"Backoff delay"`
-	Concurrency *uint64        `json:"concurrency" help:"Number of concurrent workers"`
-	Dedupe      *bool          `json:"dedupe,omitempty" help:"Whether a task is not inserted while the same task is pending"`
+	TTL         *time.Duration `json:"ttl,omitempty" help:"How long a task can run, such as 1h"`
+	Retries     *uint64        `json:"retries,omitempty" help:"Number of times a task is tried before it fails"`
+	RetryDelay  *time.Duration `json:"retry_delay,omitempty" help:"Delay before a failed task is retried, which grows with each retry, such as 2m"`
+	Concurrency *uint64        `json:"concurrency,omitempty" help:"Number of tasks which can run at once, or 0 for no limit"`
+	Dedupe      *bool          `json:"dedupe,omitempty" help:"Whether a task is not inserted while the same task is pending" negatable:""`
 }
 
 type Queue struct {

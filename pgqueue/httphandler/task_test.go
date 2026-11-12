@@ -91,6 +91,10 @@ func TestListTasks(t *testing.T) {
 
 		result = list(t, "?queue=queue&status=new")
 		assert.EqualValues(t, 2, result.Count)
+
+		// More than one status
+		result = list(t, "?queue=queue&status=new&status=running")
+		assert.EqualValues(t, 3, result.Count)
 	})
 
 	t.Run("Page", func(t *testing.T) {
@@ -135,5 +139,40 @@ func TestGetTask(t *testing.T) {
 		// found, and one more is invalid
 		assert.Equal(t, http.StatusNotFound, server.JSON(t, http.MethodGet, "task/9223372036854775807", nil, nil))
 		assert.Equal(t, http.StatusBadRequest, server.JSON(t, http.MethodGet, "task/9223372036854775808", nil, nil))
+	})
+}
+
+func TestUpdateTask(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	manager := test.IsolatedManager(t)
+	server := test.NewServer(t, manager)
+	_, err := manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+	created, err := manager.CreateTask(ctx, "queue", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
+	require.NoError(t, err)
+	path := "task/" + strconv.FormatUint(created.Id, 10)
+
+	t.Run("Priority", func(t *testing.T) {
+		var task schema.TaskWithStatus
+		require.Equal(t, http.StatusOK, server.JSON(t, http.MethodPatch, path, map[string]any{"priority": 4}, &task))
+		assert.Equal(t, created.Id, task.Id)
+		require.NotNil(t, task.Priority)
+		assert.EqualValues(t, 4, *task.Priority)
+		assert.Equal(t, "new", task.Status)
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		assert.Equal(t, http.StatusBadRequest, server.JSON(t, http.MethodPatch, path, map[string]any{}, nil))
+		assert.Equal(t, http.StatusBadRequest, server.JSON(t, http.MethodPatch, path, map[string]any{"priority": 40000}, nil))
+		assert.Equal(t, http.StatusBadRequest, server.JSON(t, http.MethodPatch, "task/abc", map[string]any{"priority": 1}, nil))
+		assert.Equal(t, http.StatusNotFound, server.JSON(t, http.MethodPatch, "task/"+strconv.FormatUint(created.Id+1000, 10), map[string]any{"priority": 1}, nil))
+	})
+
+	t.Run("Running", func(t *testing.T) {
+		next, err := manager.NextTask(ctx, "worker", "queue")
+		require.NoError(t, err)
+		require.NotNil(t, next)
+		assert.Equal(t, http.StatusConflict, server.JSON(t, http.MethodPatch, path, map[string]any{"priority": 1}, nil))
 	})
 }

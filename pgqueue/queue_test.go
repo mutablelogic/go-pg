@@ -428,7 +428,7 @@ func TestUnregisterQueueWhileRunning(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.Eventually(t, func() bool {
-		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Queue: []string{"toggle"}, Status: "done"})
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Queue: []string{"toggle"}, Status: []string{"done"}})
 		return err == nil && list.Count == 200 || hasRetried(t, ctx, manager)
 	}, 30*time.Second, 50*time.Millisecond)
 	close(stop)
@@ -442,7 +442,7 @@ func TestUnregisterQueueWhileRunning(t *testing.T) {
 func hasRetried(t *testing.T, ctx context.Context, manager *pgqueue.Manager) bool {
 	t.Helper()
 	for _, status := range []string{"retry", "failed"} {
-		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Queue: []string{"toggle"}, Status: status})
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Queue: []string{"toggle"}, Status: []string{status}})
 		require.NoError(t, err)
 		if list.Count > 0 {
 			return true

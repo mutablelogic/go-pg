@@ -122,12 +122,16 @@ SELECT
     ) AS "id";
 
 -- pgqueue.task_patch
+-- Changes a task which hasn't been run yet, or is waiting to be retried, so
+-- isn't running or finished
 UPDATE
     ${"schema"}."task"
 SET
     ${patch}
 WHERE
     "id" = @tid
+AND
+    "started_at" IS NULL AND "finished_at" IS NULL AND "retries" > 0
 RETURNING
     "id",
     "queue",

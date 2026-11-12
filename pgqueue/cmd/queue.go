@@ -16,8 +16,11 @@ import (
 // TYPES
 
 type QueueCommands struct {
-	QueueList QueueListCmd `cmd:"" name:"queues" help:"List the queues." group:"TASK QUEUES"`
-	QueueGet  QueueGetCmd  `cmd:"" name:"queue" help:"Get a queue." group:"TASK QUEUES"`
+	QueueList   QueueListCmd   `cmd:"" name:"queues" help:"List the queues." group:"TASK QUEUES"`
+	QueueGet    QueueGetCmd    `cmd:"" name:"queue" help:"Get a queue." group:"TASK QUEUES"`
+	QueueUpdate QueueUpdateCmd `cmd:"" name:"queue-update" help:"Change a queue's settings." group:"TASK QUEUES"`
+	QueueDelete QueueDeleteCmd `cmd:"" name:"queue-delete" help:"Delete a queue, with all its tasks." group:"TASK QUEUES"`
+	QueueClean  QueueCleanCmd  `cmd:"" name:"queue-clean" help:"Delete a queue's done and failed tasks, after the retention period." group:"TASK QUEUES"`
 }
 
 type QueueListCmd struct {
@@ -25,6 +28,19 @@ type QueueListCmd struct {
 }
 
 type QueueGetCmd struct {
+	Name string `arg:"" help:"Queue name"`
+}
+
+type QueueUpdateCmd struct {
+	Name             string `arg:"" help:"Queue name"`
+	schema.QueueMeta `embed:""`
+}
+
+type QueueDeleteCmd struct {
+	Name string `arg:"" help:"Queue name"`
+}
+
+type QueueCleanCmd struct {
 	Name string `arg:"" help:"Queue name"`
 }
 
@@ -73,6 +89,42 @@ func (cmd *QueueGetCmd) Run(ctx server.Cmd) error {
 		}
 
 		fmt.Println(queue)
+		return nil
+	})
+}
+
+func (cmd *QueueUpdateCmd) Run(ctx server.Cmd) error {
+	return WithClient(ctx, "pgqueue.QueueUpdateCmd", func(ctx context.Context, client *httpclient.Client) error {
+		queue, err := client.UpdateQueue(ctx, cmd.Name, cmd.QueueMeta)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(queue)
+		return nil
+	})
+}
+
+func (cmd *QueueDeleteCmd) Run(ctx server.Cmd) error {
+	return WithClient(ctx, "pgqueue.QueueDeleteCmd", func(ctx context.Context, client *httpclient.Client) error {
+		queue, err := client.DeleteQueue(ctx, cmd.Name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(queue)
+		return nil
+	})
+}
+
+func (cmd *QueueCleanCmd) Run(ctx server.Cmd) error {
+	return WithClient(ctx, "pgqueue.QueueCleanCmd", func(ctx context.Context, client *httpclient.Client) error {
+		cleaned, err := client.CleanQueue(ctx, cmd.Name)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(cleaned)
 		return nil
 	})
 }

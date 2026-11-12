@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -485,7 +485,7 @@ func TestNextTask(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, next)
 
-		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Status: "failed"})
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Status: []string{"failed"}})
 		require.NoError(t, err)
 		require.Len(t, list.Body, 1)
 		assert.Equal(t, task.Id, list.Body[0].Id)
@@ -557,6 +557,69 @@ func TestReleaseTask(t *testing.T) {
 	})
 }
 
+func TestUpdateTask(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	manager := taskManager(t, "update", schema.QueueMeta{RetryDelay: types.Ptr(time.Hour)})
+	priority := func(p uint16) schema.TaskUpdate { return schema.TaskUpdate{Priority: types.Ptr(p)} }
+
+	t.Run("New", func(t *testing.T) {
+		created, err := manager.CreateTask(ctx, "update", payload(`{"n":1}`))
+		require.NoError(t, err)
+		task, err := manager.UpdateTask(ctx, created.Id, priority(5))
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr(uint16(5)), task.Priority)
+		assert.Equal(t, "new", task.Status)
+	})
+
+	t.Run("Delayed", func(t *testing.T) {
+		later := time.Now().Add(time.Hour)
+		created, err := manager.CreateTask(ctx, "update", schema.TaskMeta{Payload: json.RawMessage(`{"n":2}`), DelayedAt: &later})
+		require.NoError(t, err)
+		task, err := manager.UpdateTask(ctx, created.Id, priority(6))
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr(uint16(6)), task.Priority)
+		assert.Equal(t, "delayed", task.Status)
+	})
+
+	t.Run("RunningRetryDone", func(t *testing.T) {
+		// A running task can't be changed, one waiting to be retried can,
+		// and one which is done can't
+		_, err := manager.CreateTask(ctx, "update", payload(`{"n":3}`))
+		require.NoError(t, err)
+		next, err := manager.NextTask(ctx, "worker", "update")
+		require.NoError(t, err)
+		require.NotNil(t, next)
+		_, err = manager.UpdateTask(ctx, next.Id, priority(7))
+		assert.ErrorIs(t, err, httpresponse.ErrConflict)
+
+		_, err = manager.ReleaseTask(ctx, next.Id, false, json.RawMessage(`"boom"`), nil)
+		require.NoError(t, err)
+		task, err := manager.UpdateTask(ctx, next.Id, priority(7))
+		require.NoError(t, err)
+		assert.Equal(t, "retry", task.Status)
+		assert.Equal(t, types.Ptr(uint16(7)), task.Priority)
+
+		require.NoError(t, manager.With("tid", next.Id).Exec(ctx, `UPDATE ${"schema"}."task" SET "started_at" = NOW(), "finished_at" = NOW() WHERE "id" = @tid`))
+		_, err = manager.UpdateTask(ctx, next.Id, priority(8))
+		assert.ErrorIs(t, err, httpresponse.ErrConflict)
+		got, err := manager.GetTask(ctx, next.Id)
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr(uint16(7)), got.Priority)
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		created, err := manager.CreateTask(ctx, "update", payload(`{"n":4}`))
+		require.NoError(t, err)
+		_, err = manager.UpdateTask(ctx, created.Id, schema.TaskUpdate{})
+		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+		_, err = manager.UpdateTask(ctx, created.Id, priority(schema.MaxTaskPriority+1))
+		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+		_, err = manager.UpdateTask(ctx, 1<<40, priority(1))
+		assert.ErrorIs(t, err, pg.ErrNotFound)
+	})
+}
+
 func TestGetTask(t *testing.T) {
 	_, ctx := test.Begin(t)
 	defer test.End(t)
@@ -615,16 +678,26 @@ func TestListTasks(t *testing.T) {
 	})
 
 	t.Run("Status", func(t *testing.T) {
-		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Status: "running"})
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Status: []string{"running"}})
 		require.NoError(t, err)
 		assert.EqualValues(t, 1, list.Count)
 		require.Len(t, list.Body, 1)
 		assert.Equal(t, next.Id, list.Body[0].Id)
 		assert.Equal(t, "running", list.Body[0].Status)
 
-		list, err = manager.ListTasks(ctx, schema.TaskListRequest{Status: "new"})
+		list, err = manager.ListTasks(ctx, schema.TaskListRequest{Status: []string{"new"}})
 		require.NoError(t, err)
 		assert.EqualValues(t, 2, list.Count)
+
+		// More than one status, each counted once
+		list, err = manager.ListTasks(ctx, schema.TaskListRequest{Status: []string{"running", "new", "NEW"}})
+		require.NoError(t, err)
+		assert.EqualValues(t, 3, list.Count)
+		list, err = manager.ListTasks(ctx, schema.TaskListRequest{Status: []string{"failed", "done"}})
+		require.NoError(t, err)
+		assert.Zero(t, list.Count)
+		_, err = manager.ListTasks(ctx, schema.TaskListRequest{Status: []string{"new", "unknown"}})
+		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
 	})
 
 	t.Run("Priority", func(t *testing.T) {

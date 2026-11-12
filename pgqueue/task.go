@@ -9,6 +9,7 @@ import (
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgqueue/schema"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
 )
@@ -74,6 +75,39 @@ func (self *Manager) GetTask(ctx context.Context, id uint64) (result *schema.Tas
 
 	var task schema.TaskWithStatus
 	if err := self.Get(ctx, &task, schema.TaskId(id)); err != nil {
+		return nil, err
+	}
+	return types.Ptr(task), nil
+}
+
+// UpdateTask changes the priority of a task which hasn't run yet, so is new,
+// delayed, or waiting to be retried, and returns it, with its status. It
+// returns a conflict for a task which is running, or has finished.
+func (self *Manager) UpdateTask(ctx context.Context, id uint64, req schema.TaskUpdate) (result *schema.TaskWithStatus, err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.UpdateTask",
+		attribute.Int64("id", int64(id)),
+		attribute.String("req", types.Stringify(req)),
+	)
+	defer func() { endSpan(err) }()
+
+	if req.Priority == nil {
+		return nil, httpresponse.ErrBadRequest.With("missing priority")
+	}
+
+	var task schema.TaskWithStatus
+	if err := self.Tx(ctx, func(conn pg.Conn) error {
+		var updated schema.Task
+		if err := conn.Update(ctx, &updated, schema.TaskId(id), schema.TaskMeta{Priority: req.Priority}); errors.Is(err, pg.ErrNotFound) {
+			// The task doesn't exist, or it's running, or has finished
+			if err := conn.Get(ctx, &task, schema.TaskId(id)); err != nil {
+				return err
+			}
+			return httpresponse.ErrConflict.Withf("task %d is %s, so its priority can't be changed", id, task.Status)
+		} else if err != nil {
+			return err
+		}
+		return conn.Get(ctx, &task, schema.TaskId(id))
+	}); err != nil {
 		return nil, err
 	}
 	return types.Ptr(task), nil

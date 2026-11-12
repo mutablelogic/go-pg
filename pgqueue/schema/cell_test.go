@@ -60,7 +60,8 @@ func TestListQuery(t *testing.T) {
 	// The offset, limit and status are query parameters, when they're set
 	assert.Empty(t, schema.TickerListRequest{}.Query())
 	assert.Equal(t, "limit=10&offset=5", schema.TickerListRequest{OffsetLimit: pg.OffsetLimit{Offset: 5, Limit: types.Ptr(uint64(10))}}.Query().Encode())
-	assert.Equal(t, "status=failed", schema.TaskListRequest{Status: " failed "}.Query().Encode())
+	assert.Equal(t, "status=failed", schema.TaskListRequest{Status: []string{" failed "}}.Query().Encode())
+	assert.Equal(t, "status=new&status=retry", schema.TaskListRequest{Status: []string{"new", " ", "retry"}}.Query().Encode())
 	assert.Equal(t, "queue=one&queue=two", schema.TaskListRequest{Queue: []string{"one", " ", "two"}}.Query().Encode())
 	assert.Equal(t, "offset=1", schema.QueueListRequest{OffsetLimit: pg.OffsetLimit{Offset: 1}}.Query().Encode())
 }

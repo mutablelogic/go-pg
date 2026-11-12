@@ -29,6 +29,7 @@ func queueHandlers(manager *pgqueue.Manager, router *httprouter.Router, document
 	return errors.Join(
 		queueListHandler(manager, router, documentation),
 		queueGetHandler(manager, router, documentation),
+		queueCleanHandler(manager, router, documentation),
 	)
 }
 
@@ -73,6 +74,63 @@ func queueGetHandler(manager *pgqueue.Manager, router *httprouter.Router, docume
 			op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.QueueWithStatus](), "Queue, with the number of its tasks with each status")
 			op.ErrorResponse(http.StatusBadRequest, "Invalid queue name")
 			op.ErrorResponse(http.StatusNotFound, "Queue not found")
+		})
+
+		// PATCH
+		path.Patch(func(w http.ResponseWriter, r *http.Request) {
+			var meta schema.QueueMeta
+			if err := httprequest.Read(r, &meta); err != nil {
+				httpresponse.Error(w, httpresponse.ErrBadRequest.With(err.Error()))
+			} else if queue, err := manager.UpdateQueue(r.Context(), r.PathValue("name"), meta); err != nil {
+				httpresponse.Error(w, httpErr(err), r.PathValue("name"))
+			} else {
+				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), queue)
+			}
+		}, func(op httprequest.PathOperation) {
+			op.Summary("Update Queue")
+			op.Description(documentation.Section(3, "PATCH /queue/{name}").Body)
+			op.RequestBody(jsonschema.MustFor[schema.QueueMeta]())
+			op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Queue](), "Queue")
+			op.ErrorResponse(http.StatusBadRequest, "Invalid queue name, or settings")
+			op.ErrorResponse(http.StatusNotFound, "Queue not found")
+		})
+
+		// DELETE
+		path.Delete(func(w http.ResponseWriter, r *http.Request) {
+			if queue, err := manager.DeleteQueue(r.Context(), r.PathValue("name")); err != nil {
+				httpresponse.Error(w, httpErr(err), r.PathValue("name"))
+			} else {
+				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), queue)
+			}
+		}, func(op httprequest.PathOperation) {
+			op.Summary("Delete Queue")
+			op.Description(documentation.Section(3, "DELETE /queue/{name}").Body)
+			op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Queue](), "Queue which was deleted")
+			op.ErrorResponse(http.StatusBadRequest, "Invalid queue name")
+			op.ErrorResponse(http.StatusNotFound, "Queue not found")
+		})
+	})
+}
+
+func queueCleanHandler(manager *pgqueue.Manager, router *httprouter.Router, documentation *openapi.MarkdownDoc) error {
+	return router.Register("queue/{name}/clean", jsonschema.MustFor[queueName](), func(path httprequest.PathItem) {
+		path.Tag("Queue")
+
+		// POST
+		path.Post(func(w http.ResponseWriter, r *http.Request) {
+			if tasks, err := manager.CleanQueue(r.Context(), r.PathValue("name")); err != nil {
+				httpresponse.Error(w, httpErr(err), r.PathValue("name"))
+			} else {
+				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.QueueCleanResponse{
+					QueueCleanRequest: schema.QueueCleanRequest{Queue: r.PathValue("name")},
+					Body:              tasks,
+				})
+			}
+		}, func(op httprequest.PathOperation) {
+			op.Summary("Clean Queue")
+			op.Description(documentation.Section(3, "POST /queue/{name}/clean").Body)
+			op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.QueueCleanResponse](), "Tasks which were deleted")
+			op.ErrorResponse(http.StatusBadRequest, "Invalid queue name")
 		})
 	})
 }

@@ -143,6 +143,10 @@ func (self *Manager) UpdateQueue(ctx context.Context, name string, meta schema.Q
 	)
 	defer func() { endSpan(err) }()
 
+	if !hasQueueMetaPatch(meta) {
+		return nil, httpresponse.ErrBadRequest.With("no queue settings to update")
+	}
+
 	var queue schema.Queue
 	if err := self.Update(ctx, &queue, schema.QueueName(name), schema.Queue{Name: name, QueueMeta: meta}); err != nil {
 		return nil, err

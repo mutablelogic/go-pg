@@ -73,6 +73,10 @@ func (manager *Manager) CreateTablespace(ctx context.Context, meta schema.Tables
 	)
 	defer func() { endSpan(err) }()
 
+	// Trim the name, as TablespaceMeta.Insert does, so the grants and
+	// comment are of the tablespace which is created
+	meta.Name = strings.TrimSpace(meta.Name)
+
 	// Create the tablespace (outside a transaction)
 	var response schema.Tablespace
 	if err := manager.conn.With("location", location).Insert(ctx, nil, meta); err != nil {

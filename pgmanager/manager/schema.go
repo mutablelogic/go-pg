@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 
 	// Packages
 	otel "github.com/mutablelogic/go-client/pkg/otel"
@@ -109,10 +110,12 @@ func (manager *Manager) CreateSchema(ctx context.Context, database string, meta 
 	)
 	defer func() { endSpan(err) }()
 
-	// Validate input
+	// Validate input, and trim the name, as SchemaMeta.Insert does, so the
+	// grants and comment are of the schema which is created
 	if database == "" {
 		return nil, pg.ErrBadParameter.With("database is empty")
 	}
+	meta.Name = strings.TrimSpace(meta.Name)
 
 	// Create the schema
 	conn := manager.conn.Remote(database)
@@ -120,8 +123,10 @@ func (manager *Manager) CreateSchema(ctx context.Context, database string, meta 
 		return nil, err
 	}
 
-	// Set ACL's, and the comment
-	if err := manager.conn.Tx(ctx, func(txConn pg.Conn) error {
+	// Set ACL's, and the comment, in the schema's database. Each runs there
+	// by itself, with dblink, so a transaction here wouldn't cover them, and
+	// the schema is dropped when one fails.
+	if err := func() error {
 		for _, acl := range meta.Acl {
 			if err := acl.GrantSchema(ctx, conn, meta.Name); err != nil {
 				return err
@@ -133,7 +138,7 @@ func (manager *Manager) CreateSchema(ctx context.Context, database string, meta 
 			}
 		}
 		return nil
-	}); err != nil {
+	}(); err != nil {
 		// Delete the schema if there is an issue with ACL's, or the comment
 		return nil, errors.Join(err, conn.With("force", true).Delete(ctx, nil, schema.SchemaName(meta.Name)))
 	}

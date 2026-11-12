@@ -160,7 +160,9 @@ func (c *ConnectionListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) 
 	case "database", "role", "application", "state", "conn_start", "query_start":
 		column = `"` + strings.ToLower(c.Sort) + `"`
 	case "client":
-		column = `"client_addr"`
+		// A connection by a Unix socket has no client address, which is
+		// empty, rather than NULL, so it's last, as other empty values are
+		column = `NULLIF("client_addr", '')`
 	default:
 		return "", pg.ErrBadParameter.Withf("invalid sort parameter %q", c.Sort)
 	}

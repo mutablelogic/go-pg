@@ -15,7 +15,8 @@ func Test_ConnectionListRequest_Sort(t *testing.T) {
 	}{
 		{"", "", `ORDER BY "pid" ASC NULLS LAST`},
 		{"database", "", `ORDER BY "database" ASC NULLS LAST, "pid" ASC`},
-		{"client", "desc", `ORDER BY "client_addr" DESC NULLS LAST, "pid" ASC`},
+		{"client", "asc", `ORDER BY NULLIF("client_addr", '') ASC NULLS LAST, "pid" ASC`},
+		{"client", "desc", `ORDER BY NULLIF("client_addr", '') DESC NULLS LAST, "pid" ASC`},
 		{"Query_Start", "ASC", `ORDER BY "query_start" ASC NULLS LAST, "pid" ASC`},
 	}
 	for _, test := range tests {

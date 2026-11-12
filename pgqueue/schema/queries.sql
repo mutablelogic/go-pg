@@ -44,17 +44,15 @@ RETURNING
     "dedupe";
 
 -- pgqueue.delete
-DELETE FROM
-    ${"schema"}."queue"
-WHERE
-    "queue" = @id
-RETURNING
+SELECT
     "queue",
     "ttl",
     "retries",
     "retry_delay",
     "concurrency",
-    "dedupe";
+    "dedupe"
+FROM
+    ${"schema"}.queue_delete(@id);
 
 -- pgqueue.list
 -- The queues, with the number of their tasks with each status
@@ -107,6 +105,7 @@ SELECT
     "finished_at",
     "dies_at",
 	"retries",
+	"priority",
 	${"schema"}.queue_task_status("dies_at", "started_at", "finished_at", "retries", "initial_retries") AS "status"
 FROM
     ${"schema"}."task"
@@ -118,7 +117,8 @@ SELECT
     ${"schema"}.queue_insert(
         @queue,
         CAST(@payload AS JSONB),
-        CAST(@delayed_at AS TIMESTAMPTZ)
+        CAST(@delayed_at AS TIMESTAMPTZ),
+        CAST(@priority AS SMALLINT)
     ) AS "id";
 
 -- pgqueue.task_patch
@@ -139,9 +139,12 @@ RETURNING
     "started_at",
     "finished_at",
     "dies_at",
-    "retries";
+    "retries",
+    "priority";
 
 -- pgqueue.task_list
+-- The tasks with the highest priority, which is the lowest, first, and then
+-- the oldest
 SELECT
     sq."id",
     sq."queue",
@@ -154,6 +157,7 @@ SELECT
     sq."finished_at",
     sq."dies_at",
     sq."retries",
+    sq."priority",
     sq."status"
 FROM (
     SELECT
@@ -168,6 +172,7 @@ FROM (
         t."finished_at",
         t."dies_at",
         t."retries",
+        t."priority",
 		${"schema"}.queue_task_status(t."dies_at", t."started_at", t."finished_at", t."retries", t."initial_retries") AS "status"
     FROM
         ${"schema"}."task" t
@@ -175,6 +180,7 @@ FROM (
 ) sq
 ${where}
 ORDER BY
+    sq."priority",
     sq."created_at",
     sq."id"
 

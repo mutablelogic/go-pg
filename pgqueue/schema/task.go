@@ -34,6 +34,7 @@ type TaskRelease struct {
 type TaskMeta struct {
 	Payload   json.RawMessage `json:"payload,omitempty"`
 	DelayedAt *time.Time      `json:"delayed_at,omitempty"`
+	Priority  *uint16         `json:"priority,omitempty"` // lower runs first, from 0, the highest, and the default, to MaxTaskPriority
 }
 
 type Task struct {
@@ -112,6 +113,7 @@ func (t *Task) Scan(row pg.Row) error {
 		&t.FinishedAt,
 		&t.DiesAt,
 		&t.Retries,
+		&t.Priority,
 	)
 }
 
@@ -128,6 +130,7 @@ func (t *TaskWithStatus) Scan(row pg.Row) error {
 		&t.FinishedAt,
 		&t.DiesAt,
 		&t.Retries,
+		&t.Priority,
 		&t.Status,
 	)
 }
@@ -168,6 +171,11 @@ func (t TaskMeta) Insert(bind *pg.Bind) (string, error) {
 		bind.Set("delayed_at", nil)
 	}
 
+	if err := t.validatePriority(); err != nil {
+		return "", err
+	}
+	bind.Set("priority", t.Priority)
+
 	return bind.Query("pgqueue.task_insert"), nil
 }
 
@@ -185,6 +193,12 @@ func (t TaskMeta) Update(bind *pg.Bind) error {
 		bind.Append("patch", `payload = CAST(`+bind.Set("payload", string(t.Payload))+` AS JSONB)`)
 	}
 
+	if err := t.validatePriority(); err != nil {
+		return err
+	} else if t.Priority != nil {
+		bind.Append("patch", `priority = `+bind.Set("priority", *t.Priority))
+	}
+
 	if patch := bind.Join("patch", ", "); patch == "" {
 		return httpresponse.ErrBadRequest.With("no fields to update")
 	} else {
@@ -194,11 +208,20 @@ func (t TaskMeta) Update(bind *pg.Bind) error {
 	return nil
 }
 
+// validatePriority returns an error when the priority is more than the task
+// table's SMALLINT holds, which is the lowest
+func (t TaskMeta) validatePriority() error {
+	if t.Priority != nil && *t.Priority > MaxTaskPriority {
+		return httpresponse.ErrBadRequest.Withf("priority is more than %d", MaxTaskPriority)
+	}
+	return nil
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // TABLE
 
 func (t TaskWithStatus) Header() []string {
-	return []string{"ID", "Queue", "Status", "Retries", "Worker", "Created", "Payload", "Result"}
+	return []string{"ID", "Queue", "Status", "Priority", "Retries", "Worker", "Created", "Payload", "Result"}
 }
 
 func (t TaskWithStatus) Width(col int) int {
@@ -214,14 +237,19 @@ func (t TaskWithStatus) Cell(col int) tui.CellText {
 	case 2:
 		return t.Status
 	case 3:
-		return countCell(t.Retries)
+		if t.Priority == nil {
+			return ""
+		}
+		return strconv.FormatUint(uint64(*t.Priority), 10)
 	case 4:
-		return types.Value(t.Worker)
+		return countCell(t.Retries)
 	case 5:
-		return timeCell(t.CreatedAt)
+		return types.Value(t.Worker)
 	case 6:
-		return jsonCell(t.Payload)
+		return timeCell(t.CreatedAt)
 	case 7:
+		return jsonCell(t.Payload)
+	case 8:
 		return jsonCell(t.Result)
 	default:
 		return ""

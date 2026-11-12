@@ -32,19 +32,19 @@ func TestTaskTable(t *testing.T) {
 		Queue:     "queue",
 		Worker:    types.Ptr("worker"),
 		Result:    json.RawMessage(`"boom"`),
-		TaskMeta:  schema.TaskMeta{Payload: json.RawMessage(`{"path":"` + strings.Repeat("a", 50) + `"}`)},
+		TaskMeta:  schema.TaskMeta{Payload: json.RawMessage(`{"path":"` + strings.Repeat("a", 50) + `"}`), Priority: types.Ptr(uint16(3))},
 		CreatedAt: &createdAt,
 		Retries:   types.Ptr(uint64(2)),
 	}, Status: "retry"}
 	row := cellsOf(task.Header(), task.Cell)
-	assert.Equal(t, []any{"42", "queue", "retry", "2", "worker", "2026-10-15 09:30:00"}, row[:6])
+	assert.Equal(t, []any{"42", "queue", "retry", "3", "2", "worker", "2026-10-15 09:30:00"}, row[:7])
 
 	// A long payload is shortened, and a null result is empty
-	assert.Len(t, []rune(row[6].(string)), 40)
-	assert.True(t, strings.HasSuffix(row[6].(string), "…"))
-	assert.Equal(t, `"boom"`, row[7])
+	assert.Len(t, []rune(row[7].(string)), 40)
+	assert.True(t, strings.HasSuffix(row[7].(string), "…"))
+	assert.Equal(t, `"boom"`, row[8])
 	task.Result = json.RawMessage(`null`)
-	assert.Equal(t, "", task.Cell(7))
+	assert.Equal(t, "", task.Cell(8))
 }
 
 // cellsOf returns the cells of a table row, given its header and cells

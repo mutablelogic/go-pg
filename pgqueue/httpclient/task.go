@@ -12,7 +12,8 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// ListTasks returns a page of tasks, oldest first, with the total number of
+// ListTasks returns a page of tasks, by priority, highest first, which is the
+// lowest, and then oldest first, with the total number of
 // tasks matching the request, which can have a status
 func (c *Client) ListTasks(ctx context.Context, req schema.TaskListRequest) (*schema.TaskList, error) {
 	var response schema.TaskList

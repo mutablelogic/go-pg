@@ -3,6 +3,8 @@ package pgqueue_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sync"
 	"strconv"
 	"testing"
 	"time"
@@ -101,12 +103,135 @@ func TestCreateTask(t *testing.T) {
 		}
 	})
 
+	t.Run("Priority", func(t *testing.T) {
+		// A task's priority is the highest, 0, unless it's given, and can't be more
+		// than a SMALLINT holds
+		manager := taskManager(t, "priority", schema.QueueMeta{})
+		task, err := manager.CreateTask(ctx, "priority", payload(`{"n":1}`))
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr(uint16(0)), task.Priority)
+
+		task, err = manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{"n":2}`), Priority: types.Ptr(uint16(5))})
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr(uint16(5)), task.Priority)
+		got, err := manager.GetTask(ctx, task.Id)
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr(uint16(5)), got.Priority)
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Queue: []string{"priority"}})
+		require.NoError(t, err)
+		require.Len(t, list.Body, 2)
+		assert.Equal(t, types.Ptr(uint16(5)), list.Body[1].Priority)
+
+		_, err = manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(schema.MaxTaskPriority + 1))})
+		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+		task, err = manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{"n":3}`), Priority: types.Ptr(uint16(schema.MaxTaskPriority))})
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr(uint16(schema.MaxTaskPriority)), task.Priority)
+	})
+
+	t.Run("DedupePriority", func(t *testing.T) {
+		// The same pending task gets the inserted task's priority, higher or
+		// lower, and keeps its own when the inserted task has none
+		manager := taskManager(t, "dedupe", schema.QueueMeta{Dedupe: types.Ptr(true)})
+		first, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(7))})
+		require.NoError(t, err)
+		higher, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(2))})
+		require.NoError(t, err)
+		assert.Equal(t, first.Id, higher.Id)
+		assert.Equal(t, types.Ptr(uint16(2)), higher.Priority)
+		lower, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(5))})
+		require.NoError(t, err)
+		assert.Equal(t, first.Id, lower.Id)
+		assert.Equal(t, types.Ptr(uint16(5)), lower.Priority)
+		none, err := manager.CreateTask(ctx, "dedupe", payload(`{}`))
+		require.NoError(t, err)
+		assert.Equal(t, first.Id, none.Id)
+		assert.Equal(t, types.Ptr(uint16(5)), none.Priority)
+		highest, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(0))})
+		require.NoError(t, err)
+		assert.Equal(t, first.Id, highest.Id)
+		assert.Equal(t, types.Ptr(uint16(0)), highest.Priority)
+	})
+
 	t.Run("Invalid", func(t *testing.T) {
 		manager := taskManager(t, "invalid", schema.QueueMeta{})
 		_, err := manager.CreateTask(ctx, "missing", payload(`{}`))
 		assert.Error(t, err)
 		_, err = manager.CreateTask(ctx, "invalid", schema.TaskMeta{})
 		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	})
+}
+
+func TestNextTaskConcurrent(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+
+	t.Run("RoundRobin", func(t *testing.T) {
+		// Workers which lock tasks at the same time take turns between
+		// queues, as each sees the turns taken before it
+		manager := test.IsolatedManager(t)
+		for round := range 20 {
+			a, b := fmt.Sprintf("a%d", round), fmt.Sprintf("b%d", round)
+			for _, queue := range []string{a, b} {
+				_, err := manager.RegisterQueue(ctx, queue, schema.QueueMeta{}, noopTask)
+				require.NoError(t, err)
+			}
+			for _, queue := range []string{a, a, b} {
+				_, err := manager.CreateTask(ctx, queue, payload(`{}`))
+				require.NoError(t, err)
+			}
+
+			var wg sync.WaitGroup
+			queues := make([]string, 2)
+			for i := range queues {
+				wg.Go(func() {
+					task, err := manager.NextTask(ctx, "worker", a, b)
+					if assert.NoError(t, err) && assert.NotNil(t, task) {
+						queues[i] = task.Queue
+					}
+				})
+			}
+			wg.Wait()
+			assert.ElementsMatch(t, []string{a, b}, queues, "round %d", round)
+		}
+	})
+
+	t.Run("DeleteQueue", func(t *testing.T) {
+		// A queue is deleted only once the lock on the turns is free, as a
+		// worker which takes the queue's turn locks its task's row and then
+		// its row, and deleting it locks them in the opposite order
+		manager := taskManager(t, "delete", schema.QueueMeta{})
+		_, err := manager.CreateTask(ctx, "delete", payload(`{}`))
+		require.NoError(t, err)
+
+		locked, release := make(chan struct{}), make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			assert.NoError(t, manager.Tx(ctx, func(conn pg.Conn) error {
+				err := conn.Exec(ctx, `SELECT ${"schema"}.queue_turn()`)
+				close(locked)
+				if err != nil {
+					return err
+				}
+				<-release
+				return nil
+			}))
+		})
+		<-locked
+
+		deleted := make(chan error, 1)
+		wg.Go(func() {
+			_, err := manager.DeleteQueue(ctx, "delete")
+			deleted <- err
+		})
+		select {
+		case err := <-deleted:
+			t.Fatalf("the queue was deleted while the turns were locked: %v", err)
+		case <-time.After(200 * time.Millisecond):
+		}
+		close(release)
+		assert.NoError(t, <-deleted)
+		wg.Wait()
 	})
 }
 
@@ -130,6 +255,53 @@ func TestNextTask(t *testing.T) {
 		require.NotNil(t, task.StartedAt)
 		require.NotNil(t, task.DiesAt)
 		assert.WithinDuration(t, task.StartedAt.Add(time.Minute), *task.DiesAt, time.Second)
+	})
+
+	t.Run("Priority", func(t *testing.T) {
+		// The task with the highest priority, which is the lowest, is retained
+		// first, and the oldest of those with the same priority
+		manager := taskManager(t, "priority", schema.QueueMeta{Concurrency: types.Ptr(uint64(0))})
+		low, err := manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{"n":1}`), Priority: types.Ptr(uint16(9))})
+		require.NoError(t, err)
+		first, err := manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{"n":2}`), Priority: types.Ptr(uint16(1))})
+		require.NoError(t, err)
+		second, err := manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{"n":3}`), Priority: types.Ptr(uint16(1))})
+		require.NoError(t, err)
+		highest, err := manager.CreateTask(ctx, "priority", payload(`{"n":4}`))
+		require.NoError(t, err)
+
+		for _, want := range []*schema.Task{highest, first, second, low} {
+			task, err := manager.NextTask(ctx, "worker")
+			require.NoError(t, err)
+			require.NotNil(t, task)
+			assert.Equal(t, want.Id, task.Id)
+		}
+	})
+
+	t.Run("RoundRobin", func(t *testing.T) {
+		// Queues take turns between tasks with the same priority, and the
+		// oldest task of a queue is locked on its turn, but a higher priority
+		// is locked first
+		manager := taskManager(t, "a", schema.QueueMeta{})
+		_, err := manager.RegisterQueue(ctx, "b", schema.QueueMeta{}, noopTask)
+		require.NoError(t, err)
+		a1, err := manager.CreateTask(ctx, "a", payload(`{"n":1}`))
+		require.NoError(t, err)
+		a2, err := manager.CreateTask(ctx, "a", payload(`{"n":2}`))
+		require.NoError(t, err)
+		a3, err := manager.CreateTask(ctx, "a", payload(`{"n":3}`))
+		require.NoError(t, err)
+		b1, err := manager.CreateTask(ctx, "b", payload(`{"n":4}`))
+		require.NoError(t, err)
+		b2, err := manager.CreateTask(ctx, "b", schema.TaskMeta{Payload: json.RawMessage(`{"n":5}`), Priority: types.Ptr(uint16(1))})
+		require.NoError(t, err)
+
+		for _, want := range []*schema.Task{a1, b1, a2, a3, b2} {
+			task, err := manager.NextTask(ctx, "worker")
+			require.NoError(t, err)
+			require.NotNil(t, task)
+			assert.Equal(t, want.Id, task.Id, "payload %s", task.Payload)
+		}
 	})
 
 	t.Run("Empty", func(t *testing.T) {
@@ -377,6 +549,26 @@ func TestListTasks(t *testing.T) {
 		list, err = manager.ListTasks(ctx, schema.TaskListRequest{Status: "new"})
 		require.NoError(t, err)
 		assert.EqualValues(t, 2, list.Count)
+	})
+
+	t.Run("Priority", func(t *testing.T) {
+		// The tasks with the highest priority, which is the lowest, are
+		// first, and then the oldest
+		manager := taskManager(t, "order", schema.QueueMeta{})
+		var want []uint64
+		for _, priority := range []uint16{3, 0, 3, 1} {
+			task, err := manager.CreateTask(ctx, "order", schema.TaskMeta{Payload: json.RawMessage(`{"n":` + strconv.Itoa(len(want)) + `}`), Priority: types.Ptr(priority)})
+			require.NoError(t, err)
+			want = append(want, task.Id)
+		}
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{})
+		require.NoError(t, err)
+		require.Len(t, list.Body, 4)
+		got := make([]uint64, 0, len(list.Body))
+		for _, task := range list.Body {
+			got = append(got, task.Id)
+		}
+		assert.Equal(t, []uint64{want[1], want[3], want[0], want[2]}, got)
 	})
 
 	t.Run("Page", func(t *testing.T) {

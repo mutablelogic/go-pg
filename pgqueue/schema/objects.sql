@@ -6,11 +6,15 @@ CREATE TABLE IF NOT EXISTS ${"schema"}."queue" (
     "retry_delay"   INTERVAL NOT NULL DEFAULT INTERVAL '2 minute',
     "concurrency"   INTEGER NOT NULL DEFAULT 0 CHECK ("concurrency" >= 0), -- 0 = unlimited
     "dedupe"        BOOLEAN NOT NULL DEFAULT false, -- true = a task is not inserted while the same task is pending
+    "locked_at"     TIMESTAMPTZ, -- when a task was last locked from the queue, to take turns between queues (NULL = never)
     PRIMARY KEY ("queue")
 );
 
 ALTER TABLE ${"schema"}."queue"
     ADD COLUMN IF NOT EXISTS "dedupe" BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE ${"schema"}."queue"
+    ADD COLUMN IF NOT EXISTS "locked_at" TIMESTAMPTZ;
 
 ALTER TABLE ${"schema"}."queue"
     ALTER COLUMN "ttl" SET DEFAULT INTERVAL '1 hour';
@@ -59,6 +63,7 @@ CREATE TABLE IF NOT EXISTS ${"schema"}."task" (
     "dies_at"           TIMESTAMPTZ,
     "retries"           INTEGER NOT NULL CHECK ("retries" >= 0),
     "initial_retries"   INTEGER NOT NULL CHECK ("initial_retries" >= 0),
+    "priority"          SMALLINT NOT NULL DEFAULT 0 CHECK ("priority" >= 0), -- lower runs first, 0 = highest, and the default
     "hash"              BYTEA GENERATED ALWAYS AS (${"schema"}.task_hash("queue", "payload")) STORED, -- hash of the queue and payload, to find duplicate tasks
     PRIMARY KEY ("id"),
     FOREIGN KEY ("queue") REFERENCES ${"schema"}."queue" ("queue") ON DELETE CASCADE
@@ -66,6 +71,11 @@ CREATE TABLE IF NOT EXISTS ${"schema"}."task" (
 
 ALTER TABLE ${"schema"}."task"
     ADD COLUMN IF NOT EXISTS "hash" BYTEA GENERATED ALWAYS AS (${"schema"}.task_hash("queue", "payload")) STORED;
+
+-- The priority of tasks from before is the highest, 0. A constant default doesn't
+-- rewrite the task table's partitions.
+ALTER TABLE ${"schema"}."task"
+    ADD COLUMN IF NOT EXISTS "priority" SMALLINT NOT NULL DEFAULT 0 CHECK ("priority" >= 0);
 
 -- pgqueue.queue_status_index
 -- Covers 'new' and 'retry' states
@@ -132,24 +142,30 @@ CREATE OR REPLACE FUNCTION ${"schema"}.queue_task_status(
 $$ LANGUAGE SQL STABLE;
 
 -- pgqueue.queue_insert_task_func
--- Inserts a task into the queue, with the queue's retries, and returns its id.
--- A delay in the past is now, and no delay runs the task as soon as possible.
-CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert_task(q TEXT, p JSONB, delayed_at TIMESTAMPTZ, retries INTEGER) RETURNS BIGINT AS $$
-    INSERT INTO ${"schema"}."task" ("queue", "payload", "delayed_at", "retries", "initial_retries")
+-- Inserts a task into the queue, with the queue's retries, and its priority,
+-- and returns its id. A delay in the past is now, and no delay runs the task
+-- as soon as possible. The functions without a priority, from before, are
+-- dropped.
+DROP FUNCTION IF EXISTS ${"schema"}.queue_insert(TEXT, JSONB, TIMESTAMPTZ);
+DROP FUNCTION IF EXISTS ${"schema"}.queue_insert_dedupe(TEXT, JSONB, TIMESTAMPTZ);
+DROP FUNCTION IF EXISTS ${"schema"}.queue_insert_task(TEXT, JSONB, TIMESTAMPTZ, INTEGER);
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert_task(q TEXT, p JSONB, delayed_at TIMESTAMPTZ, retries INTEGER, priority SMALLINT) RETURNS BIGINT AS $$
+    INSERT INTO ${"schema"}."task" ("queue", "payload", "delayed_at", "retries", "initial_retries", "priority")
     VALUES (
         q, p, CASE
             WHEN delayed_at IS NULL THEN NULL
             WHEN delayed_at < NOW() THEN NOW()
             ELSE delayed_at
-        END, retries, retries
+        END, retries, retries, COALESCE(priority, 0)
     )
     RETURNING "id";
 $$ LANGUAGE SQL;
 
 -- pgqueue.queue_insert_func
--- Inserts a task into the queue, and returns its id. When the queue
--- deduplicates tasks, a pending task which is the same is returned instead.
-CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert(q TEXT, p JSONB, delayed_at TIMESTAMPTZ) RETURNS BIGINT AS $$
+-- Inserts a task into the queue, with its priority, where none is 0, the highest,
+-- and returns its id. When the queue deduplicates tasks, a pending task which
+-- is the same is returned instead.
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert(q TEXT, p JSONB, delayed_at TIMESTAMPTZ, priority SMALLINT) RETURNS BIGINT AS $$
 DECLARE
     v_retries       INTEGER;
     v_dedupe        BOOLEAN;
@@ -166,9 +182,9 @@ BEGIN
 
     -- Insert the task, or return the same pending task
     IF v_dedupe THEN
-        RETURN ${"schema"}.queue_insert_dedupe(q, p, delayed_at);
+        RETURN ${"schema"}.queue_insert_dedupe(q, p, delayed_at, priority);
     END IF;
-    RETURN ${"schema"}.queue_insert_task(q, p, delayed_at, v_retries);
+    RETURN ${"schema"}.queue_insert_task(q, p, delayed_at, v_retries, priority);
 EXCEPTION
     WHEN NO_DATA_FOUND THEN
         RAISE EXCEPTION 'queue not found: %', q;
@@ -181,10 +197,12 @@ $$ LANGUAGE PLPGSQL;
 -- A pending task hasn't started or finished, and has retries left, so a
 -- running task isn't the same, and a change while it runs queues another. A
 -- new task, which hasn't been tried, runs at the earlier of the two delays;
--- a task waiting to be retried keeps its backoff. Inserts of the same task are
+-- a task waiting to be retried keeps its backoff. The pending task gets the
+-- inserted task's priority, when it has one, so it can be changed, such as to
+-- run sooner. Inserts of the same task are
 -- serialized with a lock on its hash until the transaction ends, as the task
 -- table is partitioned by id, so a unique index can't prevent duplicates.
-CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert_dedupe(q TEXT, p JSONB, delayed_at TIMESTAMPTZ) RETURNS BIGINT AS $$
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert_dedupe(q TEXT, p JSONB, delayed_at TIMESTAMPTZ, priority SMALLINT) RETURNS BIGINT AS $$
 DECLARE
     v_hash          BYTEA := ${"schema"}.task_hash(q, p);
     v_delayed_at    TIMESTAMPTZ := CASE
@@ -211,7 +229,7 @@ BEGIN
     PERFORM pg_advisory_xact_lock(('x' || encode(substring(v_hash FROM 1 FOR 8), 'hex'))::BIT(64)::BIGINT);
 
     -- Find a pending task which is the same. The columns are qualified, as
-    -- the delayed_at argument has the name of a column.
+    -- the delayed_at and priority arguments have the names of columns.
     SELECT
         T."id", T."delayed_at", T."retries" = T."initial_retries"
     INTO
@@ -231,7 +249,13 @@ BEGIN
 
     -- Insert the task when there's none
     IF NOT FOUND THEN
-        RETURN ${"schema"}.queue_insert_task(q, p, delayed_at, v_retries);
+        RETURN ${"schema"}.queue_insert_task(q, p, delayed_at, v_retries, priority);
+    END IF;
+
+    -- Change the pending task's priority to the inserted task's, when it has
+    -- one
+    IF priority IS NOT NULL THEN
+        UPDATE ${"schema"}."task" T SET "priority" = queue_insert_dedupe.priority WHERE T."id" = v_id;
     END IF;
 
     -- Run a new task at the earlier of the two delays, where no delay is the
@@ -271,11 +295,50 @@ CREATE OR REPLACE TRIGGER queue_insert_trigger
     AFTER INSERT ON ${"schema"}."task"
     FOR EACH ROW EXECUTE FUNCTION ${"schema"}.queue_notify();
 
+-- pgqueue.queue_turn_func
+-- Waits for the lock on the queues' turns, until the transaction ends, which
+-- serializes locking tasks, so each sees the turns taken before it, and
+-- deleting queues, so a queue isn't deleted while its turn is taken, which
+-- would lock its row and its tasks' rows in the opposite order
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_turn() RETURNS VOID AS $$
+    SELECT pg_advisory_xact_lock(hashtextextended(${'schema'} || '.queue_turn', 0));
+$$ LANGUAGE SQL;
+
+-- pgqueue.queue_delete_func
+-- Deletes a queue, with its tasks, and returns it
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_delete(name TEXT) RETURNS TABLE (
+    "queue"         TEXT,
+    "ttl"           INTERVAL,
+    "retries"       INTEGER,
+    "retry_delay"   INTERVAL,
+    "concurrency"   INTEGER,
+    "dedupe"        BOOLEAN
+) AS $$
+    SELECT ${"schema"}.queue_turn();
+
+    DELETE FROM
+        ${"schema"}."queue" D
+    WHERE
+        D."queue" = name
+    RETURNING
+        D."queue", D."ttl", D."retries", D."retry_delay", D."concurrency", D."dedupe";
+$$ LANGUAGE SQL;
+
 -- pgqueue.queue_lock_func
+-- Locks a task for the worker, from the queues, or any queue, and returns its
+-- id. The task with the highest priority, which is the lowest, is locked
+-- first. Queues take turns between tasks with the same priority: the queue
+-- which a task was locked from longest ago, or never, goes first, and then
+-- its oldest task. The queue's turn is taken when the task is locked, after
+-- the turns taken before, as the task is chosen once the lock on the turns
+-- is held, with what's committed then.
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_lock(q TEXT[], w TEXT) RETURNS BIGINT AS $$
+SELECT ${"schema"}.queue_turn();
+
 WITH selected AS (
     SELECT
         t."id",
+        t."queue",
         queue."ttl"
     FROM
         ${"schema"}."task" t
@@ -315,8 +378,15 @@ WITH selected AS (
     AND
         (queue."concurrency" = 0 OR COALESCE(retained."retained", 0) < queue."concurrency")
     ORDER BY
+        t."priority",
+        queue."locked_at" NULLS FIRST,
         t."created_at"
     FOR UPDATE OF t SKIP LOCKED LIMIT 1
+), turn AS (
+    UPDATE ${"schema"}."queue" SET
+        "locked_at" = CLOCK_TIMESTAMP()
+    FROM selected
+    WHERE ${"schema"}."queue"."queue" = selected."queue"
 )
 UPDATE ${"schema"}."task" SET
     "started_at" = NOW(),

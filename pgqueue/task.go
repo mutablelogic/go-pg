@@ -39,7 +39,8 @@ func (self *Manager) CreateTask(ctx context.Context, queue string, meta schema.T
 	return types.Ptr(task.Task), nil
 }
 
-// ListTasks returns all tasks with optional queue and status filtering.
+// ListTasks returns all tasks with optional queue and status filtering, by
+// priority, highest first, which is the lowest, and then oldest first.
 func (self *Manager) ListTasks(ctx context.Context, req schema.TaskListRequest) (result *schema.TaskList, err error) {
 	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "pgqueue.ListTasks",
 		attribute.String("req", types.Stringify(req)),

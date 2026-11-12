@@ -64,3 +64,9 @@ test('roleFormErrors', () => {
     form.confirm = '';
     assert.deepEqual(roleFormErrors(form), {});
 });
+
+test('roleForm expiry', () => {
+    // An expiry's day is in UTC, whatever the server's offset
+    assert.equal(roleForm({ oid: 1, name: 'r', expires: '2031-05-05T17:00:00-07:00' }).expires, '2031-05-06');
+    assert.equal(roleForm({ oid: 1, name: 'r', expires: '2031-05-06T02:00:00+02:00' }).expires, '2031-05-06');
+});

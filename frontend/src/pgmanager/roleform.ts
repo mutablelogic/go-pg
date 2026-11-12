@@ -68,7 +68,8 @@ export function roleForm(role?: Role): RoleForm {
         confirm: '',
         removePassword: false,
         conlimit: role?.conlimit === undefined ? '' : String(role.conlimit),
-        expires: role?.expires ? role.expires.slice(0, 10) : '',
+        // The day it expires, in UTC, which it's set at the start of
+        expires: role?.expires ? new Date(role.expires).toISOString().slice(0, 10) : '',
         memberof: [...(role?.memberof ?? [])],
     };
 }

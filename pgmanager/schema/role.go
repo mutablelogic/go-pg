@@ -29,7 +29,7 @@ type RoleMeta struct {
 	BypassRowLevelSecurity *bool      `json:"bypassrls,omitempty" help:"Bypass row-level security" negatable:""`
 	Login                  *bool      `json:"login,omitempty" help:"Login permission" negatable:""`
 	Password               *string    `json:"password,omitempty" help:"Password"`
-	Expires                *time.Time `json:"expires,omitzero" help:"Password expiration, or the zero time for none"`
+	Expires                *time.Time `json:"expires,omitempty" help:"Password expiration, or the zero time for none"`
 	Groups                 []string   `json:"memberof,omitempty" help:"Group memberships"`
 	Comment                *string    `json:"comment,omitempty" help:"Comment, which an empty one removes"`
 }

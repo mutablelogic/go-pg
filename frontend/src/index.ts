@@ -41,7 +41,7 @@ import GroupIcon from '@carbon/icons/es/group/32.js';
 import ReplicateIcon from '@carbon/icons/es/replicate/32.js';
 import ResetIcon from '@carbon/icons/es/reset/16.js';
 import SettingsIcon from '@carbon/icons/es/settings/32.js';
-import SqlIcon from '@carbon/icons/es/sql/32.js';
+import SqlIcon from '@carbon/icons/es/SQL/32.js';
 import StoragePoolIcon from '@carbon/icons/es/storage-pool/32.js';
 
 // Errors, and the server's status, are shown as toasts

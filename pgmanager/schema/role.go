@@ -411,7 +411,7 @@ const (
 	roleSelect = `
 		WITH roles AS (
 			SELECT
-				"oid", "rolname", "rolsuper", "rolinherit", "rolcreaterole", "rolcreatedb", "rolreplication", "rolconnlimit", "rolbypassrls", "rolcanlogin", "rolpassword", "rolvaliduntil",
+				"oid", "rolname", "rolsuper", "rolinherit", "rolcreaterole", "rolcreatedb", "rolreplication", "rolconnlimit", "rolbypassrls", "rolcanlogin", "rolpassword", NULLIF("rolvaliduntil", 'infinity') AS "rolvaliduntil",
                 ARRAY(SELECT R2.rolname FROM "pg_catalog".pg_auth_members M JOIN "pg_catalog".pg_roles R2 ON M.roleid = R2.oid WHERE M.member = R.oid) AS groups
 			FROM
 				${"schema"}."pg_roles" R

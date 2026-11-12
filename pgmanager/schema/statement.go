@@ -48,6 +48,10 @@ type StatementListRequest struct {
 	// Sort by field (calls, rows, total_ms, min_ms, max_ms, mean_ms)
 	// All sort DESC except min_ms which sorts ASC
 	Sort string `json:"sort,omitempty" enum:"calls,rows,total_ms,min_ms,max_ms,mean_ms" default:"max_ms"`
+
+	// Order is the direction of the sort, asc or desc, which is the sort's
+	// own direction when it's empty
+	Order string `json:"order,omitempty" help:"Order of the sort (asc or desc)"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -123,6 +127,9 @@ func (s StatementListRequest) Query() url.Values {
 	if s.Sort != "" {
 		q.Set("sort", s.Sort)
 	}
+	if s.Order != "" {
+		q.Set("order", s.Order)
+	}
 	return q
 }
 
@@ -134,11 +141,11 @@ func (r *StatementListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	var where []string
 	if r.Database != nil && *r.Database != "" {
 		bind.Set("database", *r.Database)
-		where = append(where, "d.datname = @database")
+		where = append(where, `"database" = @database`)
 	}
 	if r.Role != nil && *r.Role != "" {
 		bind.Set("role", *r.Role)
-		where = append(where, "u.rolname = @role")
+		where = append(where, `"role" = @role`)
 	}
 
 	if len(where) > 0 {
@@ -147,26 +154,37 @@ func (r *StatementListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 		bind.Set("where", "")
 	}
 
-	// Build ORDER BY clause - always order by database, query_id first
-	var sortClause string
+	// Build ORDER BY clause: each sort's own direction is the most first,
+	// except min_ms, which is the least first, unless the order is given
+	var column, direction string
 	switch strings.ToLower(r.Sort) {
 	case "":
-		sortClause = "queryid ASC"
+		column, direction = "queryid", "ASC"
 	case "calls":
-		sortClause = "calls DESC"
+		column, direction = "calls", "DESC"
 	case "rows":
-		sortClause = "rows DESC"
+		column, direction = "rows", "DESC"
 	case "total_ms":
-		sortClause = "total_exec_time DESC"
+		column, direction = "total_exec_time", "DESC"
 	case "min_ms":
-		sortClause = "min_exec_time ASC"
+		column, direction = "min_exec_time", "ASC"
 	case "max_ms":
-		sortClause = "max_exec_time DESC"
+		column, direction = "max_exec_time", "DESC"
 	case "mean_ms":
-		sortClause = "mean_exec_time DESC"
+		column, direction = "mean_exec_time", "DESC"
 	default:
 		return "", pg.ErrBadParameter.Withf("invalid sort parameter %q", r.Sort)
 	}
+	switch strings.ToLower(r.Order) {
+	case "":
+	case "asc":
+		direction = "ASC"
+	case "desc":
+		direction = "DESC"
+	default:
+		return "", pg.ErrBadParameter.Withf("invalid order parameter %q", r.Order)
+	}
+	sortClause := column + " " + direction
 	bind.Set("orderby", "ORDER BY "+sortClause)
 
 	// Set offset/limit

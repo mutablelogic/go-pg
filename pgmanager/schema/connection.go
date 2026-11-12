@@ -35,6 +35,12 @@ type ConnectionListRequest struct {
 	Database *string `json:"database,omitempty" help:"Database"`
 	Role     *string `json:"role,omitempty" help:"Role"`
 	State    *string `json:"state,omitempty" help:"State"`
+
+	// Sort is what the connections are sorted by, which is the pid when it's
+	// empty, and Order its direction, asc or desc, which is asc when it's
+	// empty
+	Sort  string `json:"sort,omitempty" help:"Sort by database, role, application, client, state, conn_start or query_start"`
+	Order string `json:"order,omitempty" help:"Order of the sort (asc or desc)"`
 }
 
 type ConnectionList struct {
@@ -77,6 +83,12 @@ func (q ConnectionListRequest) Query() url.Values {
 	}
 	if q.State != nil {
 		values.Set("state", types.Value(q.State))
+	}
+	if q.Sort != "" {
+		values.Set("sort", q.Sort)
+	}
+	if q.Order != "" {
+		values.Set("order", q.Order)
 	}
 	return values
 }
@@ -140,6 +152,35 @@ func (c *ConnectionListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) 
 		bind.Set("where", "")
 	}
 
+	// Order, by the sort, and then by the pid, so the pages are stable
+	var column string
+	switch strings.ToLower(c.Sort) {
+	case "":
+		column = `"pid"`
+	case "database", "role", "application", "state", "conn_start", "query_start":
+		column = `"` + strings.ToLower(c.Sort) + `"`
+	case "client":
+		// A connection by a Unix socket has no client address, which is
+		// empty, rather than NULL, so it's last, as other empty values are
+		column = `NULLIF("client_addr", '')`
+	default:
+		return "", pg.ErrBadParameter.Withf("invalid sort parameter %q", c.Sort)
+	}
+	var direction string
+	switch strings.ToLower(c.Order) {
+	case "", "asc":
+		direction = "ASC"
+	case "desc":
+		direction = "DESC"
+	default:
+		return "", pg.ErrBadParameter.Withf("invalid order parameter %q", c.Order)
+	}
+	orderby := "ORDER BY " + column + " " + direction + " NULLS LAST"
+	if column != `"pid"` {
+		orderby += `, "pid" ASC`
+	}
+	bind.Set("orderby", orderby)
+
 	// Offset and limit
 	c.OffsetLimit.Bind(bind, ConnectionListLimit)
 
@@ -173,9 +214,17 @@ func (c ConnectionPid) Select(bind *pg.Bind, op pg.Op) (string, error) {
 ////////////////////////////////////////////////////////////////////////////////
 // READER
 
+// Scan reads a connection. A connection by a Unix socket has no client
+// address or port, and one which hasn't run a query has no query start.
 func (c *Connection) Scan(row pg.Row) error {
 	var result bool
-	return row.Scan(&c.Pid, &c.Database, &c.Role, &c.Application, &c.ClientAddr, &c.ClientPort, &c.ConnStart, &c.QueryStart, &c.Query, &c.State, &result)
+	var connStart, queryStart *time.Time
+	if err := row.Scan(&c.Pid, &c.Database, &c.Role, &c.Application, &c.ClientAddr, &c.ClientPort, &connStart, &queryStart, &c.Query, &c.State, &result); err != nil {
+		return err
+	}
+	c.ConnStart = types.Value(connStart)
+	c.QueryStart = types.Value(queryStart)
+	return nil
 }
 
 func (c *ConnectionList) Scan(row pg.Row) error {
@@ -203,8 +252,8 @@ const (
 				C.datname AS "database",
 				C.usename AS "role",
 				NULLIF(C.application_name, '') AS "application",
-				COALESCE(C.client_hostname, abbrev(C.client_addr)) AS "client_addr",
-				C.client_port AS "client_port",
+				COALESCE(C.client_hostname, abbrev(C.client_addr), '') AS "client_addr",
+				COALESCE(NULLIF(C.client_port, -1), 0) AS "client_port",
 				C.backend_start AS "conn_start",
 				C.query_start AS "query_start",
 				C.query AS "query",
@@ -217,6 +266,6 @@ const (
 				C.state IS NOT NULL
 		) SELECT * FROM conn`
 	connectionGet    = `WITH q AS (` + connectionSelect + `) SELECT *, false FROM q WHERE "pid" = @pid`
-	connectionList   = `WITH q AS (` + connectionSelect + `) SELECT *, false FROM q ${where}`
+	connectionList   = `WITH q AS (` + connectionSelect + `) SELECT *, false FROM q ${where} ${orderby}`
 	connectionDelete = `WITH q AS (` + connectionSelect + `) SELECT *, pg_terminate_backend(${pid}) FROM q WHERE pid <> pg_backend_pid()`
 )

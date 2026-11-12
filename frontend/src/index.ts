@@ -33,6 +33,7 @@ import * as api from './pgmanager/httpclient.ts';
 import type { ObjectFilter } from './pgmanager/httpclient.ts';
 import { ListLimits, type Connection, type Database, type Extension, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
 import * as views from './pgmanager/views.ts';
+import type { AclRow } from './pgmanager/aclform.ts';
 import { roleForm, roleFormErrors, roleRequest, type RoleFormErrors } from './pgmanager/roleform.ts';
 import { roleFormView } from './pgmanager/roleformview.ts';
 import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest, type DatabaseFormErrors } from './pgmanager/databaseform.ts';
@@ -280,10 +281,14 @@ async function ownerRoles(owner?: string): Promise<string[]> {
 }
 
 // editDatabase shows the form of a database, or a new one, in the panel,
-// which saves it, and shows its page
-async function editDatabase(db?: Database) {
+// which saves it, and shows its page. Its access is acl, when it's set,
+// such as when a new one's couldn't be, so it can be saved again.
+async function editDatabase(db?: Database, acl?: AclRow[]) {
     const roleNames = await ownerRoles(db?.owner);
     const form = databaseForm(db);
+    if (acl) {
+        form.acl = acl;
+    }
     let errors: DatabaseFormErrors = {};
     const view = (): TemplateResult => databaseFormView(form, roleNames, rerender, errors);
     const rerender = () => {
@@ -313,7 +318,16 @@ async function editDatabase(db?: Database) {
                     // it isn't what PostgreSQL gave it
                     const acl = db ? undefined : databaseCreateAcl(form, saved);
                     if (acl) {
-                        saved = await api.updateDatabase(client, saved.name, { acl });
+                        try {
+                            saved = await api.updateDatabase(client, saved.name, { acl });
+                        } catch (error) {
+                            // It's created, so it's changed, with the access
+                            // which was asked for, to save again
+                            notifications.error(`The database ${saved.name} was created, but its access couldn't be set`, error);
+                            await databases.refresh();
+                            void editDatabase(saved, form.acl);
+                            return;
+                        }
                     }
                     await databases.refresh();
                     panel.close();
@@ -479,14 +493,19 @@ function renderSchemaActions() {
 }
 
 // editSchema shows the form of a schema, or a new one, in the database which
-// is shown, in the panel, which saves it, and chooses it
-async function editSchema(schema?: Schema) {
+// is shown, in the panel, which saves it, and chooses it. Its access is
+// acl, when it's set, such as when a new one's couldn't be, so it can be
+// saved again.
+async function editSchema(schema?: Schema, acl?: AclRow[]) {
     const database = filter?.database;
     if (!database) {
         return;
     }
     const roleNames = await ownerRoles(schema?.owner);
     const form = schemaForm(schema);
+    if (acl) {
+        form.acl = acl;
+    }
     let errors: SchemaFormErrors = {};
     const view = (): TemplateResult => schemaFormView(form, roleNames, !schema, rerender, errors);
     const rerender = () => {
@@ -514,7 +533,16 @@ async function editSchema(schema?: Schema) {
                     let saved = schema ? await api.updateSchema(client, database, schema.schema, schemaRequest(form, schema)) : await api.createSchema(client, database, schemaRequest(form));
                     const acl = schema ? undefined : schemaCreateAcl(form, saved);
                     if (acl) {
-                        saved = await api.updateSchema(client, database, saved.schema, { acl });
+                        try {
+                            saved = await api.updateSchema(client, database, saved.schema, { acl });
+                        } catch (error) {
+                            // It's created, so it's changed, with the access
+                            // which was asked for, to save again
+                            notifications.error(`The schema ${saved.schema} was created, but its access couldn't be set`, error);
+                            await schemas.refresh();
+                            void editSchema(saved, form.acl);
+                            return;
+                        }
                     }
                     await schemas.refresh();
                     panel.close();

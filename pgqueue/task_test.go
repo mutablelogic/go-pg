@@ -3,6 +3,8 @@ package pgqueue_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sync"
 	"strconv"
 	"testing"
 	"time"
@@ -157,6 +159,79 @@ func TestCreateTask(t *testing.T) {
 		assert.Error(t, err)
 		_, err = manager.CreateTask(ctx, "invalid", schema.TaskMeta{})
 		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	})
+}
+
+func TestNextTaskConcurrent(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+
+	t.Run("RoundRobin", func(t *testing.T) {
+		// Workers which lock tasks at the same time take turns between
+		// queues, as each sees the turns taken before it
+		manager := test.IsolatedManager(t)
+		for round := range 20 {
+			a, b := fmt.Sprintf("a%d", round), fmt.Sprintf("b%d", round)
+			for _, queue := range []string{a, b} {
+				_, err := manager.RegisterQueue(ctx, queue, schema.QueueMeta{}, noopTask)
+				require.NoError(t, err)
+			}
+			for _, queue := range []string{a, a, b} {
+				_, err := manager.CreateTask(ctx, queue, payload(`{}`))
+				require.NoError(t, err)
+			}
+
+			var wg sync.WaitGroup
+			queues := make([]string, 2)
+			for i := range queues {
+				wg.Go(func() {
+					task, err := manager.NextTask(ctx, "worker", a, b)
+					if assert.NoError(t, err) && assert.NotNil(t, task) {
+						queues[i] = task.Queue
+					}
+				})
+			}
+			wg.Wait()
+			assert.ElementsMatch(t, []string{a, b}, queues, "round %d", round)
+		}
+	})
+
+	t.Run("DeleteQueue", func(t *testing.T) {
+		// A queue is deleted only once the lock on the turns is free, as a
+		// worker which takes the queue's turn locks its task's row and then
+		// its row, and deleting it locks them in the opposite order
+		manager := taskManager(t, "delete", schema.QueueMeta{})
+		_, err := manager.CreateTask(ctx, "delete", payload(`{}`))
+		require.NoError(t, err)
+
+		locked, release := make(chan struct{}), make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			assert.NoError(t, manager.Tx(ctx, func(conn pg.Conn) error {
+				err := conn.Exec(ctx, `SELECT ${"schema"}.queue_turn()`)
+				close(locked)
+				if err != nil {
+					return err
+				}
+				<-release
+				return nil
+			}))
+		})
+		<-locked
+
+		deleted := make(chan error, 1)
+		wg.Go(func() {
+			_, err := manager.DeleteQueue(ctx, "delete")
+			deleted <- err
+		})
+		select {
+		case err := <-deleted:
+			t.Fatalf("the queue was deleted while the turns were locked: %v", err)
+		case <-time.After(200 * time.Millisecond):
+		}
+		close(release)
+		assert.NoError(t, <-deleted)
+		wg.Wait()
 	})
 }
 

@@ -295,13 +295,46 @@ CREATE OR REPLACE TRIGGER queue_insert_trigger
     AFTER INSERT ON ${"schema"}."task"
     FOR EACH ROW EXECUTE FUNCTION ${"schema"}.queue_notify();
 
+-- pgqueue.queue_turn_func
+-- Waits for the lock on the queues' turns, until the transaction ends, which
+-- serializes locking tasks, so each sees the turns taken before it, and
+-- deleting queues, so a queue isn't deleted while its turn is taken, which
+-- would lock its row and its tasks' rows in the opposite order
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_turn() RETURNS VOID AS $$
+    SELECT pg_advisory_xact_lock(hashtextextended(${'schema'} || '.queue_turn', 0));
+$$ LANGUAGE SQL;
+
+-- pgqueue.queue_delete_func
+-- Deletes a queue, with its tasks, and returns it
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_delete(name TEXT) RETURNS TABLE (
+    "queue"         TEXT,
+    "ttl"           INTERVAL,
+    "retries"       INTEGER,
+    "retry_delay"   INTERVAL,
+    "concurrency"   INTEGER,
+    "dedupe"        BOOLEAN
+) AS $$
+    SELECT ${"schema"}.queue_turn();
+
+    DELETE FROM
+        ${"schema"}."queue" D
+    WHERE
+        D."queue" = name
+    RETURNING
+        D."queue", D."ttl", D."retries", D."retry_delay", D."concurrency", D."dedupe";
+$$ LANGUAGE SQL;
+
 -- pgqueue.queue_lock_func
 -- Locks a task for the worker, from the queues, or any queue, and returns its
 -- id. The task with the highest priority, which is the lowest, is locked
 -- first. Queues take turns between tasks with the same priority: the queue
 -- which a task was locked from longest ago, or never, goes first, and then
--- its oldest task. The queue's turn is taken when the task is locked.
+-- its oldest task. The queue's turn is taken when the task is locked, after
+-- the turns taken before, as the task is chosen once the lock on the turns
+-- is held, with what's committed then.
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_lock(q TEXT[], w TEXT) RETURNS BIGINT AS $$
+SELECT ${"schema"}.queue_turn();
+
 WITH selected AS (
     SELECT
         t."id",

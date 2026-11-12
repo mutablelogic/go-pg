@@ -44,17 +44,15 @@ RETURNING
     "dedupe";
 
 -- pgqueue.delete
-DELETE FROM
-    ${"schema"}."queue"
-WHERE
-    "queue" = @id
-RETURNING
+SELECT
     "queue",
     "ttl",
     "retries",
     "retry_delay",
     "concurrency",
-    "dedupe";
+    "dedupe"
+FROM
+    ${"schema"}.queue_delete(@id);
 
 -- pgqueue.list
 -- The queues, with the number of their tasks with each status

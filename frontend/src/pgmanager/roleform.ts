@@ -35,7 +35,7 @@ export type RoleRequest = Partial<Pick<Role, 'name' | 'comment' | 'login' | 'sup
 // The permissions, which are checkboxes, as the role's fields
 export const permissions: [keyof RoleForm & keyof Role, string][] = [
     ['login', 'Can sign in'],
-    ['inherit', "Inherits its roles' permissions"],
+    ['inherit', 'Inherits roles from group membership'],
     ['createdb', 'Can create databases'],
     ['createrole', 'Can create roles'],
     ['replication', 'Can replicate'],

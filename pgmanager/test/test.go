@@ -16,6 +16,7 @@ import (
 
 var (
 	shared      *manager.Manager
+	sharedPool  pg.PoolConn
 	testCancels sync.Map // map[*testing.T]context.CancelFunc
 )
 
@@ -31,6 +32,7 @@ func Main(m *testing.M, setup func(*manager.Manager) (func(), error), opts ...ma
 			return nil, err
 		}
 		shared = mgr
+		sharedPool = pool
 
 		teardown := func() {}
 		if setup != nil {
@@ -53,9 +55,16 @@ func Main(m *testing.M, setup func(*manager.Manager) (func(), error), opts ...ma
 				panic(err)
 			}
 			shared = nil
+			sharedPool = nil
 			teardown()
 		}, nil
 	})
+}
+
+// Pool returns the shared test manager's connection pool, such as for a
+// connection of a test's own, which the manager can act on
+func Pool() pg.PoolConn {
+	return sharedPool
 }
 
 // Begin returns the shared test manager and a per-test context.

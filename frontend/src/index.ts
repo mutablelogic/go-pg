@@ -426,9 +426,60 @@ function openRole(name: string) {
         }
     });
 }
-table('connection-table', connections, ListLimits.connection, views.connectionColumns, (conn) => ({
-    title: `Connection ${conn.pid}`, subtitle: [conn.role, conn.database].filter(Boolean).join(' · '), body: views.connectionBody(conn),
-}));
+table('connection-table', connections, ListLimits.connection, views.connectionColumns, connectionView);
+
+// connectionView is a connection in the panel, which can be ended, or, while
+// it's running a query, have its query cancelled
+function connectionView(conn: Connection): Omit<Item, 'kind'> {
+    return {
+        title: `Connection ${conn.pid}`,
+        subtitle: [conn.role, conn.database].filter(Boolean).join(' · '),
+        body: views.connectionBody(conn),
+        actions: [
+            { label: 'End the session', kind: 'danger', close: false, run: () => endConnection(conn) },
+            ...(conn.state === 'active' ? [{ label: 'Cancel the query', kind: 'secondary' as const, close: false, run: () => cancelConnection(conn) }] : []),
+            closeAction,
+        ],
+    };
+}
+
+// pgmanagers says that the connection is pgmanager's own, which it makes
+// again, when it's ended, or else nothing
+function pgmanagers(conn: Connection): string {
+    return conn.application === 'pgmanager' ? " It's one of pgmanager's own, which it will connect again." : '';
+}
+
+// cancelConnection cancels a connection's query, once it's confirmed, which
+// stays connected, and shows it again
+async function cancelConnection(conn: Connection) {
+    if (!confirm(`Cancel the query connection ${conn.pid} is running? It stays connected, and its transaction, if it's in one, fails.${pgmanagers(conn)}`)) {
+        return;
+    }
+    const item = panel.current.item;
+    const cancelled = await api.cancelConnection(client, conn.pid);
+    notifications.push({ kind: 'success', title: `Connection ${conn.pid}'s query was cancelled` });
+    void connections.refresh();
+    // It's shown again, unless the panel was closed, or shows another
+    if (panel.current.open && panel.current.item === item) {
+        open({ kind: 'connection-table', ...connectionView(cancelled) });
+    }
+}
+
+// endConnection ends a connection, once it's confirmed, and closes the panel
+async function endConnection(conn: Connection) {
+    if (!confirm(`End connection ${conn.pid}, of ${conn.role ?? 'its role'}? Its query is cancelled, and its transaction, if it's in one, is rolled back.${pgmanagers(conn)}`)) {
+        return;
+    }
+    const item = panel.current.item;
+    await api.endConnection(client, conn.pid);
+    notifications.push({ kind: 'success', title: `Connection ${conn.pid} was ended` });
+    void connections.refresh();
+    // The panel's closed, unless it was, or shows another
+    if (panel.current.open && panel.current.item === item) {
+        connections.close();
+        panel.close();
+    }
+}
 table('setting-table', settings, ListLimits.setting, views.settingColumns, (setting) => ({ title: setting.name, subtitle: setting.category, body: views.settingBody(setting) }));
 table('tablespace-table', tablespaces, ListLimits.tablespace, views.tablespaceColumns, tablespaceView);
 

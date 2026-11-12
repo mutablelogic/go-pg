@@ -193,6 +193,23 @@ func (c *ConnectionListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) 
 	}
 }
 
+// ConnectionCancel is a connection, by its pid, whose query is cancelled,
+// with Get, which returns it
+type ConnectionCancel uint64
+
+func (c ConnectionCancel) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	if c == 0 {
+		return "", pg.ErrBadParameter.With("missing pid")
+	}
+	bind.Set("pid", c)
+	switch op {
+	case pg.Get:
+		return connectionCancel, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported ConnectionCancel operation %q", op)
+	}
+}
+
 func (c ConnectionPid) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	if c == 0 {
 		return "", pg.ErrBadParameter.With("missing pid")
@@ -267,5 +284,11 @@ const (
 		) SELECT * FROM conn`
 	connectionGet    = `WITH q AS (` + connectionSelect + `) SELECT *, false FROM q WHERE "pid" = @pid`
 	connectionList   = `WITH q AS (` + connectionSelect + `) SELECT *, false FROM q ${where} ${orderby}`
-	connectionDelete = `WITH q AS (` + connectionSelect + `) SELECT *, pg_terminate_backend(${pid}) FROM q WHERE pid <> pg_backend_pid()`
+	// connectionDelete ends a connection, by its pid, unless it's this one,
+	// and connectionCancel cancels its query, and both return it, when it
+	// was signalled, which it isn't, when it's ended since it was read, so
+	// it's not found. The signal is sent once, in a CTE which is
+	// materialized, and its result is the row's last column.
+	connectionDelete = `WITH q AS (` + connectionSelect + `), s AS MATERIALIZED (SELECT *, pg_terminate_backend(pid) AS "signalled" FROM q WHERE pid = @pid AND pid <> pg_backend_pid()) SELECT * FROM s WHERE "signalled"`
+	connectionCancel = `WITH q AS (` + connectionSelect + `), s AS MATERIALIZED (SELECT *, pg_cancel_backend(pid) AS "signalled" FROM q WHERE pid = @pid AND pid <> pg_backend_pid()) SELECT * FROM s WHERE "signalled"`
 )

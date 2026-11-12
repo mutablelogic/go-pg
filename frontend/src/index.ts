@@ -39,6 +39,8 @@ import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest, t
 import { databaseFormView } from './pgmanager/databaseformview.ts';
 import { schemaCreateAcl, schemaForm, schemaFormErrors, schemaRequest, type SchemaFormErrors } from './pgmanager/schemaform.ts';
 import { schemaFormView } from './pgmanager/schemaformview.ts';
+import { tablespaceCreateAcl, tablespaceForm, tablespaceFormErrors, tablespaceRequest, type TablespaceFormErrors } from './pgmanager/tablespaceform.ts';
+import { tablespaceFormView } from './pgmanager/tablespaceformview.ts';
 
 // Carbon components, and icons
 import '@carbon/web-components/es/components/ui-shell/index.js';
@@ -414,7 +416,80 @@ table('connection-table', connections, ListLimits.connection, views.connectionCo
     title: `Connection ${conn.pid}`, subtitle: [conn.role, conn.database].filter(Boolean).join(' · '), body: views.connectionBody(conn),
 }));
 table('setting-table', settings, ListLimits.setting, views.settingColumns, (setting) => ({ title: setting.name, subtitle: setting.category, body: views.settingBody(setting) }));
-table('tablespace-table', tablespaces, ListLimits.tablespace, views.tablespaceColumns, (space) => ({ title: space.name, subtitle: 'Tablespace', body: views.tablespaceBody(space) }));
+table('tablespace-table', tablespaces, ListLimits.tablespace, views.tablespaceColumns, tablespaceView);
+
+// tablespaceView is a tablespace in the panel, which, unless it's
+// PostgreSQL's own, such as pg_default, can be deleted, or changed
+function tablespaceView(space: Tablespace): Omit<Item, 'kind'> {
+    return {
+        title: space.name,
+        subtitle: 'Tablespace',
+        body: views.tablespaceBody(space),
+        actions: space.name.startsWith('pg_') ? undefined : [
+            { label: 'Delete', kind: 'danger', close: false, run: () => deleteTablespace(space) },
+            { label: 'Change', kind: 'secondary', close: false, run: () => editTablespace(space) },
+            closeAction,
+        ],
+    };
+}
+
+// editTablespace shows the form of a tablespace, or a new one, in the
+// panel, which saves it, and shows it
+async function editTablespace(space?: Tablespace) {
+    const roleNames = await ownerRoles(space?.owner);
+    const form = tablespaceForm(space);
+    let errors: TablespaceFormErrors = {};
+    const view = (): TemplateResult => tablespaceFormView(form, roleNames, !space, rerender, errors);
+    const rerender = () => {
+        if (panelView) {
+            render(view(), panelView);
+        }
+    };
+    open({
+        kind: 'tablespace-form',
+        title: space ? `Change ${space.name}` : 'Create a tablespace',
+        subtitle: 'Tablespace',
+        body: view(),
+        actions: [
+            space ? { label: 'Cancel', kind: 'secondary', close: false, run: () => open({ kind: 'tablespace', ...tablespaceView(space) }) } : { label: 'Cancel', kind: 'secondary' },
+            {
+                label: space ? 'Save' : 'Create',
+                kind: 'primary',
+                close: false,
+                run: async () => {
+                    errors = tablespaceFormErrors(form, !space);
+                    rerender();
+                    if (Object.keys(errors).length) {
+                        return;
+                    }
+                    let saved = space ? await api.updateTablespace(client, space.name, tablespaceRequest(form, space)) : await api.createTablespace(client, tablespaceRequest(form));
+                    const acl = space ? undefined : tablespaceCreateAcl(form, saved);
+                    if (acl) {
+                        saved = await api.updateTablespace(client, saved.name, { acl });
+                    }
+                    void tablespaces.refresh();
+                    open({ kind: 'tablespace', ...tablespaceView(saved) });
+                },
+            },
+        ],
+    });
+    // The table's selection is closed, so a refresh doesn't show the
+    // tablespace in place of the form
+    tablespaces.close();
+}
+
+// deleteTablespace deletes a tablespace, once it's confirmed, and closes the
+// panel. It fails while anything is in it.
+async function deleteTablespace(space: Tablespace) {
+    if (!confirm(`Delete the tablespace ${space.name}? This can't be undone.`)) {
+        return;
+    }
+    await api.deleteTablespace(client, space.name);
+    notifications.push({ kind: 'success', title: `The tablespace ${space.name} was deleted` });
+    tablespaces.close();
+    panel.close();
+    void tablespaces.refresh();
+}
 table('extension-table', extensions, ListLimits.extension, views.extensionColumns, (ext) => ({
     title: ext.name, subtitle: ext.database ? `Extension · ${ext.database}` : 'Extension', body: views.extensionBody(ext),
 }));
@@ -644,6 +719,10 @@ for (const [page, icon] of Object.entries(icons)) {
     if (header) {
         header.icon = icon;
     }
+}
+const tablespacesHeader = pageHeader('tablespaces');
+if (tablespacesHeader) {
+    tablespacesHeader.actions = [{ label: 'Create a tablespace', icon: AddIcon, run: () => void editTablespace().catch((error) => notifications.error("The form couldn't be opened", error)) }];
 }
 const rolesHeader = pageHeader('roles');
 if (rolesHeader) {

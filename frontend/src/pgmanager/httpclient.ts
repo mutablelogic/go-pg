@@ -4,6 +4,7 @@ import type { Client } from '@mutablelogic/go-server/api';
 import { request } from '@mutablelogic/go-server/api';
 import type { DatabaseRequest } from './databaseform.ts';
 import type { SchemaRequest } from './schemaform.ts';
+import type { TablespaceRequest } from './tablespaceform.ts';
 import type { RoleRequest } from './roleform.ts';
 import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './schema.ts';
 
@@ -159,6 +160,22 @@ export function getSetting(client: Client, name: string): Promise<Setting> {
 // listTablespaces returns a page of the tablespaces
 export function listTablespaces(client: Client, offset: number, limit: number): Promise<List<Tablespace>> {
     return request<List<Tablespace>>(client, 'GET', 'tablespace', { query: { offset, limit } });
+}
+
+// createTablespace creates a tablespace, in its location, and returns it
+export function createTablespace(client: Client, space: TablespaceRequest): Promise<Tablespace> {
+    return request<Tablespace>(client, 'POST', 'tablespace', { body: space });
+}
+
+// updateTablespace changes a tablespace, by its name, and returns it
+export function updateTablespace(client: Client, name: string, space: TablespaceRequest): Promise<Tablespace> {
+    return request<Tablespace>(client, 'PATCH', `tablespace/${encodeURIComponent(name)}`, { body: space });
+}
+
+// deleteTablespace deletes a tablespace, by its name, and returns it as it
+// was. It fails while anything is in it.
+export function deleteTablespace(client: Client, name: string): Promise<Tablespace> {
+    return request<Tablespace>(client, 'DELETE', `tablespace/${encodeURIComponent(name)}`);
 }
 
 // getTablespace returns a tablespace, by its name

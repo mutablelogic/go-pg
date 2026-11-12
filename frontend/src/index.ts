@@ -33,13 +33,15 @@ import * as api from './pgmanager/httpclient.ts';
 import type { ObjectFilter } from './pgmanager/httpclient.ts';
 import { ListLimits, type Connection, type Database, type Extension, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
 import * as views from './pgmanager/views.ts';
-import type { AclRow } from './pgmanager/aclform.ts';
+import type { AclItem, AclRow } from './pgmanager/aclform.ts';
 import { roleForm, roleFormErrors, roleRequest, type RoleFormErrors } from './pgmanager/roleform.ts';
 import { roleFormView } from './pgmanager/roleformview.ts';
 import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest, type DatabaseFormErrors } from './pgmanager/databaseform.ts';
 import { databaseFormView } from './pgmanager/databaseformview.ts';
 import { schemaCreateAcl, schemaForm, schemaFormErrors, schemaRequest, type SchemaFormErrors } from './pgmanager/schemaform.ts';
 import { schemaFormView } from './pgmanager/schemaformview.ts';
+import { tablespaceCreateAcl, tablespaceForm, tablespaceFormErrors, tablespaceLocationError, tablespaceRequest, type TablespaceFormErrors } from './pgmanager/tablespaceform.ts';
+import { tablespaceFormView } from './pgmanager/tablespaceformview.ts';
 
 // Carbon components, and icons
 import '@carbon/web-components/es/components/ui-shell/index.js';
@@ -264,6 +266,12 @@ function roleView(role: Role): Omit<Item, 'kind'> {
 
 // editRole shows the form of a role, or a new one, in the panel, which saves
 // it, and shows it, or, when it's cancelled, shows the role again, or closes
+// aclRowsOf returns the rows of access which was asked for, such as a new
+// database's, with its owner's, so a form which saves it again keeps them
+function aclRowsOf(acl: readonly AclItem[]): AclRow[] {
+    return acl.map((item) => ({ role: item.role, priv: [...item.priv] }));
+}
+
 // allRoles returns the name of every role, yours, and then, unless only
 // yours, PostgreSQL's own, which roles are members of, rather than which own
 // things, or are granted access to them
@@ -325,7 +333,7 @@ async function editDatabase(db?: Database, acl?: AclRow[]) {
                             // which was asked for, to save again
                             notifications.error(`The database ${saved.name} was created, but its access couldn't be set`, error);
                             await databases.refresh();
-                            void editDatabase(saved, form.acl);
+                            void editDatabase(saved, aclRowsOf(acl));
                             return;
                         }
                     }
@@ -424,11 +432,161 @@ function openRole(name: string) {
         }
     });
 }
-table('connection-table', connections, ListLimits.connection, views.connectionColumns, (conn) => ({
-    title: `Connection ${conn.pid}`, subtitle: [conn.role, conn.database].filter(Boolean).join(' · '), body: views.connectionBody(conn),
-}));
+table('connection-table', connections, ListLimits.connection, views.connectionColumns, connectionView);
+
+// connectionView is a connection in the panel, which can be ended, or, while
+// it's running a query, have its query cancelled
+function connectionView(conn: Connection): Omit<Item, 'kind'> {
+    return {
+        title: `Connection ${conn.pid}`,
+        subtitle: [conn.role, conn.database].filter(Boolean).join(' · '),
+        body: views.connectionBody(conn),
+        actions: [
+            { label: 'End the session', kind: 'danger', close: false, run: () => endConnection(conn) },
+            ...(conn.state === 'active' ? [{ label: 'Cancel the query', kind: 'secondary' as const, close: false, run: () => cancelConnection(conn) }] : []),
+            closeAction,
+        ],
+    };
+}
+
+// pgmanagers says that the connection is pgmanager's own, which it makes
+// again, when it's ended, or else nothing
+function pgmanagers(conn: Connection): string {
+    return conn.application === 'pgmanager' ? " It's one of pgmanager's own, which it will connect again." : '';
+}
+
+// cancelConnection cancels a connection's query, once it's confirmed, which
+// stays connected, and shows it again
+async function cancelConnection(conn: Connection) {
+    if (!confirm(`Cancel the query connection ${conn.pid} is running? It stays connected, and its transaction, if it's in one, fails.${pgmanagers(conn)}`)) {
+        return;
+    }
+    const item = panel.current.item;
+    const cancelled = await api.cancelConnection(client, conn.pid);
+    notifications.push({ kind: 'success', title: `Connection ${conn.pid}'s query was cancelled` });
+    void connections.refresh();
+    // It's shown again, unless the panel was closed, or shows another
+    if (panel.current.open && panel.current.item === item) {
+        open({ kind: 'connection-table', ...connectionView(cancelled) });
+    }
+}
+
+// endConnection ends a connection, once it's confirmed, and closes the panel
+async function endConnection(conn: Connection) {
+    if (!confirm(`End connection ${conn.pid}, of ${conn.role ?? 'its role'}? Its query is cancelled, and its transaction, if it's in one, is rolled back.${pgmanagers(conn)}`)) {
+        return;
+    }
+    const item = panel.current.item;
+    await api.endConnection(client, conn.pid);
+    notifications.push({ kind: 'success', title: `Connection ${conn.pid} was ended` });
+    void connections.refresh();
+    // The panel's closed, unless it was, or shows another
+    if (panel.current.open && panel.current.item === item) {
+        connections.close();
+        panel.close();
+    }
+}
 table('setting-table', settings, ListLimits.setting, views.settingColumns, (setting) => ({ title: setting.name, subtitle: setting.category, body: views.settingBody(setting) }));
-table('tablespace-table', tablespaces, ListLimits.tablespace, views.tablespaceColumns, (space) => ({ title: space.name, subtitle: 'Tablespace', body: views.tablespaceBody(space) }));
+table('tablespace-table', tablespaces, ListLimits.tablespace, views.tablespaceColumns, tablespaceView);
+
+// tablespaceView is a tablespace in the panel, which, unless it's
+// PostgreSQL's own, such as pg_default, can be deleted, or changed
+function tablespaceView(space: Tablespace): Omit<Item, 'kind'> {
+    return {
+        title: space.name,
+        subtitle: 'Tablespace',
+        body: views.tablespaceBody(space, (name) => !!databases.current.items?.some((db) => db.name === name)),
+        actions: space.name.startsWith('pg_') ? undefined : [
+            { label: 'Delete', kind: 'danger', close: false, run: () => deleteTablespace(space) },
+            { label: 'Change', kind: 'secondary', close: false, run: () => editTablespace(space) },
+            closeAction,
+        ],
+    };
+}
+
+// editTablespace shows the form of a tablespace, or a new one, in the
+// panel, which saves it, and shows it. Its access is acl, when it's set,
+// such as when a new one's couldn't be, so it can be saved again.
+async function editTablespace(space?: Tablespace, acl?: AclRow[]) {
+    const roleNames = await ownerRoles(space?.owner);
+    const form = tablespaceForm(space);
+    if (acl) {
+        form.acl = acl;
+    }
+    let errors: TablespaceFormErrors = {};
+    const view = (): TemplateResult => tablespaceFormView(form, roleNames, !space, rerender, errors);
+    const rerender = () => {
+        if (panelView) {
+            render(view(), panelView);
+        }
+    };
+    open({
+        kind: 'tablespace-form',
+        title: space ? `Change ${space.name}` : 'Create a tablespace',
+        subtitle: 'Tablespace',
+        body: view(),
+        actions: [
+            space ? { label: 'Cancel', kind: 'secondary', close: false, run: () => open({ kind: 'tablespace', ...tablespaceView(space) }) } : { label: 'Cancel', kind: 'secondary' },
+            {
+                label: space ? 'Save' : 'Create',
+                kind: 'primary',
+                close: false,
+                run: async () => {
+                    errors = tablespaceFormErrors(form, !space);
+                    rerender();
+                    if (Object.keys(errors).length) {
+                        return;
+                    }
+                    let saved: Tablespace;
+                    try {
+                        saved = space ? await api.updateTablespace(client, space.name, tablespaceRequest(form, space)) : await api.createTablespace(client, tablespaceRequest(form));
+                    } catch (error) {
+                        // What's wrong with a new one's location is said by
+                        // its input, in plain words
+                        const location = !space && error instanceof ApiError ? tablespaceLocationError(error.status, error.message) : undefined;
+                        if (!location) {
+                            throw error;
+                        }
+                        errors = { location };
+                        rerender();
+                        return;
+                    }
+                    const acl = space ? undefined : tablespaceCreateAcl(form, saved);
+                    if (acl) {
+                        try {
+                            saved = await api.updateTablespace(client, saved.name, { acl });
+                        } catch (error) {
+                            // It's created, so it's changed, with the access
+                            // which was asked for, to save again
+                            notifications.error(`The tablespace ${saved.name} was created, but its access couldn't be set`, error);
+                            void tablespaces.refresh();
+                            void editTablespace(saved, aclRowsOf(acl));
+                            return;
+                        }
+                    }
+                    void tablespaces.refresh();
+                    open({ kind: 'tablespace', ...tablespaceView(saved) });
+                },
+            },
+        ],
+    });
+    // The table's selection is closed, so a refresh doesn't show the
+    // tablespace in place of the form
+    tablespaces.close();
+}
+
+// deleteTablespace deletes a tablespace, once it's confirmed, and closes the
+// panel. It fails while anything is in it.
+async function deleteTablespace(space: Tablespace) {
+    if (!confirm(`Delete the tablespace ${space.name}? This can't be undone.`)) {
+        return;
+    }
+    await api.deleteTablespace(client, space.name);
+    notifications.push({ kind: 'success', title: `The tablespace ${space.name} was deleted` });
+    tablespaces.close();
+    panel.close();
+    void tablespaces.refresh();
+}
 table('extension-table', extensions, ListLimits.extension, views.extensionColumns, (ext) => ({
     title: ext.name, subtitle: ext.database ? `Extension · ${ext.database}` : 'Extension', body: views.extensionBody(ext),
 }));
@@ -540,7 +698,7 @@ async function editSchema(schema?: Schema, acl?: AclRow[]) {
                             // which was asked for, to save again
                             notifications.error(`The schema ${saved.schema} was created, but its access couldn't be set`, error);
                             await schemas.refresh();
-                            void editSchema(saved, form.acl);
+                            void editSchema(saved, aclRowsOf(acl));
                             return;
                         }
                     }
@@ -672,6 +830,10 @@ for (const [page, icon] of Object.entries(icons)) {
     if (header) {
         header.icon = icon;
     }
+}
+const tablespacesHeader = pageHeader('tablespaces');
+if (tablespacesHeader) {
+    tablespacesHeader.actions = [{ label: 'Create a tablespace', icon: AddIcon, run: () => void editTablespace().catch((error) => notifications.error("The form couldn't be opened", error)) }];
 }
 const rolesHeader = pageHeader('roles');
 if (rolesHeader) {

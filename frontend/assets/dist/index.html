@@ -106,6 +106,25 @@
 
         /* A section of a panel, such as a role's memberships, beneath its
            fields */
+        /* A list of links in a panel, such as a tablespace's databases, and
+           what's said about them */
+        gs-panel ul.links {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            font-size: 0.875rem;
+        }
+
+        gs-panel p.helper,
+        gs-panel span.helper {
+            margin: 0 0 0.5rem;
+            color: var(--cds-text-helper, #6f6f6f);
+            font-size: 0.75rem;
+        }
+
         gs-panel .section {
             margin: 1.5rem 0 0.5rem;
             font-size: 0.875rem;

@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { aclChanged, aclRequest, aclRows } from '../src/pgmanager/aclform.ts';
 import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest } from '../src/pgmanager/databaseform.ts';
-import type { Database, Schema } from '../src/pgmanager/schema.ts';
+import type { Database, Schema, Tablespace } from '../src/pgmanager/schema.ts';
+import { tablespaceForm, tablespaceFormErrors, tablespaceLocationError, tablespaceRequest } from '../src/pgmanager/tablespaceform.ts';
 import { schemaCreateAcl, schemaForm, schemaFormErrors, schemaRequest } from '../src/pgmanager/schemaform.ts';
 
 test('aclRows', () => {
@@ -75,4 +76,31 @@ test('schemaRequest', () => {
     const changed = schemaForm(created);
     changed.comment = 'Orders';
     assert.deepEqual(schemaRequest(changed, created), { comment: 'Orders' });
+});
+
+test('tablespaceRequest', () => {
+    // A new tablespace has a location, from the server's root, which an
+    // existing one doesn't send, as it can't be moved
+    const form = tablespaceForm();
+    form.name = 'reports';
+    assert.deepEqual(tablespaceFormErrors(form, true), { location: 'A tablespace needs a directory on the server, such as /var/lib/postgresql/reports' });
+    form.location = ' /data/reports ';
+    assert.deepEqual(tablespaceFormErrors(form, true), {});
+    assert.deepEqual(tablespaceRequest(form), { name: 'reports', location: '/data/reports' });
+    const space: Tablespace = { oid: 1, name: 'reports', owner: 'app', location: '/data/reports', acl: ['app:CREATE'] };
+    const changed = tablespaceForm(space);
+    assert.deepEqual(tablespaceFormErrors(changed, false), {});
+    changed.acl.push({ role: 'reporter', priv: ['CREATE'] });
+    assert.deepEqual(tablespaceRequest(changed, space), { acl: [{ role: 'app', priv: ['CREATE'] }, { role: 'reporter', priv: ['CREATE'] }] });
+});
+
+test('tablespaceLocationError', () => {
+    // PostgreSQL's reasons, in plain words, or none, for another reason
+    assert.match(tablespaceLocationError(404, 'Not Found: directory "/data/x" does not exist') ?? '', /doesn't exist/);
+    assert.match(tablespaceLocationError(400, 'Bad Request: could not set permissions on directory "/data/x": Operation not permitted') ?? '', /owned by the user PostgreSQL runs as/);
+    assert.match(tablespaceLocationError(400, 'directory "/data/x/PG_17_202406281" already in use as a tablespace') ?? '', /already in use/);
+    assert.equal(tablespaceLocationError(409, 'tablespace "x" already exists'), undefined);
+    // A reason which isn't the directory's is left as it is
+    assert.equal(tablespaceLocationError(400, 'permission denied to create tablespace "x"'), undefined);
+    assert.equal(tablespaceLocationError(404, 'role "nobody" does not exist'), undefined);
 });

@@ -63,6 +63,19 @@ func RegisterConnectionHandlers(manager *manager.Manager, router *httprouter.Rou
 				},
 			),
 		),
+		router.RegisterPath("connection/{pid}/cancel", jsonschema.MustFor[ConnectionPathParams](), httprequest.NewPathItem("Connection's query", "Cancel a PostgreSQL connection's query").Tag("Connections").
+			Post(
+				func(w http.ResponseWriter, r *http.Request) {
+					_ = CancelConnection(w, r, manager, r.PathValue("pid"))
+				},
+				func(op httprequest.PathOperation) {
+					op.Summary("Cancel a connection's query")
+					op.Description("Cancels the query the connection is running, and leaves it connected")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Connection]())
+					op.ErrorResponse(http.StatusNotFound, "Process not found")
+				},
+			),
+		),
 	)
 }
 
@@ -87,6 +100,18 @@ func GetConnection(w http.ResponseWriter, r *http.Request, manager *manager.Mana
 		return httpresponse.Error(w, httpresponse.ErrBadRequest.With("invalid pid"), pid)
 	}
 	if connection, err := manager.GetConnection(r.Context(), pid_); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err), pid)
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), connection)
+	}
+}
+
+func CancelConnection(w http.ResponseWriter, r *http.Request, manager *manager.Manager, pid string) error {
+	pid_, err := strconv.ParseUint(pid, 10, 64)
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.ErrBadRequest.With("invalid pid"), pid)
+	}
+	if connection, err := manager.CancelConnection(r.Context(), pid_); err != nil {
 		return httpresponse.Error(w, pg.HTTPError(err), pid)
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), connection)

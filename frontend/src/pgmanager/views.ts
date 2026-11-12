@@ -276,16 +276,29 @@ export const tablespaceColumns: Column<Tablespace>[] = [
     { header: 'Size', cell: (space) => formatBytes(space.bytes) },
 ];
 
-export function tablespaceBody(space: Tablespace): TemplateResult {
-    return fields([
-        ['Description', space.comment],
-        ['Owner', space.owner],
-        ['Location', space.location || 'default'],
-        ['Size', formatBytes(space.bytes)],
-        ['Options', space.options?.join(', ')],
-        ['OID', space.oid],
-        ['Access', space.acl?.length ? JSON.stringify(space.acl) : undefined],
-    ]);
+// tablespaceBody is a tablespace in the panel, with the databases which have
+// files in it, as their default, or for some of their tables, or indexes,
+// which link to their pages, unless they've none, such as template1, which
+// it can't be deleted while it has
+export function tablespaceBody(space: Tablespace, isPage: (database: string) => boolean = () => true): TemplateResult {
+    const databases = space.databases ?? [];
+    return html`
+        ${fields([
+            ['Description', space.comment],
+            ['Owner', space.owner],
+            ['Location', space.location || 'default'],
+            ['Size', formatBytes(space.bytes)],
+            ['Options', space.options?.join(', ')],
+            ['OID', space.oid],
+        ])}
+        <h4 class="section">Used by</h4>
+        ${databases.length ? html`
+            <p class="helper">These databases have files in it, as their default, or for some of their tables, or indexes. It can't be deleted until they've none.</p>
+            <ul class="links">
+                ${databases.map((name) => html`<li>${isPage(name) ? html`<cds-link href="#database/${encodeURIComponent(name)}">${name}</cds-link>` : html`${name} <span class="helper">(a template)</span>`}</li>`)}
+            </ul>
+        ` : html`<p class="helper">Nothing is in it, so it can be deleted.</p>`}
+    `;
 }
 
 // formatLag returns how far a slot's client lags, in bytes, and time

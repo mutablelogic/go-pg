@@ -11,6 +11,8 @@ import (
 	require "github.com/stretchr/testify/require"
 )
 
+// The resources are deleted with defer, which runs before harness.End,
+// which cancels ctx, so they're gone before the next test
 func TestCommentRole(t *testing.T) {
 	mgr, ctx := harness.Begin(t)
 	defer harness.End(t)
@@ -19,7 +21,7 @@ func TestCommentRole(t *testing.T) {
 	// removed, without changing anything else
 	role, err := mgr.CreateRole(ctx, schema.RoleMeta{Name: "comment_role", Comment: types.Ptr("Reads the reports")})
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = mgr.DeleteRole(ctx, "comment_role") })
+	defer func() { _, _ = mgr.DeleteRole(ctx, "comment_role") }()
 	assert.Equal(t, "Reads the reports", types.Value(role.Comment))
 
 	role, err = mgr.UpdateRole(ctx, "comment_role", schema.RoleMeta{Comment: types.Ptr("Bob's reports")})
@@ -39,7 +41,7 @@ func TestCommentDatabase(t *testing.T) {
 	// without one leaves it
 	db, err := mgr.CreateDatabase(ctx, schema.DatabaseMeta{Name: "comment_db", Comment: types.Ptr("The shop")})
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = mgr.DeleteDatabase(ctx, "comment_db", true) })
+	defer func() { _, _ = mgr.DeleteDatabase(ctx, "comment_db", true) }()
 	assert.Equal(t, "The shop", types.Value(db.Comment))
 
 	db, err = mgr.UpdateDatabase(ctx, "comment_db", schema.DatabaseMeta{Comment: types.Ptr("The new shop")})

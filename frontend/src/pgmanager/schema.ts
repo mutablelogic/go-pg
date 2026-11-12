@@ -1,11 +1,13 @@
 // pgmanager's schema, which mirrors pgmanager/schema in Go, of the resources
 // the UI shows
 
-// Database is a database, with its owner, its access privileges, and its
-// size, in bytes
+// Database is a database, with its owner, its access privileges, its size,
+// in bytes, and its comment, which describes it. The others have comments
+// too.
 export interface Database {
     oid: number;
     name: string;
+    comment?: string;
     owner?: string;
     acl?: unknown[];
     bytes?: number;
@@ -15,6 +17,7 @@ export interface Database {
 export interface Role {
     oid: number;
     name: string;
+    comment?: string;
     super?: boolean;
     inherit?: boolean;
     createrole?: boolean;
@@ -36,6 +39,7 @@ export interface PgObject {
     schema?: string;
     type?: string;
     name?: string;
+    comment?: string;
     owner?: string;
     acl?: unknown[];
     tablespace?: string;
@@ -48,6 +52,7 @@ export interface Schema {
     oid: number;
     database?: string;
     schema: string;
+    comment?: string;
     owner?: string;
     bytes?: number;
 }
@@ -83,6 +88,7 @@ export interface Setting {
 export interface Tablespace {
     oid: number;
     name: string;
+    comment?: string;
     owner?: string;
     acl?: unknown[];
     location?: string;

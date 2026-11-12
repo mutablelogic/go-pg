@@ -23,9 +23,10 @@ type Database struct {
 }
 
 type DatabaseMeta struct {
-	Name  string  `json:"name,omitempty" arg:"" help:"Name of the database"`
-	Owner string  `json:"owner,omitempty" help:"Owner"`
-	Acl   ACLList `json:"acl,omitempty" help:"Access privileges"`
+	Name    string  `json:"name,omitempty" arg:"" help:"Name of the database"`
+	Owner   string  `json:"owner,omitempty" help:"Owner"`
+	Acl     ACLList `json:"acl,omitempty" help:"Access privileges"`
+	Comment *string `json:"comment,omitempty" help:"Comment, which an empty one removes"`
 }
 
 type DatabaseListRequest struct {
@@ -228,7 +229,7 @@ func (d DatabaseName) Update(bind *pg.Bind) error {
 func (d *Database) Scan(row pg.Row) error {
 	var priv []string
 	d.Acl = ACLList{}
-	if err := row.Scan(&d.Oid, &d.Name, &d.Owner, &priv, &d.Size); err != nil {
+	if err := row.Scan(&d.Oid, &d.Name, &d.Owner, &priv, &d.Size, &d.Comment); err != nil {
 		return err
 	}
 	for _, v := range priv {
@@ -295,6 +296,13 @@ func (d DatabaseMeta) owner() (string, error) {
 	return owner, nil
 }
 
+// Altered is true when the database's name, or owner, is changed, rather
+// than only its access privileges, or comment, which ALTER DATABASE doesn't
+// change
+func (d DatabaseMeta) Altered() bool {
+	return d.with(false) != ""
+}
+
 func (d DatabaseMeta) with(insert bool) string {
 	var with []string
 	// Use validated owner - caller should have validated already
@@ -319,7 +327,7 @@ func (d DatabaseMeta) with(insert bool) string {
 const (
 	databaseSelect = `
 		WITH s AS (SELECT
-			D.oid AS "oid", D.datname AS "name", R.rolname AS "owner", D.datacl AS "acl", pg_database_size(D.oid) AS "size"
+			D.oid AS "oid", D.datname AS "name", R.rolname AS "owner", D.datacl AS "acl", pg_database_size(D.oid) AS "size", shobj_description(D.oid, 'pg_database') AS "comment"
 		FROM
 			${"schema"}."pg_database" D
 		JOIN

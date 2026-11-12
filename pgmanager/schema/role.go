@@ -31,6 +31,7 @@ type RoleMeta struct {
 	Password               *string    `json:"password,omitempty" help:"Password"`
 	Expires                *time.Time `json:"expires,omitzero" help:"Password expiration"`
 	Groups                 []string   `json:"memberof,omitempty" help:"Group memberships"`
+	Comment                *string    `json:"comment,omitempty" help:"Comment, which an empty one removes"`
 }
 
 type Role struct {
@@ -278,7 +279,7 @@ func (r RoleMeta) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 func (r *Role) Scan(row pg.Row) error {
 	var connlimit int64
-	if err := row.Scan(&r.Oid, &r.Name, &r.Superuser, &r.Inherit, &r.CreateRoles, &r.CreateDatabases, &r.Replication, &connlimit, &r.BypassRowLevelSecurity, &r.Login, &r.Password, &r.Expires, &r.Groups, &r.Predefined); err != nil {
+	if err := row.Scan(&r.Oid, &r.Name, &r.Superuser, &r.Inherit, &r.CreateRoles, &r.CreateDatabases, &r.Replication, &connlimit, &r.BypassRowLevelSecurity, &r.Login, &r.Password, &r.Expires, &r.Groups, &r.Predefined, &r.Comment); err != nil {
 		return err
 	}
 	if connlimit >= 0 {
@@ -352,6 +353,13 @@ func (r RoleMeta) Update(bind *pg.Bind) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
+
+// Altered is true when the role's permissions, password, or limits are
+// changed, rather than only its memberships, or comment, which ALTER ROLE
+// doesn't change
+func (r RoleMeta) Altered() bool {
+	return r.with(false) != ""
+}
 
 func (r RoleMeta) with(insert bool) string {
 	var with []string
@@ -429,7 +437,8 @@ const (
 			SELECT
 				"oid", "rolname", "rolsuper", "rolinherit", "rolcreaterole", "rolcreatedb", "rolreplication", "rolconnlimit", "rolbypassrls", "rolcanlogin", "rolpassword", NULLIF("rolvaliduntil", 'infinity') AS "rolvaliduntil",
                 ARRAY(SELECT R2.rolname FROM "pg_catalog".pg_auth_members M JOIN "pg_catalog".pg_roles R2 ON M.roleid = R2.oid WHERE M.member = R.oid) AS groups,
-				"rolname" LIKE 'pg\_%' AS "predefined"
+				"rolname" LIKE 'pg\_%' AS "predefined",
+				shobj_description(R.oid, 'pg_authid') AS "comment"
 			FROM
 				${"schema"}."pg_roles" R
 		) SELECT * FROM roles

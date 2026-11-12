@@ -28,9 +28,15 @@ export function formatBytes(bytes?: number): string {
     return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
+// description is a comment, in a table's cell, which is cut short, and
+// shown in full when it's hovered
+function description(comment?: string) {
+    return comment ? html`<span style="display: block; max-width: 20rem; overflow: hidden; text-overflow: ellipsis" title=${comment}>${comment}</span>` : '';
+}
+
 // schemaTile is a schema's tile, with its owner, and its size
 export function schemaTile(schema: Schema): Tile {
-    return { value: schema.schema, label: schema.schema, badge: schema.owner, text: formatBytes(schema.bytes), title: `${schema.schema}, owned by ${schema.owner ?? 'nobody'}` };
+    return { value: schema.schema, label: schema.schema, badge: schema.owner, text: formatBytes(schema.bytes), title: schema.comment ?? `${schema.schema}, owned by ${schema.owner ?? 'nobody'}` };
 }
 
 // The types of objects which can be chosen, after all of them, as some,
@@ -53,6 +59,7 @@ export function objectTypes(type: string | undefined, onType: (type?: string) =>
 export const objectColumns: Column<PgObject>[] = [
     { header: 'Schema', cell: (object) => object.schema ?? '' },
     { header: 'Name', cell: (object) => object.name ?? '' },
+    { header: 'Description', cell: (object) => description(object.comment) },
     { header: 'Type', cell: (object) => object.type ? html`<cds-tag size="sm" type="gray">${object.type.toLowerCase()}</cds-tag>` : '' },
     { header: 'Owner', cell: (object) => object.owner ?? '' },
     { header: 'Rows', cell: (object) => object.table?.live_tuples?.toLocaleString() ?? '' },
@@ -82,6 +89,7 @@ function roleLinks(names: readonly string[] | undefined, onRole: (name: string) 
 // with the function
 export const roleColumns = (onRole: (name: string) => void): Column<Role>[] => [
     { header: 'Role', cell: (role) => role.name },
+    { header: 'Description', cell: (role) => description(role.comment) },
     { header: 'Permissions', cell: (role) => roleFlags(role).map((flag) => html`<cds-tag size="sm" type="gray">${flag}</cds-tag>`) },
     { header: 'Member of', cell: (role) => roleLinks(role.memberof, onRole) },
 ];
@@ -93,6 +101,7 @@ function fields(entries: [string, unknown][]): TemplateResult {
 
 export function objectBody(object: PgObject): TemplateResult {
     return fields([
+        ['Description', object.comment],
         ['Type', object.type?.toLowerCase()],
         ['Database', object.database],
         ['Schema', object.schema],
@@ -108,6 +117,7 @@ export function objectBody(object: PgObject): TemplateResult {
 
 export function roleBody(role: Role, onRole: (name: string) => void): TemplateResult {
     return fields([
+        ['Description', role.comment],
         ['Permissions', roleFlags(role).join(', ') || 'none'],
         ['Member of', role.memberof?.length ? roleLinks(role.memberof, onRole) : undefined],
         ['Connection limit', role.conlimit],
@@ -191,6 +201,7 @@ export function settingCategories(categories: readonly string[], category: strin
 
 export const tablespaceColumns: Column<Tablespace>[] = [
     { header: 'Tablespace', cell: (space) => space.name },
+    { header: 'Description', cell: (space) => description(space.comment) },
     { header: 'Owner', cell: (space) => space.owner ?? '' },
     { header: 'Location', cell: (space) => space.location || 'default' },
     { header: 'Size', cell: (space) => formatBytes(space.bytes) },
@@ -198,6 +209,7 @@ export const tablespaceColumns: Column<Tablespace>[] = [
 
 export function tablespaceBody(space: Tablespace): TemplateResult {
     return fields([
+        ['Description', space.comment],
         ['Owner', space.owner],
         ['Location', space.location || 'default'],
         ['Size', formatBytes(space.bytes)],

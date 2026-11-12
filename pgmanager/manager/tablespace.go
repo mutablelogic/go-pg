@@ -86,6 +86,11 @@ func (manager *Manager) CreateTablespace(ctx context.Context, meta schema.Tables
 				return err
 			}
 		}
+		if comment := types.Value(meta.Comment); comment != "" {
+			if err := schema.CommentOn(ctx, conn, "TABLESPACE", meta.Name, comment); err != nil {
+				return err
+			}
+		}
 		return nil
 	}); err != nil {
 		// Delete the tablespace if there is an issue with ACL's
@@ -216,6 +221,13 @@ func (manager *Manager) UpdateTablespace(ctx context.Context, name string, meta 
 						return err
 					}
 				}
+			}
+		}
+
+		// Update the comment, or remove it, when it's empty
+		if meta.Comment != nil {
+			if err := schema.CommentOn(ctx, conn, "TABLESPACE", meta.Name, *meta.Comment); err != nil {
+				return err
 			}
 		}
 

@@ -120,16 +120,21 @@ func (manager *Manager) CreateSchema(ctx context.Context, database string, meta 
 		return nil, err
 	}
 
-	// Set ACL's
+	// Set ACL's, and the comment
 	if err := manager.conn.Tx(ctx, func(txConn pg.Conn) error {
 		for _, acl := range meta.Acl {
 			if err := acl.GrantSchema(ctx, conn, meta.Name); err != nil {
 				return err
 			}
 		}
+		if comment := types.Value(meta.Comment); comment != "" {
+			if err := schema.CommentOn(ctx, conn, "SCHEMA", meta.Name, comment); err != nil {
+				return err
+			}
+		}
 		return nil
 	}); err != nil {
-		// Delete the schema if there is an issue with ACL's
+		// Delete the schema if there is an issue with ACL's, or the comment
 		return nil, errors.Join(err, conn.With("force", true).Delete(ctx, nil, schema.SchemaName(meta.Name)))
 	}
 
@@ -224,6 +229,13 @@ func (manager *Manager) UpdateSchema(ctx context.Context, database, namespace st
 	// Update ACL's
 	if meta.Acl != nil {
 		if err := manager.updateSchemaACLs(ctx, conn, meta.Name, result.Acl, meta.Acl); err != nil {
+			return nil, err
+		}
+	}
+
+	// Update the comment, or remove it, when it's empty
+	if meta.Comment != nil {
+		if err := schema.CommentOn(ctx, conn, "SCHEMA", meta.Name, *meta.Comment); err != nil {
 			return nil, err
 		}
 	}

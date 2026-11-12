@@ -21,6 +21,10 @@ type ExtensionPathParams struct {
 	Extension string `json:"extension"`
 }
 
+type ExtensionCreateQueryParams struct {
+	Cascade bool `json:"cascade" query:"cascade" help:"Also install the extensions it requires."`
+}
+
 type ExtensionDeleteQueryParams struct {
 	Database []string `json:"database" query:"database" help:"Database to delete extension from."`
 	Cascade  bool     `json:"cascade" query:"cascade" help:"Cascade option."`
@@ -50,6 +54,7 @@ func RegisterExtensionHandlers(manager *manager.Manager, router *httprouter.Rout
 				},
 				func(op httprequest.PathOperation) {
 					op.Summary("Install extension into a database")
+					op.Query(jsonschema.MustFor[ExtensionCreateQueryParams]())
 					op.RequestBody(jsonschema.MustFor[schema.ExtensionMeta]())
 					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Extension]())
 				},
@@ -104,11 +109,14 @@ func GetExtension(w http.ResponseWriter, r *http.Request, manager *manager.Manag
 
 func CreateExtension(w http.ResponseWriter, r *http.Request, manager *manager.Manager) error {
 	var meta schema.ExtensionMeta
+	var query ExtensionCreateQueryParams
+	if err := httprequest.Query(r.URL.Query(), &query); err != nil {
+		return httpresponse.Error(w, httpresponse.ErrBadRequest.With(err.Error()))
+	}
 	if err := httprequest.Read(r, &meta); err != nil {
 		return httpresponse.Error(w, httpresponse.ErrBadRequest.With(err.Error()))
 	}
-	// TODO: Cascade option
-	if extension, err := manager.CreateExtension(r.Context(), meta, false); err != nil {
+	if extension, err := manager.CreateExtension(r.Context(), meta, query.Cascade); err != nil {
 		return httpresponse.Error(w, pg.HTTPError(err))
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), extension)

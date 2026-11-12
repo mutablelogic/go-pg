@@ -30,6 +30,10 @@ type Tablespace struct {
 	Location string   `json:"location,omitempty" help:"Location"`
 	Options  []string `json:"options,omitempty" help:"Options"`
 	Size     uint64   `json:"bytes,omitempty" help:"Size of schema in bytes"`
+
+	// Databases are those with files in it, as their default, or for some
+	// of their tables, or indexes, which it can't be deleted while it has
+	Databases []string `json:"databases,omitempty" help:"Databases with files in the tablespace"`
 }
 
 type TablespaceListRequest struct {
@@ -179,7 +183,7 @@ func (t TablespaceMeta) Select(bind *pg.Bind, op pg.Op) (string, error) {
 func (t *Tablespace) Scan(row pg.Row) error {
 	var priv []string
 	t.Acl = ACLList{}
-	if err := row.Scan(&t.Oid, &t.Name, &t.Owner, &priv, &t.Options, &t.Size, &t.Location, &t.Comment); err != nil {
+	if err := row.Scan(&t.Oid, &t.Name, &t.Owner, &priv, &t.Options, &t.Size, &t.Location, &t.Comment, &t.Databases); err != nil {
 		return err
 	}
 	for _, v := range priv {
@@ -305,7 +309,8 @@ const (
 					WHEN T.spcname = 'pg_default' THEN (SELECT setting||'/base' FROM pg_settings WHERE name='data_directory')
 					ELSE pg_tablespace_location(T.oid)
 				END AS "location",
-				shobj_description(T.oid, 'pg_tablespace') AS "comment"
+				shobj_description(T.oid, 'pg_tablespace') AS "comment",
+				ARRAY(SELECT D.datname FROM "pg_catalog"."pg_database" D WHERE D.oid IN (SELECT pg_tablespace_databases(T.oid)) ORDER BY D.datname) AS "databases"
 			FROM
 				"pg_catalog"."pg_tablespace" T
 			JOIN

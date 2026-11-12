@@ -438,7 +438,7 @@ function tablespaceView(space: Tablespace): Omit<Item, 'kind'> {
     return {
         title: space.name,
         subtitle: 'Tablespace',
-        body: views.tablespaceBody(space),
+        body: views.tablespaceBody(space, (name) => !!databases.current.items?.some((db) => db.name === name)),
         actions: space.name.startsWith('pg_') ? undefined : [
             { label: 'Delete', kind: 'danger', close: false, run: () => deleteTablespace(space) },
             { label: 'Change', kind: 'secondary', close: false, run: () => editTablespace(space) },

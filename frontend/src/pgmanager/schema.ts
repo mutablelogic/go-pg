@@ -95,6 +95,7 @@ export interface Tablespace {
     location?: string;
     options?: string[];
     bytes?: number;
+    databases?: string[];
 }
 
 // ReplicationSlot is a replication slot, physical or logical, with its

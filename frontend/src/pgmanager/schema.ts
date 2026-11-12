@@ -25,6 +25,7 @@ export interface Role {
     conlimit?: number;
     expires?: string;
     memberof?: string[];
+    predefined?: boolean;
 }
 
 // PgObject is an object of a database, such as a table, or an index, in

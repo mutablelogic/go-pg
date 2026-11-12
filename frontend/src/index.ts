@@ -113,10 +113,13 @@ const objects = new ListController<PgObject>({
     same: (a, b) => a.database === b.database && a.schema === b.schema && a.name === b.name,
     notifications, changes,
 });
+// The roles are yours, or PostgreSQL's own, such as pg_monitor, which the
+// tiles above them choose
+let predefinedRoles = false;
 const roles = new ListController<Role>({
     pageSize: 20,
     name: 'Roles',
-    list: (offset, limit) => api.listRoles(client, offset, limit),
+    list: (offset, limit) => api.listRoles(client, predefinedRoles, offset, limit),
     get: (role) => api.getRole(client, role.name),
     same: (a, b) => a.name === b.name,
     notifications, changes, filter: { table: 'role' },
@@ -208,7 +211,17 @@ function table<T>(id: string, controller: ListController<T>, limit: number, colu
 table('object-table', objects, ListLimits.object, views.objectColumns, (object) => ({
     title: object.name ?? '', subtitle: [object.database, object.schema].filter(Boolean).join(' · '), body: views.objectBody(object),
 }));
-table('role-table', roles, ListLimits.role, views.roleColumns, (role) => ({ title: role.name, subtitle: 'Role', body: views.roleBody(role) }));
+table('role-table', roles, ListLimits.role, views.roleColumns(openRole), (role) => ({
+    title: role.name, subtitle: role.predefined ? 'Predefined role' : 'Role', body: views.roleBody(role, openRole),
+}));
+
+// openRole opens a role, by its name, such as one a role is a member of,
+// which mayn't be on the page, so it isn't the table's
+function openRole(name: string) {
+    api.getRole(client, name).then((role) => open({
+        kind: 'role', title: role.name, subtitle: role.predefined ? 'Predefined role' : 'Role', body: views.roleBody(role, openRole),
+    })).catch((error) => notifications.error(`The role ${name} couldn't be loaded`, error));
+}
 table('connection-table', connections, ListLimits.connection, views.connectionColumns, (conn) => ({
     title: `Connection ${conn.pid}`, subtitle: [conn.role, conn.database].filter(Boolean).join(' · '), body: views.connectionBody(conn),
 }));
@@ -386,6 +399,50 @@ function databaseTiles<T>(name: string, list: ListController<T>, count: (databas
         });
     });
 }
+// The tiles of the roles, yours, and PostgreSQL's own, with how many of
+// each there are, which are counted again whenever the roles are loaded
+interface RoleKind { value: string; label: string }
+const roleKinds = new ListController<RoleKind>({
+    name: 'Roles',
+    list: async () => ({ count: 2, body: [{ value: '', label: 'Your roles' }, { value: 'predefined', label: 'Predefined' }] }),
+    same: (a, b) => a.value === b.value,
+});
+const roleTiles = document.getElementById('role-tiles') as TilesElement<RoleKind> | null;
+const roleCounts = new Map<string, number>();
+function renderRoleTiles() {
+    if (roleTiles) {
+        roleTiles.tile = (kind) => ({ ...kind, text: roleCounts.get(kind.value)?.toLocaleString() });
+        roleTiles.selected = predefinedRoles ? 'predefined' : '';
+    }
+}
+if (roleTiles) {
+    roleTiles.controller = roleKinds;
+    roleTiles.addEventListener(TileSelectEvent, (event) => {
+        predefinedRoles = (event as CustomEvent<string>).detail === 'predefined';
+        if (panel.current.item?.kind === 'role-table') {
+            panel.close();
+        }
+        renderRoleTiles();
+        void roles.reset();
+    });
+    renderRoleTiles();
+    void roleKinds.load();
+}
+let countedRoles: unknown;
+roles.subscribe(({ items }) => {
+    if (!items || items === countedRoles) {
+        return;
+    }
+    countedRoles = items;
+    Promise.all([false, true].map((predefined) => api.listRoles(client, predefined, 0, 1))).then(([own, predefined]) => {
+        roleCounts.set('', own.count);
+        roleCounts.set('predefined', predefined.count);
+        renderRoleTiles();
+    }).catch(() => {
+        // The counts aren't shown, as the roles say why they can't be loaded
+    });
+});
+
 databaseTiles('statement', statements, async (database) => (await listStatements({ sort: 'calls', database }, 0, 1)).count, (database) => {
     statementDatabase = database;
 });

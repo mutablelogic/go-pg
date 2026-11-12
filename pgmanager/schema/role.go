@@ -36,10 +36,18 @@ type RoleMeta struct {
 type Role struct {
 	Oid uint32 `json:"oid"`
 	RoleMeta
+
+	// Predefined is true for PostgreSQL's own roles, such as pg_monitor,
+	// whose names start with pg_, which is reserved
+	Predefined bool `json:"predefined,omitempty" help:"PostgreSQL's own role, such as pg_monitor"`
 }
 
 type RoleListRequest struct {
 	pg.OffsetLimit
+
+	// Predefined lists PostgreSQL's own roles, such as pg_monitor, rather
+	// than the others, which are listed when it's false, or not set
+	Predefined *bool `json:"predefined,omitempty" help:"List PostgreSQL's own roles, such as pg_monitor, rather than the others" negatable:""`
 }
 
 type RoleList struct {
@@ -136,6 +144,9 @@ func (d RoleListRequest) Query() url.Values {
 	if d.Limit != nil {
 		q.Set("limit", fmt.Sprint(types.Value(d.Limit)))
 	}
+	if d.Predefined != nil {
+		q.Set("predefined", fmt.Sprint(types.Value(d.Predefined)))
+	}
 	return q
 }
 
@@ -202,8 +213,13 @@ func (r RoleMeta) name() (string, error) {
 // SELECT
 
 func (r *RoleListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
-	// Set empty where
-	bind.Set("where", "")
+	// PostgreSQL's own roles, or the others, by name
+	if types.Value(r.Predefined) {
+		bind.Set("where", `WHERE "predefined"`)
+	} else {
+		bind.Set("where", `WHERE NOT "predefined"`)
+	}
+	bind.Set("orderby", `ORDER BY "rolname"`)
 
 	// Bind offset and limit
 	r.OffsetLimit.Bind(bind, RoleListLimit)
@@ -262,7 +278,7 @@ func (r RoleMeta) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 func (r *Role) Scan(row pg.Row) error {
 	var connlimit int64
-	if err := row.Scan(&r.Oid, &r.Name, &r.Superuser, &r.Inherit, &r.CreateRoles, &r.CreateDatabases, &r.Replication, &connlimit, &r.BypassRowLevelSecurity, &r.Login, &r.Password, &r.Expires, &r.Groups); err != nil {
+	if err := row.Scan(&r.Oid, &r.Name, &r.Superuser, &r.Inherit, &r.CreateRoles, &r.CreateDatabases, &r.Replication, &connlimit, &r.BypassRowLevelSecurity, &r.Login, &r.Password, &r.Expires, &r.Groups, &r.Predefined); err != nil {
 		return err
 	}
 	if connlimit >= 0 {
@@ -412,13 +428,12 @@ const (
 		WITH roles AS (
 			SELECT
 				"oid", "rolname", "rolsuper", "rolinherit", "rolcreaterole", "rolcreatedb", "rolreplication", "rolconnlimit", "rolbypassrls", "rolcanlogin", "rolpassword", NULLIF("rolvaliduntil", 'infinity') AS "rolvaliduntil",
-                ARRAY(SELECT R2.rolname FROM "pg_catalog".pg_auth_members M JOIN "pg_catalog".pg_roles R2 ON M.roleid = R2.oid WHERE M.member = R.oid) AS groups
+                ARRAY(SELECT R2.rolname FROM "pg_catalog".pg_auth_members M JOIN "pg_catalog".pg_roles R2 ON M.roleid = R2.oid WHERE M.member = R.oid) AS groups,
+				"rolname" LIKE 'pg\_%' AS "predefined"
 			FROM
 				${"schema"}."pg_roles" R
-			WHERE
-				"rolname" NOT LIKE 'pg_%'
 		) SELECT * FROM roles
 	`
 	roleGet  = roleSelect + `WHERE rolname = @name`
-	roleList = `WITH q AS (` + roleSelect + `) SELECT * FROM q ${where}`
+	roleList = `WITH q AS (` + roleSelect + `) SELECT * FROM q ${where} ${orderby}`
 )

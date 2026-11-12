@@ -10,6 +10,7 @@ import type { Connection, PgObject, ReplicationSlot, Role, Schema, Setting, Stat
 import '@carbon/web-components/es/components/button/index.js';
 import '@carbon/web-components/es/components/content-switcher/index.js';
 import '@carbon/web-components/es/components/dropdown/index.js';
+import '@carbon/web-components/es/components/link/index.js';
 import '@carbon/web-components/es/components/tag/tag.js';
 
 // formatBytes returns a size, such as 7.4 MB
@@ -67,10 +68,22 @@ function roleFlags(role: Role): string[] {
     return flags.filter(([, on]) => on).map(([name]) => name);
 }
 
-export const roleColumns: Column<Role>[] = [
+// roleLinks are the names of roles, such as those a role is a member of,
+// as links, which call the function with a role's name, to open it
+function roleLinks(names: readonly string[] | undefined, onRole: (name: string) => void) {
+    return html`<span style="display: inline-flex; flex-wrap: wrap; gap: 0 0.75rem">${(names ?? []).map((name) => html`<cds-link href="#" @click=${(event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onRole(name);
+    }}>${name}</cds-link>`)}</span>`;
+}
+
+// roleColumns are the roles' columns, whose roles they're members of open
+// with the function
+export const roleColumns = (onRole: (name: string) => void): Column<Role>[] => [
     { header: 'Role', cell: (role) => role.name },
     { header: 'Permissions', cell: (role) => roleFlags(role).map((flag) => html`<cds-tag size="sm" type="gray">${flag}</cds-tag>`) },
-    { header: 'Member of', cell: (role) => (role.memberof ?? []).join(', ') },
+    { header: 'Member of', cell: (role) => roleLinks(role.memberof, onRole) },
 ];
 
 // fields returns the fields, which have values, as a list
@@ -93,10 +106,10 @@ export function objectBody(object: PgObject): TemplateResult {
     ]);
 }
 
-export function roleBody(role: Role): TemplateResult {
+export function roleBody(role: Role, onRole: (name: string) => void): TemplateResult {
     return fields([
         ['Permissions', roleFlags(role).join(', ') || 'none'],
-        ['Member of', role.memberof?.join(', ')],
+        ['Member of', role.memberof?.length ? roleLinks(role.memberof, onRole) : undefined],
         ['Connection limit', role.conlimit],
         ['Expires', role.expires],
         ['OID', role.oid],

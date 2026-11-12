@@ -302,7 +302,7 @@ const (
 			LEFT JOIN
 				"pg_catalog"."pg_class" C ON C.relnamespace = S.oid
 			WHERE
-				S.nspname NOT LIKE 'pg_%' AND S.nspname != 'information_schema'
+				S.nspname NOT LIKE 'pg\_%' AND S.nspname != 'information_schema'
 			GROUP BY
 				1, 2, 3, 4, 5				
 		) SELECT * FROM sc`

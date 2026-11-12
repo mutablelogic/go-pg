@@ -24,9 +24,10 @@ export const DatabasePrivileges = ['CONNECT', 'CREATE', 'TEMPORARY'] as const;
 export const SchemaPrivileges = ['USAGE', 'CREATE'] as const;
 export const TablespacePrivileges = ['CREATE'] as const;
 
-// The option which lets a role grant what it has, which pgmanager returns,
-// but doesn't take back, so it's left out
-const withGrantOption = 'WITH GRANT OPTION';
+// The option which lets a role grant a privilege it has, which pgmanager
+// returns after it, such as CONNECT WITH GRANT OPTION, but doesn't take
+// back, so it's left out
+const withGrantOption = ' WITH GRANT OPTION';
 
 // aclRows returns the rows of access privileges, as pgmanager returns them,
 // such as "reporter:CONNECT,CREATE", or "\"a role\":CONNECT"
@@ -37,7 +38,7 @@ export function aclRows(acl: readonly string[] | undefined): AclRow[] {
             return [];
         }
         const role = match[1].startsWith('"') ? JSON.parse(match[1]) as string : match[1];
-        const priv = match[2].split(',').map((p) => p.trim()).filter((p) => p && p !== withGrantOption);
+        const priv = match[2].split(',').map((p) => p.trim().replace(withGrantOption, '')).filter(Boolean);
         return [{ role: role || Public, priv }];
     });
 }

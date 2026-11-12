@@ -14,12 +14,11 @@ import '@carbon/web-components/es/components/combo-box/index.js';
 import '@carbon/web-components/es/components/data-table/index.js';
 
 // AclGridOptions are the privileges of the kind of thing, the roles which
-// can be added, its owner, who has every privilege, what applies when no
-// privileges are granted, and what's called when the rows change
+// can be added, what applies when no privileges are granted, and what's
+// called when the rows change
 export interface AclGridOptions {
     privileges: readonly string[];
     roles: readonly string[];
-    owner?: string;
     defaults: string;
     rerender: () => void;
 }
@@ -37,7 +36,6 @@ export function aclGrid(rows: AclRow[], options: AclGridOptions): TemplateResult
     return html`
         <div class="members-field">
             <span class="label">Access</span>
-            ${options.owner ? html`<p class="helper">Its owner, ${options.owner}, has every privilege.</p>` : ''}
             ${rows.length ? html`
                 <cds-table size="sm" class="members">
                     <cds-table-head>

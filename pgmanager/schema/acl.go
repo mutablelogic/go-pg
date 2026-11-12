@@ -238,14 +238,21 @@ func (acl *ACLList) UnmarshalText(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON reads a list of access privileges, which is empty, rather
+// than nil, for [], which revokes them all, unlike null, or none, which
+// leaves them
 func (acl *ACLList) UnmarshalJSON(data []byte) error {
 	items := make([]*ACLItem, 0)
 	if acl == nil {
 		return httpresponse.ErrBadRequest.With("nil ACLList")
 	}
+	if string(bytes.TrimSpace(data)) == "null" {
+		return nil
+	}
 	if err := json.Unmarshal(data, &items); err != nil {
 		return err
 	}
+	*acl = ACLList{}
 	for _, item := range items {
 		acl.Append(item)
 	}

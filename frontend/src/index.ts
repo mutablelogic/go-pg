@@ -34,7 +34,7 @@ import { ListLimits, type Connection, type Database, type Extension, type PgObje
 import * as views from './pgmanager/views.ts';
 import { roleForm, roleFormErrors, roleRequest, type RoleFormErrors } from './pgmanager/roleform.ts';
 import { roleFormView } from './pgmanager/roleformview.ts';
-import { databaseForm, databaseFormErrors, databaseRequest, type DatabaseFormErrors } from './pgmanager/databaseform.ts';
+import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest, type DatabaseFormErrors } from './pgmanager/databaseform.ts';
 import { databaseFormView } from './pgmanager/databaseformview.ts';
 
 // Carbon components, and icons
@@ -296,7 +296,13 @@ async function editDatabase(db?: Database) {
                     if (Object.keys(errors).length) {
                         return;
                     }
-                    const saved = db ? await api.updateDatabase(client, db.name, databaseRequest(form, db)) : await api.createDatabase(client, databaseRequest(form));
+                    let saved = db ? await api.updateDatabase(client, db.name, databaseRequest(form, db)) : await api.createDatabase(client, databaseRequest(form));
+                    // A new database's access is set once it's created, when
+                    // it isn't what PostgreSQL gave it
+                    const acl = db ? undefined : databaseCreateAcl(form, saved);
+                    if (acl) {
+                        saved = await api.updateDatabase(client, saved.name, { acl });
+                    }
                     await databases.refresh();
                     panel.close();
                     location.hash = `#database/${encodeURIComponent(saved.name)}`;

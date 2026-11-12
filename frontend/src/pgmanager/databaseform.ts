@@ -2,7 +2,7 @@
 // name, owner, description, and access privileges. The request has only
 // what's changed, when an existing database is changed.
 
-import { aclChanged, aclRequest, aclRows, type AclItem, type AclRow } from './aclform.ts';
+import { aclChanged, aclRequest, aclRows, Public, type AclItem, type AclRow } from './aclform.ts';
 import type { Database } from './schema.ts';
 
 // DatabaseForm is what the form's inputs set: its owner, which is empty for
@@ -26,13 +26,15 @@ export interface DatabaseRequest {
 // DatabaseFormErrors are what's wrong with the form, by its input
 export type DatabaseFormErrors = Partial<Record<'name', string>>;
 
-// databaseForm returns the form of a database, or of a new one
+// databaseForm returns the form of a database, or of a new one, whose
+// access is what PostgreSQL gives it: everyone can connect, and use
+// temporary tables
 export function databaseForm(db?: Database): DatabaseForm {
     return {
         name: db?.name ?? '',
         owner: db?.owner ?? '',
         comment: db?.comment ?? '',
-        acl: aclRows(db?.acl),
+        acl: db ? aclRows(db.acl) : [{ role: Public, priv: ['CONNECT', 'TEMPORARY'] }],
     };
 }
 
@@ -43,7 +45,9 @@ export function databaseFormErrors(form: DatabaseForm): DatabaseFormErrors {
 }
 
 // databaseRequest returns the request of the form, which, for a database
-// which is changed, has only what's changed
+// which is changed, has only what's changed. A new database's access is
+// set once it's created, with databaseCreateAcl, as creating one adds to
+// PostgreSQL's defaults, rather than replacing them.
 export function databaseRequest(form: DatabaseForm, db?: Database): DatabaseRequest {
     const request: DatabaseRequest = {};
     const name = form.name.trim();
@@ -58,8 +62,19 @@ export function databaseRequest(form: DatabaseForm, db?: Database): DatabaseRequ
     if (db ? comment !== (db.comment ?? '') : comment) {
         request.comment = comment;
     }
-    if (db ? aclChanged(form.acl, db.acl) : aclRequest(form.acl).length) {
+    if (db && aclChanged(form.acl, db.acl)) {
         request.acl = aclRequest(form.acl);
     }
     return request;
+}
+
+// databaseCreateAcl returns the access of a database which was created,
+// when the form's isn't what it was given, with its owner's, which the form
+// doesn't have, unless it has a row of its owner, or else undefined
+export function databaseCreateAcl(form: DatabaseForm, created: Database): AclItem[] | undefined {
+    const rows = [...form.acl];
+    if (created.owner && !rows.some((row) => row.role === created.owner)) {
+        rows.push(...aclRows(created.acl).filter((row) => row.role === created.owner));
+    }
+    return aclChanged(rows, created.acl) ? aclRequest(rows) : undefined;
 }

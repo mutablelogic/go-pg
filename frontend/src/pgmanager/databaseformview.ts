@@ -32,8 +32,7 @@ export function databaseFormView(form: DatabaseForm, roles: readonly string[], r
             ${aclGrid(form.acl, {
                 privileges: DatabasePrivileges,
                 roles,
-                owner: form.owner || undefined,
-                defaults: "No privileges are granted, so PostgreSQL's defaults apply: everyone can connect, and use temporary tables.",
+                defaults: 'Nothing is granted, so only superusers can connect.',
                 rerender,
             })}
         </div>

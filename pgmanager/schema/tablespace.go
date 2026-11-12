@@ -299,7 +299,7 @@ const (
 	tablespaceSelect = `
 		WITH t AS (
 			SELECT
-				T.oid AS "oid", T.spcname AS "name", R.rolname AS "owner", T.spcacl AS "acl",  T.spcoptions AS "options", pg_tablespace_size(T.oid) AS "size",
+				T.oid AS "oid", T.spcname AS "name", R.rolname AS "owner", COALESCE(T.spcacl, acldefault('t', T.spcowner)) AS "acl",  T.spcoptions AS "options", pg_tablespace_size(T.oid) AS "size",
 				CASE
 					WHEN T.spcname = 'pg_global' THEN (SELECT setting||'/global' FROM pg_settings WHERE name='data_directory')
 					WHEN T.spcname = 'pg_default' THEN (SELECT setting||'/base' FROM pg_settings WHERE name='data_directory')

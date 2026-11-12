@@ -327,7 +327,7 @@ func (d DatabaseMeta) with(insert bool) string {
 const (
 	databaseSelect = `
 		WITH s AS (SELECT
-			D.oid AS "oid", D.datname AS "name", R.rolname AS "owner", D.datacl AS "acl", pg_database_size(D.oid) AS "size", shobj_description(D.oid, 'pg_database') AS "comment"
+			D.oid AS "oid", D.datname AS "name", R.rolname AS "owner", COALESCE(D.datacl, acldefault('d', D.datdba)) AS "acl", pg_database_size(D.oid) AS "size", shobj_description(D.oid, 'pg_database') AS "comment"
 		FROM
 			${"schema"}."pg_database" D
 		JOIN

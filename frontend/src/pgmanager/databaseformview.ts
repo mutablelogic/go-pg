@@ -1,7 +1,7 @@
 // The inputs of pgmanager's form of a database, which change the form
 
 import { html, type TemplateResult } from 'lit';
-import { DatabasePrivileges } from './aclform.ts';
+import { DatabasePrivilegeHelp, DatabasePrivileges } from './aclform.ts';
 import { aclGrid } from './aclview.ts';
 import type { DatabaseForm, DatabaseFormErrors } from './databaseform.ts';
 
@@ -31,6 +31,7 @@ export function databaseFormView(form: DatabaseForm, roles: readonly string[], r
             <cds-textarea label="Description" rows="2" value=${form.comment} @input=${text('comment')}></cds-textarea>
             ${aclGrid(form.acl, {
                 privileges: DatabasePrivileges,
+                help: DatabasePrivilegeHelp,
                 roles,
                 defaults: 'Nothing is granted, so only superusers can connect.',
                 rerender,

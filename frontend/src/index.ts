@@ -263,17 +263,26 @@ function roleView(role: Role): Omit<Item, 'kind'> {
 
 // editRole shows the form of a role, or a new one, in the panel, which saves
 // it, and shows it, or, when it's cancelled, shows the role again, or closes
-// allRoles returns the name of every role, yours, and then PostgreSQL's
-// own, which can own things, or be granted access to them
-async function allRoles(): Promise<string[]> {
-    const lists = await Promise.all([false, true].map((predefined) => api.listAll((offset, limit) => api.listRoles(client, predefined, offset, limit), ListLimits.role)));
+// allRoles returns the name of every role, yours, and then, unless only
+// yours, PostgreSQL's own, which roles are members of, rather than which own
+// things, or are granted access to them
+async function allRoles(yours = false): Promise<string[]> {
+    const lists = await Promise.all((yours ? [false] : [false, true]).map((predefined) => api.listAll((offset, limit) => api.listRoles(client, predefined, offset, limit), ListLimits.role)));
     return lists.flatMap((list) => (list.body ?? []).map((role) => role.name));
+}
+
+// ownerRoles returns your roles, which can own something, or be granted
+// access to it, with its owner, when it's PostgreSQL's own, such as
+// pg_database_owner, so the form keeps it
+async function ownerRoles(owner?: string): Promise<string[]> {
+    const names = await allRoles(true);
+    return owner && !names.includes(owner) ? [owner, ...names] : names;
 }
 
 // editDatabase shows the form of a database, or a new one, in the panel,
 // which saves it, and shows its page
 async function editDatabase(db?: Database) {
-    const roleNames = await allRoles();
+    const roleNames = await ownerRoles(db?.owner);
     const form = databaseForm(db);
     let errors: DatabaseFormErrors = {};
     const view = (): TemplateResult => databaseFormView(form, roleNames, rerender, errors);
@@ -476,7 +485,7 @@ async function editSchema(schema?: Schema) {
     if (!database) {
         return;
     }
-    const roleNames = await allRoles();
+    const roleNames = await ownerRoles(schema?.owner);
     const form = schemaForm(schema);
     let errors: SchemaFormErrors = {};
     const view = (): TemplateResult => schemaFormView(form, roleNames, !schema, rerender, errors);

@@ -24,6 +24,20 @@ export const DatabasePrivileges = ['CONNECT', 'CREATE', 'TEMPORARY'] as const;
 export const SchemaPrivileges = ['USAGE', 'CREATE'] as const;
 export const TablespacePrivileges = ['CREATE'] as const;
 
+// What each privilege of each kind of thing lets a role do
+export const DatabasePrivilegeHelp: Record<string, string> = {
+    CONNECT: 'Connect to the database',
+    CREATE: 'Create schemas in the database',
+    TEMPORARY: 'Create temporary tables, while it is connected',
+};
+export const SchemaPrivilegeHelp: Record<string, string> = {
+    USAGE: 'Use what is in the schema, such as its tables, which each need privileges of their own too. Without it, nothing in the schema can be used',
+    CREATE: 'Create tables, views, functions and other objects in the schema',
+};
+export const TablespacePrivilegeHelp: Record<string, string> = {
+    CREATE: 'Create tables, indexes and databases in the tablespace',
+};
+
 // The option which lets a role grant a privilege it has, which pgmanager
 // returns after it, such as CONNECT WITH GRANT OPTION, but doesn't take
 // back, so it's left out

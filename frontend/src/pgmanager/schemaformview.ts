@@ -1,7 +1,7 @@
 // The inputs of pgmanager's form of a schema, which change the form
 
 import { html, type TemplateResult } from 'lit';
-import { SchemaPrivileges } from './aclform.ts';
+import { SchemaPrivilegeHelp, SchemaPrivileges } from './aclform.ts';
 import { aclGrid } from './aclview.ts';
 import type { SchemaForm, SchemaFormErrors } from './schemaform.ts';
 
@@ -31,6 +31,7 @@ export function schemaFormView(form: SchemaForm, roles: readonly string[], isNew
             <cds-textarea label="Description" rows="2" value=${form.comment} @input=${text('comment')}></cds-textarea>
             ${aclGrid(form.acl, {
                 privileges: SchemaPrivileges,
+                help: SchemaPrivilegeHelp,
                 roles,
                 defaults: isNew ? 'Only its owner can use it, until a role is added.' : 'Nothing is granted, so only superusers can use it.',
                 rerender,

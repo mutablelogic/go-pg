@@ -13,11 +13,14 @@ import '@carbon/web-components/es/components/checkbox/index.js';
 import '@carbon/web-components/es/components/combo-box/index.js';
 import '@carbon/web-components/es/components/data-table/index.js';
 
-// AclGridOptions are the privileges of the kind of thing, the roles which
-// can be added, what applies when no privileges are granted, and what's
-// called when the rows change
+// AclGridOptions are the privileges of the kind of thing, and what each
+// lets a role do, which is shown when its heading is hovered, in the
+// browser's own tooltip, as the table would cut Carbon's short, the roles
+// which can be added, what applies when no privileges are granted, and
+// what's called when the rows change
 export interface AclGridOptions {
     privileges: readonly string[];
+    help?: Record<string, string>;
     roles: readonly string[];
     defaults: string;
     rerender: () => void;
@@ -41,7 +44,13 @@ export function aclGrid(rows: AclRow[], options: AclGridOptions): TemplateResult
                     <cds-table-head>
                         <cds-table-header-row>
                             <cds-table-header-cell>Role</cds-table-header-cell>
-                            ${options.privileges.map((priv) => html`<cds-table-header-cell>${priv.toLowerCase()}</cds-table-header-cell>`)}
+                            ${options.privileges.map((priv) => html`
+                                <cds-table-header-cell>
+                                    ${options.help?.[priv] ? html`
+                                        <span style="border-bottom: 1px dotted currentColor; cursor: help" title=${options.help[priv]}>${priv.toLowerCase()}</span>
+                                    ` : priv.toLowerCase()}
+                                </cds-table-header-cell>
+                            `)}
                             <cds-table-header-cell><span class="visually-hidden">Remove</span></cds-table-header-cell>
                         </cds-table-header-row>
                     </cds-table-head>

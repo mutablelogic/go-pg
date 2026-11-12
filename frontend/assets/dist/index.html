@@ -75,6 +75,26 @@
             margin: 0 0 1rem;
         }
 
+        /* A form in a panel, its inputs one beneath another, with a group's
+           legend, such as Permissions */
+        gs-panel .form {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        gs-panel fieldset {
+            margin: 0;
+            padding: 0;
+            border: 0;
+        }
+
+        gs-panel legend {
+            margin: 0 0 0.5rem;
+            color: var(--cds-text-secondary);
+            font-size: 0.75rem;
+        }
+
         /* A panel's fields */
         gs-panel dl {
             display: grid;

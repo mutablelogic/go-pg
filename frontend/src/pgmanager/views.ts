@@ -129,7 +129,7 @@ export function roleBody(role: Role, onRole: (name: string) => void): TemplateRe
         ['Permissions', roleFlags(role).join(', ') || 'none'],
         ['Member of', role.memberof?.length ? roleLinks(role.memberof, onRole) : undefined],
         ['Connection limit', role.conlimit],
-        ['Expires', role.expires],
+        ['Expires', role.expires ? new Date(role.expires).toLocaleDateString(undefined, { dateStyle: 'medium' }) : undefined],
         ['OID', role.oid],
     ]);
 }

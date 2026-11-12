@@ -196,3 +196,45 @@ func TestShared(t *testing.T) {
 	_, err = broadcaster.New(context.Background(), test.Conn(), broadcaster.WithBroadcaster(nil))
 	assert.ErrorIs(t, err, pg.ErrBadParameter)
 }
+
+func TestWatchRestart(t *testing.T) {
+	// A manager which is run again, once it has stopped, can be watched as
+	// soon as it's listening again, as its broadcaster runs again before
+	// it listens
+	manager, err := broadcaster.New(context.Background(), instantPool{test.Conn()}, broadcaster.WithChannel("test_restart"))
+	require.NoError(t, err)
+	for range 20 {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- manager.Run(ctx, nil) }()
+		require.NoError(t, manager.WaitListening(ctx))
+		watching, err := manager.Watch(context.Background(), changeschema.ChangeFilter{}, make(chan changeschema.Change, 1))
+		require.NoError(t, err)
+		cancel()
+		require.NoError(t, <-done)
+		assert.ErrorIs(t, <-watching, httpresponse.ErrServiceUnavailable)
+	}
+}
+
+// instantPool is a pool which listens at once, so a manager is listening as
+// soon as it runs, without waiting for the database
+type instantPool struct {
+	pg.PoolConn
+}
+
+func (p instantPool) With(params ...any) pg.Conn {
+	return instantPool{p.PoolConn.With(params...).(pg.PoolConn)}
+}
+
+func (p instantPool) WithQueries(queries ...*pg.Queries) pg.Conn {
+	return instantPool{p.PoolConn.WithQueries(queries...).(pg.PoolConn)}
+}
+
+func (p instantPool) Subscribe(ctx context.Context, channel string) (<-chan pg.Notification, error) {
+	ch := make(chan pg.Notification)
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+	return ch, nil
+}

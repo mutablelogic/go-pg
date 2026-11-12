@@ -9,6 +9,7 @@ import (
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgbroadcaster/schema"
+	changeschema "github.com/mutablelogic/go-server/broadcaster/schema"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -44,7 +45,9 @@ func (self *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 		logger = slog.Default()
 	}
 
-	// Run the manager's broadcaster, until it stops, so its watches end
+	// Run the manager's broadcaster, until it stops, so its watches end, and
+	// wait for it to run, before listening, as it isn't watched once it
+	// has stopped, until it runs again, such as when the manager runs again
 	if !self.shared {
 		runCtx, cancel := context.WithCancel(ctx)
 		done := make(chan struct{})
@@ -56,6 +59,9 @@ func (self *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 			cancel()
 			<-done
 		}()
+		if err := self.waitRunning(ctx); err != nil {
+			return nil
+		}
 	}
 
 	listened, delay := false, reconnectDelay
@@ -138,6 +144,28 @@ func (self *Manager) WaitListening(ctx context.Context) error {
 
 ////////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
+
+// waitRunning waits until the manager's broadcaster is running, so it can be
+// watched, which it can't once it has stopped, until it runs again, by
+// watching it, until it can be, or the context is cancelled, when it returns
+// the context's error
+func (self *Manager) waitRunning(ctx context.Context) error {
+	probe := make(chan changeschema.Change)
+	for {
+		probeCtx, cancel := context.WithCancel(ctx)
+		done, err := self.broadcaster.Watch(probeCtx, changeschema.ChangeFilter{}, probe)
+		cancel()
+		if err == nil {
+			<-done
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Millisecond):
+		}
+	}
+}
 
 // setListening sets whether the manager is listening on its channel, and
 // closes the channel WaitListening waits on once it is, or replaces it once

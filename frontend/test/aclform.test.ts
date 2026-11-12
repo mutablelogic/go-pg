@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { extensionForm, extensionFormErrors, extensionRequest } from '../src/pgmanager/extensionform.ts';
 import assert from 'node:assert/strict';
 import { aclChanged, aclRequest, aclRows } from '../src/pgmanager/aclform.ts';
 import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest } from '../src/pgmanager/databaseform.ts';
@@ -100,4 +101,19 @@ test('tablespaceLocationError', () => {
     assert.match(tablespaceLocationError(400, 'Bad Request: could not set permissions on directory "/data/x": Operation not permitted') ?? '', /owned by the user PostgreSQL runs as/);
     assert.match(tablespaceLocationError(400, 'directory "/data/x/PG_17_202406281" already in use as a tablespace') ?? '', /already in use/);
     assert.equal(tablespaceLocationError(409, 'tablespace "x" already exists'), undefined);
+});
+
+test('extensionRequest', () => {
+    // An extension needs a database, which it isn't in, and has a schema,
+    // or version, only when they're set
+    const form = extensionForm('hstore');
+    assert.equal(form.cascade, true);
+    assert.deepEqual(extensionFormErrors(form), { database: 'Choose the database to install it in' });
+    form.database = 'shop';
+    assert.deepEqual(extensionFormErrors(form, ['shop']), { database: "It's already installed in shop" });
+    assert.deepEqual(extensionFormErrors(form), {});
+    assert.deepEqual(extensionRequest(form), { name: 'hstore', database: 'shop' });
+    form.schema = ' sales ';
+    form.version = '1.8';
+    assert.deepEqual(extensionRequest(form), { name: 'hstore', database: 'shop', schema: 'sales', version: '1.8' });
 });

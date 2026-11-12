@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { aclChanged, aclRequest, aclRows } from '../src/pgmanager/aclform.ts';
 import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest } from '../src/pgmanager/databaseform.ts';
 import type { Database, Schema, Tablespace } from '../src/pgmanager/schema.ts';
-import { tablespaceForm, tablespaceFormErrors, tablespaceRequest } from '../src/pgmanager/tablespaceform.ts';
+import { tablespaceForm, tablespaceFormErrors, tablespaceLocationError, tablespaceRequest } from '../src/pgmanager/tablespaceform.ts';
 import { schemaCreateAcl, schemaForm, schemaFormErrors, schemaRequest } from '../src/pgmanager/schemaform.ts';
 
 test('aclRows', () => {
@@ -92,4 +92,12 @@ test('tablespaceRequest', () => {
     assert.deepEqual(tablespaceFormErrors(changed, false), {});
     changed.acl.push({ role: 'reporter', priv: ['CREATE'] });
     assert.deepEqual(tablespaceRequest(changed, space), { acl: [{ role: 'app', priv: ['CREATE'] }, { role: 'reporter', priv: ['CREATE'] }] });
+});
+
+test('tablespaceLocationError', () => {
+    // PostgreSQL's reasons, in plain words, or none, for another reason
+    assert.match(tablespaceLocationError(404, 'Not Found: directory "/data/x" does not exist') ?? '', /doesn't exist/);
+    assert.match(tablespaceLocationError(400, 'Bad Request: could not set permissions on directory "/data/x": Operation not permitted') ?? '', /owned by the user PostgreSQL runs as/);
+    assert.match(tablespaceLocationError(400, 'directory "/data/x/PG_17_202406281" already in use as a tablespace') ?? '', /already in use/);
+    assert.equal(tablespaceLocationError(409, 'tablespace "x" already exists'), undefined);
 });

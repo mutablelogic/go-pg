@@ -40,7 +40,7 @@ import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest, t
 import { databaseFormView } from './pgmanager/databaseformview.ts';
 import { schemaCreateAcl, schemaForm, schemaFormErrors, schemaRequest, type SchemaFormErrors } from './pgmanager/schemaform.ts';
 import { schemaFormView } from './pgmanager/schemaformview.ts';
-import { tablespaceCreateAcl, tablespaceForm, tablespaceFormErrors, tablespaceRequest, type TablespaceFormErrors } from './pgmanager/tablespaceform.ts';
+import { tablespaceCreateAcl, tablespaceForm, tablespaceFormErrors, tablespaceLocationError, tablespaceRequest, type TablespaceFormErrors } from './pgmanager/tablespaceform.ts';
 import { tablespaceFormView } from './pgmanager/tablespaceformview.ts';
 
 // Carbon components, and icons
@@ -480,7 +480,20 @@ async function editTablespace(space?: Tablespace, acl?: AclRow[]) {
                     if (Object.keys(errors).length) {
                         return;
                     }
-                    let saved = space ? await api.updateTablespace(client, space.name, tablespaceRequest(form, space)) : await api.createTablespace(client, tablespaceRequest(form));
+                    let saved: Tablespace;
+                    try {
+                        saved = space ? await api.updateTablespace(client, space.name, tablespaceRequest(form, space)) : await api.createTablespace(client, tablespaceRequest(form));
+                    } catch (error) {
+                        // What's wrong with a new one's location is said by
+                        // its input, in plain words
+                        const location = !space && error instanceof ApiError ? tablespaceLocationError(error.status, error.message) : undefined;
+                        if (!location) {
+                            throw error;
+                        }
+                        errors = { location };
+                        rerender();
+                        return;
+                    }
                     const acl = space ? undefined : tablespaceCreateAcl(form, saved);
                     if (acl) {
                         try {

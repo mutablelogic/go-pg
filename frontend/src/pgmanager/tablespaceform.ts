@@ -58,6 +58,24 @@ export function tablespaceFormErrors(form: TablespaceForm, isNew: boolean): Tabl
     return errors;
 }
 
+// tablespaceLocationError returns what's wrong with a new tablespace's
+// location, in plain words, from why PostgreSQL couldn't create it, by the
+// response's status, and its message, or else undefined. PostgreSQL checks
+// the directory itself, on its own server: that it exists, and that it can
+// take it over, which it can only when it owns it.
+export function tablespaceLocationError(status: number, message: string): string | undefined {
+    if (status === 404 && /does not exist/i.test(message)) {
+        return "That directory doesn't exist on the database server. Create it, empty, owned by the user PostgreSQL runs as, often postgres";
+    }
+    if (/could not set permissions|permission denied|operation not permitted/i.test(message)) {
+        return "PostgreSQL can't use that directory: it must be owned by the user PostgreSQL runs as, often postgres";
+    }
+    if (/already in use as a tablespace|is not empty/i.test(message)) {
+        return "That directory is already in use: it must be empty";
+    }
+    return undefined;
+}
+
 // tablespaceRequest returns the request of the form, which, for a tablespace
 // which is changed, has only what's changed. A new tablespace's access is
 // set once it's created, with tablespaceCreateAcl.

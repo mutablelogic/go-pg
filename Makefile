@@ -136,6 +136,8 @@ go-dep:
 .PHONY: npm-dep
 npm-dep:
 	@test -f "${NPM}" && test -x "${NPM}"  || (echo "Missing npm binary, which builds the web UI" && exit 1)
+	@test -n "$${GITHUB_TOKEN}" || (echo "Missing GITHUB_TOKEN, which needs read:packages to install @mutablelogic packages from GitHub Packages" && exit 1)
+	@cd $(TS_DIR) && ${NPM} view --silent @mutablelogic/go-server version >/dev/null 2>&1 || (echo "GITHUB_TOKEN cannot read @mutablelogic packages from GitHub Packages: is it a classic token, with read:packages, which hasn't expired?" && exit 1)
 
 .PHONY: docker-dep
 docker-dep:

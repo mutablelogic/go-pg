@@ -36,6 +36,16 @@ function description(comment?: string) {
     return comment ? html`<span style="display: block; max-width: 20rem; overflow: hidden; text-overflow: ellipsis" title=${comment}>${comment}</span>` : '';
 }
 
+// roleName is a role's name, with a person before it, so it's seen to be a
+// role, in a table, whose cells are styled here, as the page's styles don't
+// reach into the table
+export function roleName(name?: string) {
+    if (!name) {
+        return '';
+    }
+    return html`<span style="display: inline-flex; align-items: center; gap: 0.25rem">${iconLoader(UserIcon, { width: '12', height: '12', 'aria-hidden': 'true', style: 'flex: none; fill: currentColor' })}${name}</span>`;
+}
+
 // ownerBadge is a tile's badge of its owner, with a person, which says it's
 // the owner, when it's hovered
 export function ownerBadge(owner?: string): Pick<Tile, 'badge' | 'badgeIcon' | 'badgeTitle'> {
@@ -69,7 +79,7 @@ export const objectColumns: Column<PgObject>[] = [
     { header: 'Name', cell: (object) => object.name ?? '' },
     { header: 'Description', cell: (object) => description(object.comment) },
     { header: 'Type', cell: (object) => object.type ? html`<cds-tag size="sm" type="gray">${object.type.toLowerCase()}</cds-tag>` : '' },
-    { header: 'Owner', cell: (object) => object.owner ?? '' },
+    { header: 'Owner', cell: (object) => roleName(object.owner) },
     { header: 'Rows', cell: (object) => object.table?.live_tuples?.toLocaleString() ?? '' },
     { header: 'Size', cell: (object) => formatBytes(object.bytes) },
 ];
@@ -90,14 +100,14 @@ function roleLinks(names: readonly string[] | undefined, onRole: (name: string) 
         event.preventDefault();
         event.stopPropagation();
         onRole(name);
-    }}>${name}</cds-link>`)}</span>`;
+    }}>${roleName(name)}</cds-link>`)}</span>`;
 }
 
 // roleColumns are the roles' columns, whose roles they're members of open
 // with the function. PostgreSQL's own roles have no permissions, so they've
 // no column of them.
 export const roleColumns = (onRole: (name: string) => void, predefined = false): Column<Role>[] => [
-    { header: 'Role', cell: (role) => role.name },
+    { header: 'Role', cell: (role) => roleName(role.name) },
     { header: 'Description', cell: (role) => description(role.comment) },
     ...(predefined ? [] : [{ header: 'Permissions', cell: (role: Role) => roleFlags(role).map((flag) => html`<cds-tag size="sm" type="gray">${flag}</cds-tag>`) }]),
     { header: 'Member of', cell: (role) => roleLinks(role.memberof, onRole) },
@@ -156,7 +166,7 @@ const stateColours: Record<string, string> = { active: 'green', idle: 'gray', 'i
 export const connectionColumns: Column<Connection>[] = [
     { header: 'PID', cell: (conn) => conn.pid },
     { header: 'Database', cell: (conn) => conn.database, sort: 'database', sortFirst: 'ascending' },
-    { header: 'Role', cell: (conn) => conn.role, sort: 'role', sortFirst: 'ascending' },
+    { header: 'Role', cell: (conn) => roleName(conn.role), sort: 'role', sortFirst: 'ascending' },
     { header: 'Application', cell: (conn) => conn.application ?? '', sort: 'application', sortFirst: 'ascending' },
     { header: 'Client', cell: (conn) => conn.client_addr ? `${conn.client_addr}:${conn.client_port ?? ''}` : 'local', sort: 'client', sortFirst: 'ascending' },
     { header: 'State', cell: (conn) => tag(conn.state, stateColours[conn.state ?? ''] ?? 'gray'), sort: 'state', sortFirst: 'ascending' },
@@ -211,7 +221,7 @@ export function settingCategories(categories: readonly string[], category: strin
 export const tablespaceColumns: Column<Tablespace>[] = [
     { header: 'Tablespace', cell: (space) => space.name },
     { header: 'Description', cell: (space) => description(space.comment) },
-    { header: 'Owner', cell: (space) => space.owner ?? '' },
+    { header: 'Owner', cell: (space) => roleName(space.owner) },
     { header: 'Location', cell: (space) => space.location || 'default' },
     { header: 'Size', cell: (space) => formatBytes(space.bytes) },
 ];
@@ -269,7 +279,7 @@ function formatMs(ms: number): string {
 export const statementColumns: Column<Statement>[] = [
     { header: 'Query', cell: (stmt) => html`<span style="display: block; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" title=${stmt.query}>${stmt.query}</span>` },
     { header: 'Database', cell: (stmt) => stmt.database ?? '' },
-    { header: 'Role', cell: (stmt) => stmt.role ?? '' },
+    { header: 'Role', cell: (stmt) => roleName(stmt.role) },
     { header: 'Calls', cell: (stmt) => stmt.calls.toLocaleString(), sort: 'calls' },
     { header: 'Rows', cell: (stmt) => stmt.rows.toLocaleString(), sort: 'rows' },
     { header: 'Total', cell: (stmt) => formatMs(stmt.total_ms), sort: 'total_ms' },

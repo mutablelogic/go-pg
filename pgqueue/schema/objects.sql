@@ -138,24 +138,30 @@ CREATE OR REPLACE FUNCTION ${"schema"}.queue_task_status(
 $$ LANGUAGE SQL STABLE;
 
 -- pgqueue.queue_insert_task_func
--- Inserts a task into the queue, with the queue's retries, and returns its id.
--- A delay in the past is now, and no delay runs the task as soon as possible.
-CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert_task(q TEXT, p JSONB, delayed_at TIMESTAMPTZ, retries INTEGER) RETURNS BIGINT AS $$
-    INSERT INTO ${"schema"}."task" ("queue", "payload", "delayed_at", "retries", "initial_retries")
+-- Inserts a task into the queue, with the queue's retries, and its priority,
+-- and returns its id. A delay in the past is now, and no delay runs the task
+-- as soon as possible. The functions without a priority, from before, are
+-- dropped.
+DROP FUNCTION IF EXISTS ${"schema"}.queue_insert(TEXT, JSONB, TIMESTAMPTZ);
+DROP FUNCTION IF EXISTS ${"schema"}.queue_insert_dedupe(TEXT, JSONB, TIMESTAMPTZ);
+DROP FUNCTION IF EXISTS ${"schema"}.queue_insert_task(TEXT, JSONB, TIMESTAMPTZ, INTEGER);
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert_task(q TEXT, p JSONB, delayed_at TIMESTAMPTZ, retries INTEGER, priority SMALLINT) RETURNS BIGINT AS $$
+    INSERT INTO ${"schema"}."task" ("queue", "payload", "delayed_at", "retries", "initial_retries", "priority")
     VALUES (
         q, p, CASE
             WHEN delayed_at IS NULL THEN NULL
             WHEN delayed_at < NOW() THEN NOW()
             ELSE delayed_at
-        END, retries, retries
+        END, retries, retries, COALESCE(priority, 0)
     )
     RETURNING "id";
 $$ LANGUAGE SQL;
 
 -- pgqueue.queue_insert_func
--- Inserts a task into the queue, and returns its id. When the queue
--- deduplicates tasks, a pending task which is the same is returned instead.
-CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert(q TEXT, p JSONB, delayed_at TIMESTAMPTZ) RETURNS BIGINT AS $$
+-- Inserts a task into the queue, with its priority, where none is normal,
+-- and returns its id. When the queue deduplicates tasks, a pending task which
+-- is the same is returned instead.
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert(q TEXT, p JSONB, delayed_at TIMESTAMPTZ, priority SMALLINT) RETURNS BIGINT AS $$
 DECLARE
     v_retries       INTEGER;
     v_dedupe        BOOLEAN;
@@ -172,9 +178,9 @@ BEGIN
 
     -- Insert the task, or return the same pending task
     IF v_dedupe THEN
-        RETURN ${"schema"}.queue_insert_dedupe(q, p, delayed_at);
+        RETURN ${"schema"}.queue_insert_dedupe(q, p, delayed_at, priority);
     END IF;
-    RETURN ${"schema"}.queue_insert_task(q, p, delayed_at, v_retries);
+    RETURN ${"schema"}.queue_insert_task(q, p, delayed_at, v_retries, priority);
 EXCEPTION
     WHEN NO_DATA_FOUND THEN
         RAISE EXCEPTION 'queue not found: %', q;
@@ -187,10 +193,11 @@ $$ LANGUAGE PLPGSQL;
 -- A pending task hasn't started or finished, and has retries left, so a
 -- running task isn't the same, and a change while it runs queues another. A
 -- new task, which hasn't been tried, runs at the earlier of the two delays;
--- a task waiting to be retried keeps its backoff. Inserts of the same task are
+-- a task waiting to be retried keeps its backoff. The pending task gets the
+-- higher of the two priorities. Inserts of the same task are
 -- serialized with a lock on its hash until the transaction ends, as the task
 -- table is partitioned by id, so a unique index can't prevent duplicates.
-CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert_dedupe(q TEXT, p JSONB, delayed_at TIMESTAMPTZ) RETURNS BIGINT AS $$
+CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert_dedupe(q TEXT, p JSONB, delayed_at TIMESTAMPTZ, priority SMALLINT) RETURNS BIGINT AS $$
 DECLARE
     v_hash          BYTEA := ${"schema"}.task_hash(q, p);
     v_delayed_at    TIMESTAMPTZ := CASE
@@ -202,6 +209,7 @@ DECLARE
     v_id            BIGINT;
     v_existing_at   TIMESTAMPTZ;
     v_untried       BOOLEAN;
+    v_priority      SMALLINT := COALESCE(priority, 0);
 BEGIN
     -- Get queue defaults, raise if queue doesn't exist
     SELECT
@@ -217,7 +225,7 @@ BEGIN
     PERFORM pg_advisory_xact_lock(('x' || encode(substring(v_hash FROM 1 FOR 8), 'hex'))::BIT(64)::BIGINT);
 
     -- Find a pending task which is the same. The columns are qualified, as
-    -- the delayed_at argument has the name of a column.
+    -- the delayed_at and priority arguments have the names of columns.
     SELECT
         T."id", T."delayed_at", T."retries" = T."initial_retries"
     INTO
@@ -237,8 +245,11 @@ BEGIN
 
     -- Insert the task when there's none
     IF NOT FOUND THEN
-        RETURN ${"schema"}.queue_insert_task(q, p, delayed_at, v_retries);
+        RETURN ${"schema"}.queue_insert_task(q, p, delayed_at, v_retries, v_priority);
     END IF;
+
+    -- Raise the pending task's priority to the inserted task's
+    UPDATE ${"schema"}."task" T SET "priority" = v_priority WHERE T."id" = v_id AND T."priority" < v_priority;
 
     -- Run a new task at the earlier of the two delays, where no delay is the
     -- earliest

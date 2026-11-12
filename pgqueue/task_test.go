@@ -101,6 +101,47 @@ func TestCreateTask(t *testing.T) {
 		}
 	})
 
+	t.Run("Priority", func(t *testing.T) {
+		// A task's priority is normal, 0, unless it's given, and can't be more
+		// than a SMALLINT holds
+		manager := taskManager(t, "priority", schema.QueueMeta{})
+		task, err := manager.CreateTask(ctx, "priority", payload(`{"n":1}`))
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr(uint16(0)), task.Priority)
+
+		task, err = manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{"n":2}`), Priority: types.Ptr(uint16(5))})
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr(uint16(5)), task.Priority)
+		got, err := manager.GetTask(ctx, task.Id)
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr(uint16(5)), got.Priority)
+		list, err := manager.ListTasks(ctx, schema.TaskListRequest{Queue: []string{"priority"}})
+		require.NoError(t, err)
+		require.Len(t, list.Body, 2)
+		assert.Equal(t, types.Ptr(uint16(5)), list.Body[1].Priority)
+
+		_, err = manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(schema.MaxTaskPriority + 1))})
+		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+		task, err = manager.CreateTask(ctx, "priority", schema.TaskMeta{Payload: json.RawMessage(`{"n":3}`), Priority: types.Ptr(uint16(schema.MaxTaskPriority))})
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr(uint16(schema.MaxTaskPriority)), task.Priority)
+	})
+
+	t.Run("DedupePriority", func(t *testing.T) {
+		// The same pending task gets the higher of the two priorities
+		manager := taskManager(t, "dedupe", schema.QueueMeta{Dedupe: types.Ptr(true)})
+		first, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(2))})
+		require.NoError(t, err)
+		higher, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(7))})
+		require.NoError(t, err)
+		assert.Equal(t, first.Id, higher.Id)
+		assert.Equal(t, types.Ptr(uint16(7)), higher.Priority)
+		lower, err := manager.CreateTask(ctx, "dedupe", payload(`{}`))
+		require.NoError(t, err)
+		assert.Equal(t, first.Id, lower.Id)
+		assert.Equal(t, types.Ptr(uint16(7)), lower.Priority)
+	})
+
 	t.Run("Invalid", func(t *testing.T) {
 		manager := taskManager(t, "invalid", schema.QueueMeta{})
 		_, err := manager.CreateTask(ctx, "missing", payload(`{}`))

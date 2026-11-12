@@ -34,6 +34,7 @@ type TaskRelease struct {
 type TaskMeta struct {
 	Payload   json.RawMessage `json:"payload,omitempty"`
 	DelayedAt *time.Time      `json:"delayed_at,omitempty"`
+	Priority  *uint16         `json:"priority,omitempty"` // higher runs first, none is 0, which is normal, at most MaxTaskPriority
 }
 
 type Task struct {
@@ -112,6 +113,7 @@ func (t *Task) Scan(row pg.Row) error {
 		&t.FinishedAt,
 		&t.DiesAt,
 		&t.Retries,
+		&t.Priority,
 	)
 }
 
@@ -128,6 +130,7 @@ func (t *TaskWithStatus) Scan(row pg.Row) error {
 		&t.FinishedAt,
 		&t.DiesAt,
 		&t.Retries,
+		&t.Priority,
 		&t.Status,
 	)
 }
@@ -168,6 +171,11 @@ func (t TaskMeta) Insert(bind *pg.Bind) (string, error) {
 		bind.Set("delayed_at", nil)
 	}
 
+	if err := t.validatePriority(); err != nil {
+		return "", err
+	}
+	bind.Set("priority", t.Priority)
+
 	return bind.Query("pgqueue.task_insert"), nil
 }
 
@@ -185,12 +193,27 @@ func (t TaskMeta) Update(bind *pg.Bind) error {
 		bind.Append("patch", `payload = CAST(`+bind.Set("payload", string(t.Payload))+` AS JSONB)`)
 	}
 
+	if err := t.validatePriority(); err != nil {
+		return err
+	} else if t.Priority != nil {
+		bind.Append("patch", `priority = `+bind.Set("priority", *t.Priority))
+	}
+
 	if patch := bind.Join("patch", ", "); patch == "" {
 		return httpresponse.ErrBadRequest.With("no fields to update")
 	} else {
 		bind.Set("patch", patch)
 	}
 
+	return nil
+}
+
+// validatePriority returns an error when the priority is more than the task
+// table's SMALLINT holds
+func (t TaskMeta) validatePriority() error {
+	if t.Priority != nil && *t.Priority > MaxTaskPriority {
+		return httpresponse.ErrBadRequest.Withf("priority is more than %d", MaxTaskPriority)
+	}
 	return nil
 }
 

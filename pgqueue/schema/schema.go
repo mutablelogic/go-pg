@@ -2,6 +2,7 @@ package schema
 
 import (
 	_ "embed"
+	"math"
 	"time"
 )
 
@@ -30,4 +31,5 @@ const (
 	DefaultMaintenancePeriod     = 10 * time.Minute // create and drop partitions
 	DefaultRetention             = 24 * time.Hour   // how long finished tasks are kept before they're cleaned
 	QueueCleanLimit              = 100              // the most tasks cleaned from a queue at once, as in queue_clean
+	MaxTaskPriority              = math.MaxInt16    // the highest priority of a task, as its column is a SMALLINT
 )

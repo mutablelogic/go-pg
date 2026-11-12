@@ -62,7 +62,7 @@ func TestNew(t *testing.T) {
 		})
 		conn := manager.PoolConn.With("schema", name)
 		require.NoError(t, conn.Exec(ctx, `INSERT INTO ${"schema"}."queue" ("queue") VALUES ('priority')`))
-		require.NoError(t, conn.Exec(ctx, `SELECT ${"schema"}.queue_insert('priority', '{}', NULL)`))
+		require.NoError(t, conn.Exec(ctx, `SELECT ${"schema"}.queue_insert('priority', '{}', NULL, NULL)`))
 		require.NoError(t, conn.Exec(ctx, `ALTER TABLE ${"schema"}."task" DROP COLUMN "priority"`))
 
 		// Create the manager again, on the schema from before

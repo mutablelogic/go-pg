@@ -203,7 +203,8 @@ $$ LANGUAGE PLPGSQL;
 -- running task isn't the same, and a change while it runs queues another. A
 -- new task, which hasn't been tried, runs at the earlier of the two delays;
 -- a task waiting to be retried keeps its backoff. The pending task gets the
--- higher of the two priorities, which is the lower. Inserts of the same task are
+-- inserted task's priority, when it has one, so it can be changed, such as to
+-- run sooner. Inserts of the same task are
 -- serialized with a lock on its hash until the transaction ends, as the task
 -- table is partitioned by id, so a unique index can't prevent duplicates.
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_insert_dedupe(q TEXT, p JSONB, delayed_at TIMESTAMPTZ, priority SMALLINT) RETURNS BIGINT AS $$
@@ -218,7 +219,6 @@ DECLARE
     v_id            BIGINT;
     v_existing_at   TIMESTAMPTZ;
     v_untried       BOOLEAN;
-    v_priority      SMALLINT := COALESCE(priority, 0);
 BEGIN
     -- Get queue defaults, raise if queue doesn't exist
     SELECT
@@ -254,12 +254,14 @@ BEGIN
 
     -- Insert the task when there's none
     IF NOT FOUND THEN
-        RETURN ${"schema"}.queue_insert_task(q, p, delayed_at, v_retries, v_priority);
+        RETURN ${"schema"}.queue_insert_task(q, p, delayed_at, v_retries, priority);
     END IF;
 
-    -- Raise the pending task's priority to the inserted task's, when it's
-    -- higher, which is lower
-    UPDATE ${"schema"}."task" T SET "priority" = v_priority WHERE T."id" = v_id AND T."priority" > v_priority;
+    -- Change the pending task's priority to the inserted task's, when it has
+    -- one
+    IF priority IS NOT NULL THEN
+        UPDATE ${"schema"}."task" T SET "priority" = queue_insert_dedupe.priority WHERE T."id" = v_id;
+    END IF;
 
     -- Run a new task at the earlier of the two delays, where no delay is the
     -- earliest

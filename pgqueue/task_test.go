@@ -128,8 +128,8 @@ func TestCreateTask(t *testing.T) {
 	})
 
 	t.Run("DedupePriority", func(t *testing.T) {
-		// The same pending task gets the higher of the two priorities, which
-		// is the lower
+		// The same pending task gets the inserted task's priority, higher or
+		// lower, and keeps its own when the inserted task has none
 		manager := taskManager(t, "dedupe", schema.QueueMeta{Dedupe: types.Ptr(true)})
 		first, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(7))})
 		require.NoError(t, err)
@@ -140,8 +140,12 @@ func TestCreateTask(t *testing.T) {
 		lower, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(5))})
 		require.NoError(t, err)
 		assert.Equal(t, first.Id, lower.Id)
-		assert.Equal(t, types.Ptr(uint16(2)), lower.Priority)
-		highest, err := manager.CreateTask(ctx, "dedupe", payload(`{}`))
+		assert.Equal(t, types.Ptr(uint16(5)), lower.Priority)
+		none, err := manager.CreateTask(ctx, "dedupe", payload(`{}`))
+		require.NoError(t, err)
+		assert.Equal(t, first.Id, none.Id)
+		assert.Equal(t, types.Ptr(uint16(5)), none.Priority)
+		highest, err := manager.CreateTask(ctx, "dedupe", schema.TaskMeta{Payload: json.RawMessage(`{}`), Priority: types.Ptr(uint16(0))})
 		require.NoError(t, err)
 		assert.Equal(t, first.Id, highest.Id)
 		assert.Equal(t, types.Ptr(uint16(0)), highest.Priority)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,11 @@ type TaskMeta struct {
 	Priority  *uint16         `json:"priority,omitempty"` // lower runs first, from 0, the highest, and the default, to MaxTaskPriority
 }
 
+// TaskUpdate changes a task, which is only its priority
+type TaskUpdate struct {
+	Priority *uint16 `json:"priority" help:"Priority, where 0 is the highest, and lower runs first"`
+}
+
 type Task struct {
 	Id     uint64          `json:"id,omitempty"`
 	Queue  string          `json:"queue,omitempty"`
@@ -58,7 +64,7 @@ type TaskWithStatus struct {
 type TaskListRequest struct {
 	pg.OffsetLimit
 	Queue  []string `json:"queue,omitempty" help:"Returns only the tasks in these queues, or in any queue" optional:""`
-	Status string   `json:"status,omitempty" help:"Returns only the tasks with this status" enum:"new,delayed,running,retry,failed,done" optional:""`
+	Status []string `json:"status,omitempty" help:"Returns only the tasks with these statuses, or with any status" enum:"new,delayed,running,retry,failed,done" optional:""`
 }
 
 type TaskList struct {
@@ -73,6 +79,10 @@ type TaskFunc func(context.Context, json.RawMessage) (any, error)
 // STRINGIFY
 
 func (t Task) String() string {
+	return types.Stringify(t)
+}
+
+func (t TaskUpdate) String() string {
 	return types.Stringify(t)
 }
 
@@ -268,8 +278,10 @@ func (t TaskListRequest) Query() url.Values {
 			values.Add("queue", queue)
 		}
 	}
-	if status := strings.TrimSpace(t.Status); status != "" {
-		values.Set("status", status)
+	for _, status := range t.Status {
+		if status = strings.TrimSpace(status); status != "" {
+			values.Add("status", status)
+		}
 	}
 	return values
 }
@@ -302,10 +314,10 @@ func (l *TaskListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	} else if len(queues) > 0 {
 		taskWhere = append(taskWhere, `t."queue" = ANY(`+bind.Set("queues", queues)+`)`)
 	}
-	if status, err := l.status(); err != nil {
+	if statuses, err := l.statuses(); err != nil {
 		return "", err
-	} else if status != "" {
-		where = append(where, `"status" = `+bind.Set("status", status))
+	} else if len(statuses) > 0 {
+		where = append(where, `"status"::TEXT = ANY(`+bind.Set("statuses", statuses)+`)`)
 	}
 
 	if len(taskWhere) == 0 {
@@ -346,17 +358,23 @@ func (l TaskListRequest) queues() ([]string, error) {
 	return queues, nil
 }
 
-// status returns the status of the tasks to list, or an empty string for any
-// status
-func (l TaskListRequest) status() (string, error) {
-	switch status := strings.ToLower(strings.TrimSpace(l.Status)); status {
-	case "":
-		return "", nil
-	case "new", "delayed", "running", "retry", "failed", "done":
-		return status, nil
-	default:
-		return "", httpresponse.ErrBadRequest.Withf("invalid task status: %q", l.Status)
+// statuses returns the statuses of the tasks to list, each once, or none for
+// any status
+func (l TaskListRequest) statuses() ([]string, error) {
+	statuses := make([]string, 0, len(l.Status))
+	for _, status := range l.Status {
+		switch status = strings.ToLower(strings.TrimSpace(status)); status {
+		case "":
+			continue
+		case "new", "delayed", "running", "retry", "failed", "done":
+			if !slices.Contains(statuses, status) {
+				statuses = append(statuses, status)
+			}
+		default:
+			return nil, httpresponse.ErrBadRequest.Withf("invalid task status: %q", status)
+		}
 	}
+	return statuses, nil
 }
 
 func (t TaskRetain) Select(bind *pg.Bind, op pg.Op) (string, error) {

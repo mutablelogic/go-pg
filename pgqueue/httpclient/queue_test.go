@@ -85,3 +85,33 @@ func TestGetQueue(t *testing.T) {
 	_, err = client.GetQueue(ctx, "missing")
 	assert.Error(t, err)
 }
+
+func TestUpdateDeleteCleanQueue(t *testing.T) {
+	manager, client, ctx := newClient(t)
+	_, err := manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+
+	t.Run("Update", func(t *testing.T) {
+		queue, err := client.UpdateQueue(ctx, "queue", schema.QueueMeta{RetryDelay: types.Ptr(time.Minute), Dedupe: types.Ptr(true)})
+		require.NoError(t, err)
+		require.NotNil(t, queue.RetryDelay)
+		assert.Equal(t, time.Minute, *queue.RetryDelay)
+		require.NotNil(t, queue.Dedupe)
+		assert.True(t, *queue.Dedupe)
+	})
+
+	t.Run("Clean", func(t *testing.T) {
+		cleaned, err := client.CleanQueue(ctx, "queue")
+		require.NoError(t, err)
+		assert.Equal(t, "queue", cleaned.Queue)
+		assert.Empty(t, cleaned.Body)
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		queue, err := client.DeleteQueue(ctx, "queue")
+		require.NoError(t, err)
+		assert.Equal(t, "queue", queue.Name)
+		_, err = client.GetQueue(ctx, "queue")
+		assert.Error(t, err)
+	})
+}

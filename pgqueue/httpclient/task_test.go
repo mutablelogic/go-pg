@@ -37,7 +37,7 @@ func TestListTasks(t *testing.T) {
 	})
 
 	t.Run("Status", func(t *testing.T) {
-		list, err := client.ListTasks(ctx, schema.TaskListRequest{Status: "new"})
+		list, err := client.ListTasks(ctx, schema.TaskListRequest{Status: []string{"new"}})
 		require.NoError(t, err)
 		assert.EqualValues(t, 2, list.Count)
 		for _, task := range list.Body {
@@ -80,5 +80,26 @@ func TestGetTask(t *testing.T) {
 	assert.Equal(t, "new", task.Status)
 
 	_, err = client.GetTask(ctx, created.Id+1000)
+	assert.Error(t, err)
+}
+
+func TestUpdateTask(t *testing.T) {
+	manager, client, ctx := newClient(t)
+	_, err := manager.RegisterQueue(ctx, "queue", schema.QueueMeta{}, noopTask)
+	require.NoError(t, err)
+	created, err := manager.CreateTask(ctx, "queue", schema.TaskMeta{Payload: json.RawMessage(`{}`)})
+	require.NoError(t, err)
+
+	task, err := client.UpdateTask(ctx, created.Id, schema.TaskUpdate{Priority: types.Ptr(uint16(2))})
+	require.NoError(t, err)
+	assert.Equal(t, types.Ptr(uint16(2)), task.Priority)
+	assert.Equal(t, "new", task.Status)
+
+	// More than one status
+	list, err := client.ListTasks(ctx, schema.TaskListRequest{Status: []string{"new", "running"}})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, list.Count)
+
+	_, err = client.UpdateTask(ctx, created.Id+1000, schema.TaskUpdate{Priority: types.Ptr(uint16(2))})
 	assert.Error(t, err)
 }

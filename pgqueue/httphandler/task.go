@@ -78,5 +78,27 @@ func taskGetHandler(manager *pgqueue.Manager, router *httprouter.Router, documen
 			op.ErrorResponse(http.StatusBadRequest, "Invalid task id")
 			op.ErrorResponse(http.StatusNotFound, "Task not found")
 		})
+
+		// PATCH
+		path.Patch(func(w http.ResponseWriter, r *http.Request) {
+			var req schema.TaskUpdate
+			if id, err := strconv.ParseUint(r.PathValue("id"), 10, 63); err != nil {
+				httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("invalid task id %q", r.PathValue("id")))
+			} else if err := httprequest.Read(r, &req); err != nil {
+				httpresponse.Error(w, httpresponse.ErrBadRequest.With(err.Error()))
+			} else if task, err := manager.UpdateTask(r.Context(), id, req); err != nil {
+				httpresponse.Error(w, httpErr(err), r.PathValue("id"))
+			} else {
+				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), task)
+			}
+		}, func(op httprequest.PathOperation) {
+			op.Summary("Update Task")
+			op.Description(documentation.Section(3, "PATCH /task/{id}").Body)
+			op.RequestBody(jsonschema.MustFor[schema.TaskUpdate]())
+			op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.TaskWithStatus](), "Task")
+			op.ErrorResponse(http.StatusBadRequest, "Invalid task id, or priority")
+			op.ErrorResponse(http.StatusNotFound, "Task not found")
+			op.ErrorResponse(http.StatusConflict, "Task is running, or has finished")
+		})
 	})
 }

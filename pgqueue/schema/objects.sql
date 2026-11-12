@@ -422,7 +422,9 @@ $$ LANGUAGE SQL;
 -- running, and weren't released by their deadlines, and the grace period
 -- which a worker gives a task to stop after its deadline, which is a minute,
 -- doubled, such as when their workers stopped. A stalled task is retried, or
--- fails when it has no retries left, as when it fails.
+-- fails when it has no retries left, as when it fails. At most 10 are failed
+-- each time, those which stalled first, so a backlog of stalled tasks, such
+-- as after an outage, is failed over the next locks, in short transactions.
 CREATE OR REPLACE FUNCTION ${"schema"}.queue_lock(q TEXT[], w TEXT) RETURNS BIGINT AS $$
 SELECT ${"schema"}.queue_turn();
 
@@ -439,6 +441,9 @@ FROM (
         "started_at" IS NOT NULL AND "finished_at" IS NULL
     AND
         "dies_at" < NOW() - INTERVAL '2 minutes'
+    ORDER BY
+        "dies_at"
+    LIMIT 10
     FOR UPDATE SKIP LOCKED
 ) stalled;
 

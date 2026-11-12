@@ -431,6 +431,31 @@ func TestNextTask(t *testing.T) {
 		assert.WithinDuration(t, time.Now().Add(time.Minute), *got.DelayedAt, 10*time.Second)
 	})
 
+	t.Run("StalledBatch", func(t *testing.T) {
+		// At most 10 stalled tasks are failed each time a task is locked
+		manager := taskManager(t, "stalledbatch", schema.QueueMeta{Retries: types.Ptr(uint64(1))})
+		for range 12 {
+			_, err := manager.CreateTask(ctx, "stalledbatch", payload(`{}`))
+			require.NoError(t, err)
+			next, err := manager.NextTask(ctx, "first")
+			require.NoError(t, err)
+			require.NotNil(t, next)
+		}
+		require.NoError(t, manager.Exec(ctx, `UPDATE ${"schema"}."task" SET "dies_at" = NOW() - INTERVAL '3 minutes'`))
+
+		failed := func() uint64 {
+			queue, err := manager.GetQueue(ctx, "stalledbatch")
+			require.NoError(t, err)
+			return queue.Failed
+		}
+		_, err := manager.NextTask(ctx, "second")
+		require.NoError(t, err)
+		assert.EqualValues(t, 10, failed())
+		_, err = manager.NextTask(ctx, "second")
+		require.NoError(t, err)
+		assert.EqualValues(t, 12, failed())
+	})
+
 	t.Run("StalledFailed", func(t *testing.T) {
 		// A task which stalls with no retries left has failed, and finished
 		manager := taskManager(t, "stalledfailed", schema.QueueMeta{Retries: types.Ptr(uint64(1))})

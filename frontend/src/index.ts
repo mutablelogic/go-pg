@@ -19,19 +19,18 @@ import { PanelController } from '@mutablelogic/go-server/panel';
 import '@mutablelogic/go-server/panel/view';
 
 // Candidates for go-server, and pgmanager's own
-import { ListController } from './core/list.ts';
+import { ListController } from '@mutablelogic/go-server/list';
+import '@mutablelogic/go-server/list/view';
+import type { TableElement } from '@mutablelogic/go-server/list/view';
+import { TileSelectEvent, type TilesElement } from '@mutablelogic/go-server/list/tiles';
+import { Router, type Route } from '@mutablelogic/go-server/router';
 import { NavController } from './core/nav.ts';
-import { Router, type Route } from './core/router.ts';
 import './core/shell.ts';
-import './core/table.ts';
-import type { TableElement } from './core/table.ts';
 import './core/header.ts';
 import type { PageHeaderElement } from './core/header.ts';
-import './core/tiles.ts';
-import { TileSelectEvent, type TilesElement } from './core/tiles.ts';
 import * as api from './pgmanager/httpclient.ts';
 import type { ObjectFilter } from './pgmanager/httpclient.ts';
-import type { Connection, Database, PgObject, ReplicationSlot, Role, Schema, Setting, Statement, StatementSort, Tablespace } from './pgmanager/schema.ts';
+import { ListLimits, type Connection, type Database, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
 import * as views from './pgmanager/views.ts';
 
 // Carbon components, and icons
@@ -54,13 +53,16 @@ if (notificationsView) {
 
 // The configuration says where the API is, and the changes, and the server
 // it follows, which says when it's down, back, or upgraded
-const config = await getConfig().catch((error) => {
+// The configuration, when it's read, which the server's controller is
+// given, so it isn't read again, or else the API at /api, and the
+// controller reads it once the server can be reached
+const read = await getConfig().catch((error) => {
     notifications.error("The configuration couldn't be read", error);
-    return { prefix: '/api' };
+    return undefined;
 });
-const client = configClient(config);
+const client = configClient(read ?? { prefix: '/api' });
 const changes = new ChangesController(client).onError((error) => notifications.error("Changes couldn't be watched", error));
-const server = new ConfigController(changes, { notifications });
+const server = new ConfigController(changes, { config: read, notifications });
 const status = document.querySelector('gs-server-status');
 if (status) {
     status.controller = server;
@@ -87,10 +89,10 @@ if (panelView) {
 // are loaded again when they change
 const databases = new ListController<Database>({
     name: 'Databases',
-    list: (offset, limit) => api.listDatabases(client, offset, limit),
+    // Every database is listed, in the sidebar, and as tiles
+    list: () => api.listAllDatabases(client),
     same: (a, b) => a.name === b.name,
     notifications, changes, filter: { table: 'database' },
-    pageSize: 100,
 });
 
 // The database which is shown, and the filter of its objects, by schema,
@@ -98,12 +100,13 @@ const databases = new ListController<Database>({
 let filter: ObjectFilter | undefined;
 const schemas = new ListController<Schema>({
     name: 'Schemas',
-    list: (offset, limit) => filter === undefined ? Promise.resolve({ count: 0 }) : api.listSchemas(client, filter.database, offset, limit),
+    // Every schema is listed, as tiles
+    list: () => filter === undefined ? Promise.resolve({ count: 0 }) : api.listAllSchemas(client, filter.database),
     same: (a, b) => a.schema === b.schema,
     notifications, changes, filter: { table: 'schema' },
-    pageSize: 100,
 });
 const objects = new ListController<PgObject>({
+    pageSize: 20,
     name: 'Objects',
     list: (offset, limit) => filter === undefined ? Promise.resolve({ count: 0 }) : api.listObjects(client, filter, offset, limit),
     get: (object) => api.getObject(client, object),
@@ -111,6 +114,7 @@ const objects = new ListController<PgObject>({
     notifications, changes,
 });
 const roles = new ListController<Role>({
+    pageSize: 20,
     name: 'Roles',
     list: (offset, limit) => api.listRoles(client, offset, limit),
     get: (role) => api.getRole(client, role.name),
@@ -119,6 +123,7 @@ const roles = new ListController<Role>({
 });
 let connectionDatabase: string | undefined;
 const connections = new ListController<Connection>({
+    pageSize: 20,
     name: 'Connections',
     list: (offset, limit, sort) => api.listConnections(client, {
         database: connectionDatabase,
@@ -139,6 +144,7 @@ const settings = new ListController<Setting>({
     pageSize: 50,
 });
 const tablespaces = new ListController<Tablespace>({
+    pageSize: 20,
     name: 'Tablespaces',
     list: (offset, limit) => api.listTablespaces(client, offset, limit),
     get: (space) => api.getTablespace(client, space.name),
@@ -146,6 +152,7 @@ const tablespaces = new ListController<Tablespace>({
     notifications, changes, filter: { table: 'tablespace' },
 });
 const slots = new ListController<ReplicationSlot>({
+    pageSize: 20,
     name: 'Replication slots',
     list: (offset, limit) => api.listReplicationSlots(client, offset, limit),
     get: (slot) => api.getReplicationSlot(client, slot.name),
@@ -165,6 +172,7 @@ function listStatements(filter: api.StatementFilter, offset: number, limit: numb
     });
 }
 const statements = new ListController<Statement>({
+    pageSize: 20,
     name: 'Statements',
     list: (offset, limit, sort) => listStatements({
         sort: (sort?.key ?? 'total_ms') as StatementSort,
@@ -176,33 +184,38 @@ const statements = new ListController<Statement>({
     notifications, changes, filter: { table: 'statement' },
 });
 
-// table shows the list in the table, and the item which is opened in it in
-// the panel, as the function describes it
+// table shows the list in the table, with the sizes of a page which are at
+// most its limit, and the item which is opened in it in the panel, as the
+// function describes it, which closes when the item is gone, such as a
+// connection which ended
 const lists: ListController<unknown>[] = [];
-function table<T>(id: string, controller: ListController<T>, columns: TableElement<T>['columns'], describe: (item: T) => Omit<Item, 'kind'>) {
+function table<T>(id: string, controller: ListController<T>, limit: number, columns: TableElement<T>['columns'], describe: (item: T) => Omit<Item, 'kind'>) {
     const element = document.getElementById(id) as TableElement<T> | null;
     if (element) {
         element.controller = controller;
         element.columns = columns;
+        element.pageSizes = [10, 20, 50, 100].filter((size) => size <= limit);
     }
     lists.push(controller as ListController<unknown>);
     controller.subscribe(({ selected }) => {
         if (selected) {
             open({ kind: id, ...describe(selected) });
+        } else if (panel.current.open && panel.current.item?.kind === id) {
+            panel.close();
         }
     });
 }
-table('object-table', objects, views.objectColumns, (object) => ({
+table('object-table', objects, ListLimits.object, views.objectColumns, (object) => ({
     title: object.name ?? '', subtitle: [object.database, object.schema].filter(Boolean).join(' · '), body: views.objectBody(object),
 }));
-table('role-table', roles, views.roleColumns, (role) => ({ title: role.name, subtitle: 'Role', body: views.roleBody(role) }));
-table('connection-table', connections, views.connectionColumns, (conn) => ({
+table('role-table', roles, ListLimits.role, views.roleColumns, (role) => ({ title: role.name, subtitle: 'Role', body: views.roleBody(role) }));
+table('connection-table', connections, ListLimits.connection, views.connectionColumns, (conn) => ({
     title: `Connection ${conn.pid}`, subtitle: [conn.role, conn.database].filter(Boolean).join(' · '), body: views.connectionBody(conn),
 }));
-table('setting-table', settings, views.settingColumns, (setting) => ({ title: setting.name, subtitle: setting.category, body: views.settingBody(setting) }));
-table('tablespace-table', tablespaces, views.tablespaceColumns, (space) => ({ title: space.name, subtitle: 'Tablespace', body: views.tablespaceBody(space) }));
-table('slot-table', slots, views.replicationSlotColumns, (slot) => ({ title: slot.name, subtitle: `Replication slot · ${slot.type}`, body: views.replicationSlotBody(slot) }));
-table('statement-table', statements, views.statementColumns, (stmt) => ({
+table('setting-table', settings, ListLimits.setting, views.settingColumns, (setting) => ({ title: setting.name, subtitle: setting.category, body: views.settingBody(setting) }));
+table('tablespace-table', tablespaces, ListLimits.tablespace, views.tablespaceColumns, (space) => ({ title: space.name, subtitle: 'Tablespace', body: views.tablespaceBody(space) }));
+table('slot-table', slots, ListLimits.replicationSlot, views.replicationSlotColumns, (slot) => ({ title: slot.name, subtitle: `Replication slot · ${slot.type}`, body: views.replicationSlotBody(slot) }));
+table('statement-table', statements, ListLimits.statement, views.statementColumns, (stmt) => ({
     title: 'Statement', subtitle: [stmt.role, stmt.database].filter(Boolean).join(' · '), body: views.statementBody(stmt),
 }));
 panel.onClose(() => lists.forEach((list) => list.close()));
@@ -431,6 +444,7 @@ for (const page of otherPages) {
     router.add(page.id, document.getElementById(`page-${page.id}`));
 }
 router.onRoute((next) => {
+    window.scrollTo(0, 0);
     route = next;
     show();
 }).start();

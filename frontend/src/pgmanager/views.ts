@@ -2,8 +2,8 @@
 // bodies of the panels which show one
 
 import { html, type TemplateResult } from 'lit';
-import type { Column } from '../core/table.ts';
-import type { Tile } from '../core/tiles.ts';
+import type { Column } from '@mutablelogic/go-server/list/view';
+import type { Tile } from '@mutablelogic/go-server/list/tiles';
 import type { Connection, PgObject, ReplicationSlot, Role, Schema, Setting, Statement, Tablespace } from './schema.ts';
 
 // Carbon components

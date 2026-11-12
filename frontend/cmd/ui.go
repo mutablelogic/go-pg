@@ -7,7 +7,7 @@ import (
 	"mime"
 
 	// Packages
-	frontend "github.com/mutablelogic/go-pg/build/frontend"
+	frontend "github.com/mutablelogic/go-pg/frontend"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 )
 

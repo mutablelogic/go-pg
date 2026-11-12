@@ -1,15 +1,16 @@
-// Builds the web UI into build/frontend: the TypeScript, bundled, with its
-// styles and fonts, into build/frontend/dist, with the assets, such as
-// index.html, and embed.go, so a server built with the "frontend" tag
-// embeds it
+// Builds the web UI into dist: the TypeScript, bundled, with its styles and
+// fonts, and the assets, such as index.html, which embed.go embeds in a
+// server built with the "frontend" tag. dist is emptied first, so it has
+// only what's built.
 
 import esbuild from 'esbuild';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { cpSync, readFileSync } from 'fs';
+import { cpSync, readFileSync, rmSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const buildDir = resolve(__dirname, '../build/frontend');
+const distDir = resolve(__dirname, 'dist');
+rmSync(distDir, { recursive: true, force: true });
 
 // carbonFonts strips the fonts which Carbon's prebuilt styles load from
 // IBM's CDN, as the UI bundles its own (see src/fonts.css)
@@ -26,7 +27,7 @@ const carbonFonts = {
 await esbuild.build({
     entryPoints: ['src/index.ts'],
     bundle: true,
-    outdir: `${buildDir}/dist`,
+    outdir: distDir,
     format: 'esm',
     target: 'es2022',
     minify: true,
@@ -36,6 +37,5 @@ await esbuild.build({
     plugins: [carbonFonts],
 }).catch(() => process.exit(1));
 
-cpSync(resolve(__dirname, 'assets/dist'), `${buildDir}/dist`, { recursive: true });
-cpSync(resolve(__dirname, 'assets/embed.go'), `${buildDir}/embed.go`);
-console.log(`Built → ${buildDir}`);
+cpSync(resolve(__dirname, 'assets/dist'), distDir, { recursive: true });
+console.log(`Built → ${distDir}`);

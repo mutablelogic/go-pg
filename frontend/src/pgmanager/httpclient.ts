@@ -1,8 +1,21 @@
 // pgmanager's HTTP client, of the resources the UI shows
 
 import type { Client } from '@mutablelogic/go-server/api';
-import { request } from '../core/request.ts';
-import type { Connection, Database, List, PgObject, ReplicationSlot, Role, Schema, Setting, Statement, StatementSort, Tablespace } from './schema.ts';
+import { request } from '@mutablelogic/go-server/api';
+import { ListLimits, type Connection, type Database, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './schema.ts';
+
+// listAll returns every page of a list, a page at a time, of at most the
+// limit, from the offset of the items it has, until it has them all
+export async function listAll<T>(page: (offset: number, limit: number) => Promise<List<T>>, limit: number): Promise<List<T>> {
+    const body: T[] = [];
+    for (;;) {
+        const list = await page(body.length, limit);
+        body.push(...(list.body ?? []));
+        if (!list.body?.length || body.length >= list.count) {
+            return { count: list.count, body };
+        }
+    }
+}
 
 // listDatabases returns a page of the databases
 export function listDatabases(client: Client, offset: number, limit: number): Promise<List<Database>> {
@@ -35,6 +48,16 @@ export interface ObjectFilter {
 // listObjects returns a page of the objects of a database, of the filter
 export function listObjects(client: Client, filter: ObjectFilter, offset: number, limit: number): Promise<List<PgObject>> {
     return request<List<PgObject>>(client, 'GET', 'object', { query: { ...filter, offset, limit } });
+}
+
+// listAllDatabases returns every database
+export function listAllDatabases(client: Client): Promise<List<Database>> {
+    return listAll((offset, limit) => listDatabases(client, offset, limit), ListLimits.database);
+}
+
+// listAllSchemas returns every schema of a database
+export function listAllSchemas(client: Client, database: string): Promise<List<Schema>> {
+    return listAll((offset, limit) => listSchemas(client, database, offset, limit), ListLimits.schema);
 }
 
 // listSchemas returns a page of the schemas of a database

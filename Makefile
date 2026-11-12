@@ -10,9 +10,9 @@ CMD_DIR := $(filter-out cmd/_%,$(wildcard cmd/*))
 TS_DIR := frontend
 
 # The commands embed the web UI, with the "frontend" tag, once it's built
-# into build/frontend, by make frontend, which needs npm, and a token which
+# into frontend/dist, by make frontend, which needs npm, and a token which
 # can read GitHub Packages, in GITHUB_TOKEN
-BUILD_TAGS = $(if $(wildcard $(BUILD_DIR)/frontend/embed.go),-tags frontend,)
+BUILD_TAGS = $(if $(wildcard $(TS_DIR)/dist/index.html),-tags frontend,)
 
 # Set OS and Architecture
 ARCH ?= $(shell arch | tr A-Z a-z | sed 's/x86_64/amd64/' | sed 's/i386/amd64/' | sed 's/armv7l/arm/' | sed 's/aarch64/arm64/')
@@ -50,7 +50,7 @@ $(CMD_DIR): go-dep mkdir
 	@echo Build command $(notdir $@) GOOS=${OS} GOARCH=${ARCH} $(BUILD_TAGS)
 	@GOOS=${OS} GOARCH=${ARCH} ${GO} build $(BUILD_TAGS) ${BUILD_FLAGS} -o ${BUILD_DIR}/$(notdir $@) ./$@
 
-# Build the web UI into build/frontend, from package-lock.json, once it's
+# Build the web UI into frontend/dist, from package-lock.json, once it's
 # type checked, as esbuild doesn't check its types
 .PHONY: frontend
 frontend: npm-dep mkdir
@@ -123,7 +123,7 @@ tidy:
 .PHONY: clean
 clean: tidy
 	@echo 'clean'
-	@rm -fr $(BUILD_DIR)
+	@rm -fr $(BUILD_DIR) $(TS_DIR)/dist
 	@$(GO) clean
 
 ###############################################################################

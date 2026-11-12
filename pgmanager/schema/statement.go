@@ -3,6 +3,7 @@ package schema
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	// Packages
@@ -18,7 +19,7 @@ import (
 type Statement struct {
 	Role     string  `json:"role,omitempty"`     // Name of the role who executed the statement
 	Database string  `json:"database,omitempty"` // Name of the database in which the statement was executed
-	QueryID  uint64  `json:"query_id"`           // Hash code to identify identical normalized queries
+	QueryID  string  `json:"query_id"`           // Hash code to identify identical normalized queries, in decimal, as PostgreSQL shows it, and as a string, as it's 64 bits
 	Query    string  `json:"query"`              // Text of a representative statement
 	Calls    int64   `json:"calls"`              // Number of times the statement was executed
 	Rows     int64   `json:"rows"`               // Total number of rows retrieved or affected by the statement
@@ -87,7 +88,7 @@ func (r Statement) Cell(col int) tui.CellText {
 	case 1:
 		return r.Database
 	case 2:
-		return fmt.Sprintf("0x%016x", r.QueryID)
+		return r.QueryID
 	case 3:
 		return r.Query
 	case 4:
@@ -211,7 +212,7 @@ func (s *Statement) Scan(row pg.Row) error {
 	); err != nil {
 		return err
 	}
-	s.QueryID = uint64(queryID)
+	s.QueryID = strconv.FormatInt(queryID, 10)
 	return nil
 }
 

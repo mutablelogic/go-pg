@@ -109,7 +109,7 @@ export interface ReplicationSlot {
 export interface Statement {
     role?: string;
     database?: string;
-    query_id: number;
+    query_id: string;
     query: string;
     calls: number;
     rows: number;
@@ -121,6 +121,20 @@ export interface Statement {
 
 // StatementSort is what the statements are sorted by
 export type StatementSort = 'total_ms' | 'mean_ms' | 'min_ms' | 'max_ms' | 'calls' | 'rows';
+
+// ListLimits are the most of each list which pgmanager returns at once, as
+// pgmanager/schema/globals.go has them, so a page isn't larger
+export const ListLimits = {
+    database: 50,
+    connection: 50,
+    schema: 20,
+    object: 20,
+    setting: 100,
+    role: 50,
+    tablespace: 50,
+    replicationSlot: 50,
+    statement: 50,
+} as const;
 
 // List is a page of a list of the resources, with the number of them
 export interface List<T> {

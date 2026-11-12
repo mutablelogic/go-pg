@@ -2,7 +2,7 @@
 
 // Package cmd serves the web UI, and the server's configuration, which it
 // reads, beside the API, when the server is built with the "frontend" tag,
-// which embeds the UI, once it's built, with npm, into build/frontend, which
+// which embeds the UI, once it's built, with npm, into frontend/dist, which
 // make does. Without it, such as with go install, the server serves its API
 // and configuration, without the UI.
 package cmd

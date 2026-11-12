@@ -536,6 +536,10 @@ if (roleTiles) {
         if (panel.current.item?.kind === 'role-table') {
             panel.close();
         }
+        const roleTable = document.getElementById('role-table') as TableElement<Role> | null;
+        if (roleTable) {
+            roleTable.columns = views.roleColumns(openRole, predefinedRoles);
+        }
         renderRoleTiles();
         void roles.reset();
     });

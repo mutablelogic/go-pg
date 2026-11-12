@@ -94,11 +94,12 @@ function roleLinks(names: readonly string[] | undefined, onRole: (name: string) 
 }
 
 // roleColumns are the roles' columns, whose roles they're members of open
-// with the function
-export const roleColumns = (onRole: (name: string) => void): Column<Role>[] => [
+// with the function. PostgreSQL's own roles have no permissions, so they've
+// no column of them.
+export const roleColumns = (onRole: (name: string) => void, predefined = false): Column<Role>[] => [
     { header: 'Role', cell: (role) => role.name },
     { header: 'Description', cell: (role) => description(role.comment) },
-    { header: 'Permissions', cell: (role) => roleFlags(role).map((flag) => html`<cds-tag size="sm" type="gray">${flag}</cds-tag>`) },
+    ...(predefined ? [] : [{ header: 'Permissions', cell: (role: Role) => roleFlags(role).map((flag) => html`<cds-tag size="sm" type="gray">${flag}</cds-tag>`) }]),
     { header: 'Member of', cell: (role) => roleLinks(role.memberof, onRole) },
 ];
 

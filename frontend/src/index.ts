@@ -42,6 +42,8 @@ import { schemaCreateAcl, schemaForm, schemaFormErrors, schemaRequest, type Sche
 import { schemaFormView } from './pgmanager/schemaformview.ts';
 import { tablespaceCreateAcl, tablespaceForm, tablespaceFormErrors, tablespaceLocationError, tablespaceRequest, type TablespaceFormErrors } from './pgmanager/tablespaceform.ts';
 import { tablespaceFormView } from './pgmanager/tablespaceformview.ts';
+import { extensionForm, extensionFormErrors, extensionRequest, type ExtensionFormErrors } from './pgmanager/extensionform.ts';
+import { extensionFormView } from './pgmanager/extensionformview.ts';
 
 // Carbon components, and icons
 import '@carbon/web-components/es/components/ui-shell/index.js';
@@ -587,9 +589,92 @@ async function deleteTablespace(space: Tablespace) {
     panel.close();
     void tablespaces.refresh();
 }
-table('extension-table', extensions, ListLimits.extension, views.extensionColumns, (ext) => ({
-    title: ext.name, subtitle: ext.database ? `Extension · ${ext.database}` : 'Extension', body: views.extensionBody(ext),
-}));
+table('extension-table', extensions, ListLimits.extension, views.extensionColumns, extensionView);
+
+// extensionView is an extension in the panel, which, when it's one a
+// database has, can be removed from it, or else installed in one
+function extensionView(ext: Extension): Omit<Item, 'kind'> {
+    return {
+        title: ext.name,
+        subtitle: ext.database ? `Extension · ${ext.database}` : 'Extension',
+        body: views.extensionBody(ext),
+        actions: ext.database ? [
+            { label: 'Remove', kind: 'danger', close: false, run: () => removeExtension(ext) },
+            closeAction,
+        ] : [
+            { label: 'Install in a database', kind: 'primary', close: false, run: () => installExtension(ext) },
+            closeAction,
+        ],
+    };
+}
+
+// installExtension shows the form which installs an extension in a
+// database, in the panel, which installs it, and shows it in the database
+function installExtension(ext: Extension) {
+    const names = (databases.current.items ?? []).map((db) => db.name);
+    const form = extensionForm(ext.name, names.length === 1 ? names[0] : '');
+    let errors: ExtensionFormErrors = {};
+    const view = (): TemplateResult => extensionFormView(form, names, ext.default_version, errors);
+    const rerender = () => {
+        if (panelView) {
+            render(view(), panelView);
+        }
+    };
+    open({
+        kind: 'extension-form',
+        title: `Install ${ext.name}`,
+        subtitle: ext.comment ?? 'Extension',
+        body: view(),
+        actions: [
+            { label: 'Cancel', kind: 'secondary', close: false, run: () => open({ kind: 'extension-table', ...extensionView(ext) }) },
+            {
+                label: 'Install',
+                kind: 'primary',
+                close: false,
+                run: async () => {
+                    errors = extensionFormErrors(form);
+                    rerender();
+                    if (Object.keys(errors).length) {
+                        return;
+                    }
+                    const installed = await api.installExtension(client, extensionRequest(form), form.cascade);
+                    notifications.push({ kind: 'success', title: `${ext.name} was installed in ${form.database}` });
+                    void extensions.refresh();
+                    open({ kind: 'extension', ...extensionView({ ...installed, database: installed.database ?? form.database }) });
+                },
+            },
+        ],
+    });
+    extensions.close();
+}
+
+// removeExtension removes an extension from its database, once it's
+// confirmed, and, when anything depends on it, which it can't be removed
+// while it does, once it's confirmed that they're removed too
+async function removeExtension(ext: Extension) {
+    const database = ext.database;
+    if (!database || !confirm(`Remove ${ext.name} from ${database}? What it added, such as its types and functions, is removed too.`)) {
+        return;
+    }
+    const item = panel.current.item;
+    try {
+        await api.removeExtension(client, ext.name, database);
+    } catch (error) {
+        if (!(error instanceof ApiError && error.status === 409)) {
+            throw error;
+        }
+        if (!confirm(`Other things in ${database} depend on ${ext.name}, such as tables which use its types, or other extensions. Remove them too?`)) {
+            return;
+        }
+        await api.removeExtension(client, ext.name, database, true);
+    }
+    notifications.push({ kind: 'success', title: `${ext.name} was removed from ${database}` });
+    void extensions.refresh();
+    if (panel.current.open && panel.current.item === item) {
+        extensions.close();
+        panel.close();
+    }
+}
 table('slot-table', slots, ListLimits.replicationSlot, views.replicationSlotColumns, (slot) => ({ title: slot.name, subtitle: `Replication slot · ${slot.type}`, body: views.replicationSlotBody(slot) }));
 table('statement-table', statements, ListLimits.statement, views.statementColumns, (stmt) => ({
     title: 'Statement', subtitle: [stmt.role, stmt.database].filter(Boolean).join(' · '), body: views.statementBody(stmt),

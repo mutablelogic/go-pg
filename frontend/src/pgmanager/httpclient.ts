@@ -4,6 +4,7 @@ import type { Client } from '@mutablelogic/go-server/api';
 import { request } from '@mutablelogic/go-server/api';
 import type { DatabaseRequest } from './databaseform.ts';
 import type { SchemaRequest } from './schemaform.ts';
+import type { ExtensionRequest } from './extensionform.ts';
 import type { TablespaceRequest } from './tablespaceform.ts';
 import type { RoleRequest } from './roleform.ts';
 import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './schema.ts';
@@ -233,4 +234,16 @@ export interface ExtensionFilter {
 // listExtensions returns a page of the extensions, of the filter
 export function listExtensions(client: Client, filter: ExtensionFilter, offset: number, limit: number): Promise<List<Extension>> {
     return request<List<Extension>>(client, 'GET', 'extension', { query: { ...filter, offset, limit } });
+}
+
+// installExtension installs an extension in a database, with the extensions
+// it requires, when cascade, and returns it
+export function installExtension(client: Client, extension: ExtensionRequest, cascade = false): Promise<Extension> {
+    return request<Extension>(client, 'POST', 'extension', { body: extension, query: { cascade: cascade || undefined } });
+}
+
+// removeExtension removes an extension from a database, with what depends on
+// it, when cascade. It fails while anything depends on it, unless cascade.
+export async function removeExtension(client: Client, name: string, database: string, cascade = false): Promise<void> {
+    await request<void>(client, 'DELETE', `extension/${encodeURIComponent(name)}`, { query: { database, cascade: cascade || undefined } });
 }

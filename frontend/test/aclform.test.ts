@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { extensionForm, extensionFormErrors, extensionRequest } from '../src/pgmanager/extensionform.ts';
 import assert from 'node:assert/strict';
 import { aclChanged, aclRequest, aclRows } from '../src/pgmanager/aclform.ts';
 import { databaseCreateAcl, databaseForm, databaseFormErrors, databaseRequest } from '../src/pgmanager/databaseform.ts';
@@ -103,4 +104,19 @@ test('tablespaceLocationError', () => {
     // A reason which isn't the directory's is left as it is
     assert.equal(tablespaceLocationError(400, 'permission denied to create tablespace "x"'), undefined);
     assert.equal(tablespaceLocationError(404, 'role "nobody" does not exist'), undefined);
+});
+
+test('extensionRequest', () => {
+    // An extension needs a database, which it isn't in, and has a schema,
+    // or version, only when they're set
+    const form = extensionForm('hstore');
+    assert.equal(form.cascade, true);
+    assert.deepEqual(extensionFormErrors(form), { database: 'Choose the database to install it in' });
+    form.database = 'shop';
+    assert.deepEqual(extensionFormErrors(form, ['shop']), { database: "It's already installed in shop" });
+    assert.deepEqual(extensionFormErrors(form), {});
+    assert.deepEqual(extensionRequest(form), { name: 'hstore', database: 'shop' });
+    form.schema = ' sales ';
+    form.version = '1.8';
+    assert.deepEqual(extensionRequest(form), { name: 'hstore', database: 'shop', schema: 'sales', version: '1.8' });
 });

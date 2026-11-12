@@ -129,6 +129,21 @@ export interface Statement {
 // StatementSort is what the statements are sorted by
 export type StatementSort = 'total_ms' | 'mean_ms' | 'min_ms' | 'max_ms' | 'calls' | 'rows';
 
+// Extension is an extension the server has available, and, in a database,
+// whether it's installed there, with its version, and its schema
+export interface Extension {
+    oid?: number;
+    name: string;
+    database?: string;
+    schema?: string;
+    owner?: string;
+    default_version?: string;
+    installed_version?: string;
+    relocatable?: boolean;
+    comment?: string;
+    requires?: string[];
+}
+
 // ListLimits are the most of each list which pgmanager returns at once, as
 // pgmanager/schema/globals.go has them, so a page isn't larger
 export const ListLimits = {
@@ -141,6 +156,7 @@ export const ListLimits = {
     tablespace: 50,
     replicationSlot: 50,
     statement: 50,
+    extension: 50,
 } as const;
 
 // List is a page of a list of the resources, with the number of them

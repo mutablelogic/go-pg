@@ -2,7 +2,7 @@
 
 import type { Client } from '@mutablelogic/go-server/api';
 import { request } from '@mutablelogic/go-server/api';
-import { ListLimits, type Connection, type Database, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './schema.ts';
+import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './schema.ts';
 
 // listAll returns every page of a list, a page at a time, of at most the
 // limit, from the offset of the items it has, until it has them all
@@ -143,4 +143,16 @@ export function listStatements(client: Client, filter: StatementFilter, offset: 
 // resetStatements resets the statements' statistics
 export async function resetStatements(client: Client): Promise<void> {
     await request<void>(client, 'DELETE', 'statement');
+}
+
+// ExtensionFilter is the database whose extensions are listed, or none, for
+// those the server has available, and whether only those installed are
+export interface ExtensionFilter {
+    database?: string;
+    installed?: boolean;
+}
+
+// listExtensions returns a page of the extensions, of the filter
+export function listExtensions(client: Client, filter: ExtensionFilter, offset: number, limit: number): Promise<List<Extension>> {
+    return request<List<Extension>>(client, 'GET', 'extension', { query: { ...filter, offset, limit } });
 }

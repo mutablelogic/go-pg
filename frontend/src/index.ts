@@ -559,7 +559,10 @@ function showDatabase(name: string) {
     const header = pageHeader('database');
     if (header) {
         header.heading = name;
-        header.subtitle = db ? [db.comment, db.owner && `Owned by ${db.owner}`, views.formatBytes(db.bytes)].filter(Boolean).join(' · ') : '';
+        // Its description, its owner, as a role is shown, and its size
+        header.details = db ? html`${[db.comment, db.owner && html`<span title="Owner">${views.roleName(db.owner)}</span>`, views.formatBytes(db.bytes)]
+            .filter(Boolean)
+            .map((part, i) => html`${i ? ' · ' : ''}${part}`)}` : undefined;
         header.actions = [
             ...(db ? [
                 { label: 'Delete', kind: 'danger' as const, icon: TrashIcon, run: () => void deleteDatabase(db).catch((error) => notifications.error(`The database ${db.name} couldn't be deleted`, error)) },

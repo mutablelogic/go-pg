@@ -84,7 +84,7 @@ func getSetting(ctx context.Context, conn pg.Conn, name string) (*schema.Setting
 }
 
 // UpdateSetting updates a setting value. If meta.Value is nil, the setting is reset to default.
-// Returns the updated setting. Check the Context field to determine if ReloadConfig() or a
+// Returns the updated setting. Check the Context field to determine if Reload() or a
 // server restart is needed for the change to take effect.
 // Returns an error for settings with 'internal' context (cannot be changed) or
 // 'postmaster' context (requires server restart, not supported via API).
@@ -126,15 +126,49 @@ func (manager *Manager) UpdateSetting(ctx context.Context, name string, meta sch
 	return result, nil
 }
 
-// ReloadConfig calls pg_reload_conf() to reload server configuration.
-// This applies changes to settings with 'sighup' context without requiring a restart.
-func (manager *Manager) ReloadConfig(ctx context.Context) (err error) {
+// Reload reloads the configuration files, and returns, once it's reloaded,
+// when it was loaded, the settings which wait for the server to restart, and
+// the errors in the configuration files, which pg_reload_conf() doesn't
+// report, and whose settings are skipped. A setting which waits for a
+// restart is an error in the files too, which isn't returned as one, when
+// its value is one of its type.
+func (manager *Manager) Reload(ctx context.Context) (_ *schema.SettingReload, err error) {
 	// Otel span
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ReloadConfig")
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "Reload")
 	defer func() { endSpan(err) }()
 
-	// Reload, and wait for it
-	return reload(ctx, manager.conn, nil)
+	var result schema.SettingReload
+	if err := reload(ctx, manager.conn, func(conn pg.Conn) error {
+		var loaded schema.ConfigLoadTime
+		if err := conn.Get(ctx, &loaded, loaded); err != nil {
+			return err
+		}
+		result.Loaded = time.Time(loaded)
+
+		var pending schema.SettingPendingRestart
+		if err := conn.List(ctx, &pending, pending); err != nil {
+			return err
+		}
+		result.PendingRestart = pending
+
+		var access schema.SettingFileAccess
+		if err := conn.Get(ctx, &access, access); err != nil || !access {
+			return err
+		}
+		var errs schema.SettingFileErrors
+		if err := conn.List(ctx, &errs, errs); err != nil {
+			return err
+		}
+		for _, e := range errs {
+			if !e.RestartOnly() {
+				result.Errors = append(result.Errors, e)
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // reload reloads the configuration files, which the server is signalled to

@@ -196,3 +196,33 @@ func TestSettingConfig(t *testing.T) {
 	assert.Equal(t, "*", types.Value(setting.Config))
 	assert.Nil(t, setting.Override)
 }
+
+// Reloading returns when it was loaded, and a setting which waits for a
+// restart, which isn't an error
+func TestSettingReload(t *testing.T) {
+	mgr, ctx := harness.Begin(t)
+	defer harness.End(t)
+
+	before, err := mgr.Reload(ctx)
+	require.NoError(t, err)
+	assert.False(t, before.Loaded.IsZero())
+	assert.Empty(t, before.Errors)
+
+	require.NoError(t, harness.Pool().Exec(ctx, `ALTER SYSTEM SET max_connections = 101`))
+	defer func() {
+		require.NoError(t, harness.Pool().Exec(context.Background(), `ALTER SYSTEM RESET max_connections`))
+		after, err := mgr.Reload(context.Background())
+		require.NoError(t, err)
+		assert.NotContains(t, after.PendingRestart, "max_connections")
+	}()
+
+	// Waited for, so it's pending as soon as it's returned, and later than
+	// it was loaded before
+	result, err := mgr.Reload(ctx)
+	require.NoError(t, err)
+	assert.True(t, result.Loaded.After(before.Loaded))
+	assert.Contains(t, result.PendingRestart, "max_connections")
+	for _, e := range result.Errors {
+		assert.NotEqual(t, "max_connections", e.Name)
+	}
+}

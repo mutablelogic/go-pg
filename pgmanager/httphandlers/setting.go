@@ -45,6 +45,18 @@ func RegisterSettingHandlers(manager *manager.Manager, router *httprouter.Router
 				},
 			),
 		),
+		router.RegisterPath("setting/reload", nil, httprequest.NewPathItem("Reload", "Reload the PostgreSQL configuration").Tag("Settings").
+			Post(
+				func(w http.ResponseWriter, r *http.Request) {
+					_ = Reload(w, r, manager)
+				},
+				func(op httprequest.PathOperation) {
+					op.Summary("Reload the configuration files")
+					op.Description("Reloads the configuration files, with pg_reload_conf(), and returns once they're reloaded, with the settings which wait for a restart, and the errors in the files, whose settings are skipped")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.SettingReload]())
+				},
+			),
+		),
 		router.RegisterPath("setting/{setting}", nil, httprequest.NewPathItem("Settings", "Manage a PostgreSQL setting").Tag("Settings").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
@@ -106,6 +118,14 @@ func UpdateSetting(w http.ResponseWriter, r *http.Request, manager *manager.Mana
 		return httpresponse.Error(w, httpresponse.ErrBadRequest.With(err.Error()))
 	}
 	if result, err := manager.UpdateSetting(r.Context(), setting, req); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err))
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), result)
+	}
+}
+
+func Reload(w http.ResponseWriter, r *http.Request, manager *manager.Manager) error {
+	if result, err := manager.Reload(r.Context()); err != nil {
 		return httpresponse.Error(w, pg.HTTPError(err))
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), result)

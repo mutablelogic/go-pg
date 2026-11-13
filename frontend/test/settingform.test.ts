@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { settingEffect, settingForm, settingFormErrors, settingReadOnly, settingRequest } from '../src/pgmanager/settingform.ts';
+import { reloadNotification, settingEffect, settingForm, settingFormErrors, settingReadOnly, settingRequest } from '../src/pgmanager/settingform.ts';
 import type { Setting } from '../src/pgmanager/schema.ts';
 
 const setting = (s: Partial<Setting>): Setting => ({ name: 'x', value: '', category: 'c', context: 'user', type: 'string', source: 'default', ...s });
@@ -66,4 +66,24 @@ test('settingEffect', () => {
     assert.match(settingEffect('postmaster'), /restarts/);
     assert.match(settingEffect('sighup'), /reloaded/);
     assert.match(settingEffect('user'), /new sessions/);
+});
+
+test('reloadNotification', async (t) => {
+    await t.test('reloaded', () => {
+        assert.deepEqual(reloadNotification({ loaded: '' }), { kind: 'success', title: 'The configuration was reloaded', subtitle: undefined });
+    });
+
+    await t.test('waiting for a restart', () => {
+        const n = reloadNotification({ loaded: '', pending_restart: ['max_connections', 'shared_buffers'] });
+        assert.equal(n.kind, 'success');
+        assert.equal(n.subtitle, '2 settings wait for the server to restart: max_connections, shared_buffers');
+    });
+
+    await t.test('errors', () => {
+        const n = reloadNotification({ loaded: '', pending_restart: ['max_connections'], errors: [{ file: '/data/postgresql.conf', line: 12, name: 'work_mem', error: 'setting could not be applied' }] });
+        assert.equal(n.kind, 'warning');
+        assert.equal(n.title, 'The configuration was reloaded, but a setting was skipped');
+        assert.equal(n.subtitle, '/data/postgresql.conf:12 work_mem: setting could not be applied');
+        assert.equal(n.caption, '1 setting waits for the server to restart: max_connections');
+    });
 });

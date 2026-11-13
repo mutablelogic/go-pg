@@ -6,7 +6,7 @@
 
 import '@carbon/styles/css/styles.min.css';
 import './fonts.css';
-import { html, render, type LitElement, type TemplateResult } from 'lit';
+import { html, render, type TemplateResult } from 'lit';
 import iconLoader from '@carbon/web-components/es/globals/internal/icon-loader.js';
 
 // go-server's components
@@ -1219,10 +1219,9 @@ function loadRoleDescriptions() {
         roleDescriptions.clear();
         const all = lists.flatMap((list) => list.body ?? []);
         all.forEach((role) => roleDescriptions.set(role.name, role.comment));
-        // The role pgmanager runs as is badged wherever a role is shown, so
-        // the tables are rendered again
+        // The role pgmanager runs as is badged wherever a role is shown,
+        // including what's shown already, whose badges render again
         views.setCurrentRole(all.find((role) => role.current)?.name);
-        document.querySelectorAll('gs-table').forEach((table) => (table as LitElement).requestUpdate());
     }).catch(() => {
         // The descriptions are left out, as the roles say why they can't be
         // loaded

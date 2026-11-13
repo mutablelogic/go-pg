@@ -2,6 +2,7 @@ package manager_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	// Packages
@@ -100,4 +101,81 @@ func TestCurrentConnection(t *testing.T) {
 		assert.ErrorIs(t, err, pg.ErrConflict)
 		return nil
 	}))
+}
+
+// recorder is the pool, which records each query's selector, as pool: or
+// tx:, as it's in a transaction or not, so what's on one session is known
+type recorder struct {
+	pg.PoolConn
+	tx  bool
+	ops *[]string
+}
+
+func (r recorder) record(sel pg.Selector) {
+	where := "pool"
+	if r.tx {
+		where = "tx"
+	}
+	*r.ops = append(*r.ops, fmt.Sprintf("%s:%T", where, sel))
+}
+func (r recorder) With(params ...any) pg.Conn {
+	return recorder{r.PoolConn.With(params...).(pg.PoolConn), r.tx, r.ops}
+}
+func (r recorder) Get(ctx context.Context, rd pg.Reader, s pg.Selector) error {
+	r.record(s)
+	return r.PoolConn.Get(ctx, rd, s)
+}
+func (r recorder) Delete(ctx context.Context, rd pg.Reader, s pg.Selector) error {
+	r.record(s)
+	return r.PoolConn.Delete(ctx, rd, s)
+}
+func (r recorder) Tx(ctx context.Context, fn func(pg.Conn) error) error {
+	return r.PoolConn.Tx(ctx, func(conn pg.Conn) error {
+		return fn(txRecorder{conn, r.ops})
+	})
+}
+
+// txRecorder is a transaction's connection, whose queries are recorded as
+// tx:
+type txRecorder struct {
+	pg.Conn
+	ops *[]string
+}
+
+func (r txRecorder) With(params ...any) pg.Conn { return txRecorder{r.Conn.With(params...), r.ops} }
+func (r txRecorder) Get(ctx context.Context, rd pg.Reader, s pg.Selector) error {
+	*r.ops = append(*r.ops, fmt.Sprintf("tx:%T", s))
+	return r.Conn.Get(ctx, rd, s)
+}
+func (r txRecorder) Delete(ctx context.Context, rd pg.Reader, s pg.Selector) error {
+	*r.ops = append(*r.ops, fmt.Sprintf("tx:%T", s))
+	return r.Conn.Delete(ctx, rd, s)
+}
+
+// Ending, or cancelling, a connection checks it isn't the current one on
+// the session which ends, or cancels it, in a transaction, and nothing of
+// it is on the pool, whose sessions are others
+func TestCurrentConnectionSameSession(t *testing.T) {
+	shared, ctx := harness.Begin(t)
+	defer harness.End(t)
+
+	var ops []string
+	mgr, err := manager.New(recorder{harness.Pool(), false, &ops})
+	require.NoError(t, err)
+
+	// Cancel a sleeping connection's query
+	pid, done := sleeping(t, ctx, shared, "same-session-cancel")
+	ops = nil
+	_, err = mgr.CancelConnection(ctx, pid)
+	require.NoError(t, err)
+	<-done
+	assert.Equal(t, []string{"tx:schema.ConnectionPid", "tx:schema.ConnectionCancel"}, ops)
+
+	// End another
+	pid, done = sleeping(t, ctx, shared, "same-session-end")
+	ops = nil
+	_, err = mgr.DeleteConnection(ctx, pid)
+	require.NoError(t, err)
+	<-done
+	assert.Equal(t, []string{"tx:schema.ConnectionPid", "tx:schema.ConnectionPid"}, ops)
 }

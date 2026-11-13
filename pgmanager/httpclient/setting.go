@@ -58,3 +58,15 @@ func (c *Client) UpdateSetting(ctx context.Context, name string, meta schema.Set
 	// Return the responses
 	return types.Ptr(response), nil
 }
+
+// Reload reloads the configuration files, and returns, once they're
+// reloaded, the settings which wait for a restart, and the errors in them
+func (c *Client) Reload(ctx context.Context) (*schema.SettingReload, error) {
+	var response schema.SettingReload
+	if err := c.DoWithContext(ctx, client.MethodPost, &response, client.OptPath("setting", "reload")); err != nil {
+		return nil, err
+	}
+
+	// Return the responses
+	return types.Ptr(response), nil
+}

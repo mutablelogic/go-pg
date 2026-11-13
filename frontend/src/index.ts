@@ -42,7 +42,7 @@ import { schemaCreateAcl, schemaForm, schemaFormErrors, schemaRequest, type Sche
 import { schemaFormView } from './pgmanager/schemaformview.ts';
 import { tablespaceCreateAcl, tablespaceForm, tablespaceFormErrors, tablespaceLocationError, tablespaceRequest, type TablespaceFormErrors } from './pgmanager/tablespaceform.ts';
 import { tablespaceFormView } from './pgmanager/tablespaceformview.ts';
-import { settingEffect, settingForm, settingFormErrors, settingReadOnly, settingRequest, type SettingFormErrors } from './pgmanager/settingform.ts';
+import { reloadNotification, settingEffect, settingForm, settingFormErrors, settingReadOnly, settingRequest, type SettingFormErrors } from './pgmanager/settingform.ts';
 import { settingFormView } from './pgmanager/settingformview.ts';
 import { extensionForm, extensionFormErrors, extensionRequest, type ExtensionFormErrors } from './pgmanager/extensionform.ts';
 import { extensionFormView } from './pgmanager/extensionformview.ts';
@@ -58,6 +58,7 @@ import EditIcon from '@carbon/icons/es/edit/16.js';
 import TrashIcon from '@carbon/icons/es/trash-can/16.js';
 import ReplicateIcon from '@carbon/icons/es/replicate/32.js';
 import ResetIcon from '@carbon/icons/es/reset/16.js';
+import RenewIcon from '@carbon/icons/es/renew/16.js';
 import SettingsIcon from '@carbon/icons/es/settings/32.js';
 import SqlIcon from '@carbon/icons/es/SQL/32.js';
 import StoragePoolIcon from '@carbon/icons/es/storage-pool/32.js';
@@ -1037,6 +1038,23 @@ if (tablespacesHeader) {
 const rolesHeader = pageHeader('roles');
 if (rolesHeader) {
     rolesHeader.actions = [{ label: 'Create a role', icon: AddIcon, run: () => void editRole().catch((error) => notifications.error("The form couldn't be opened", error)) }];
+}
+// The settings' action reloads the configuration files, and says what's
+// waiting for a restart, and what's skipped, as the files have errors
+const settingsHeader = pageHeader('settings');
+if (settingsHeader) {
+    settingsHeader.actions = [{
+        label: 'Reload',
+        kind: 'secondary',
+        icon: RenewIcon,
+        run: () => {
+            api.reload(client).then((result) => {
+                notifications.push(reloadNotification(result));
+                void settings.refresh();
+                void settingCategories.refresh();
+            }).catch((error) => notifications.error("The configuration couldn't be reloaded", error));
+        },
+    }];
 }
 const statementsHeader = pageHeader('statements');
 if (statementsHeader) {

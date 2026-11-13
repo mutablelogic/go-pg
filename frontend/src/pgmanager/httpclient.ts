@@ -8,7 +8,7 @@ import type { SchemaRequest } from './schemaform.ts';
 import type { ExtensionRequest } from './extensionform.ts';
 import type { TablespaceRequest } from './tablespaceform.ts';
 import type { RoleRequest } from './roleform.ts';
-import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type SettingCategory, type Statement, type StatementSort, type Tablespace } from './schema.ts';
+import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type SettingCategory, type SettingReload, type Statement, type StatementSort, type Tablespace } from './schema.ts';
 
 // listAll returns every page of a list, a page at a time, of at most the
 // limit, from the offset of the items it has, until it has them all
@@ -182,6 +182,12 @@ export function listSettingCategories(client: Client): Promise<List<SettingCateg
 // returns it, once the configuration's reloaded
 export function updateSetting(client: Client, name: string, setting: { value: string | null }): Promise<Setting> {
     return request<Setting>(client, 'PATCH', `setting/${encodeURIComponent(name)}`, { body: setting });
+}
+
+// reload reloads the configuration files, and returns, once they're
+// reloaded, the settings which wait for a restart, and the errors in them
+export function reload(client: Client): Promise<SettingReload> {
+    return request<SettingReload>(client, 'POST', 'setting/reload');
 }
 
 // getSetting returns a setting, by its name

@@ -95,6 +95,15 @@ export interface Setting {
     override?: string;
 }
 
+// SettingReload is the configuration, once it's reloaded: when it was
+// loaded, the settings which wait for the server to restart, and the errors
+// in the configuration files, whose settings are skipped
+export interface SettingReload {
+    loaded: string;
+    pending_restart?: string[];
+    errors?: { file: string; line: number; name?: string; error: string }[];
+}
+
 // SettingCategory is a top level of the settings' categories, which are two
 // levels, such as "Client Connection Defaults / Locale and Formatting", with
 // how many settings it has, and how many of them are changed

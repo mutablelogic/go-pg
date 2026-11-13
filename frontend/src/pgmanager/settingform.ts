@@ -2,7 +2,8 @@
 // writes it to postgresql.auto.conf, rather than postgresql.conf, whose
 // value it's used rather than, and which is reloaded, after it's changed
 
-import type { Setting } from './schema.ts';
+import type { Notification } from '@mutablelogic/go-server/notification';
+import type { Setting, SettingReload } from './schema.ts';
 
 // SettingForm is the setting's value, as it's typed, or chosen
 export interface SettingForm {
@@ -102,4 +103,22 @@ export function settingEffect(context: string): string {
             // user, and superuser, which a session can also change for itself
             return 'For new sessions, once the configuration is reloaded, and in any session which sets it';
     }
+}
+
+// reloadNotification is what a reload says: that it's reloaded, with the
+// settings which wait for a restart, or, when the configuration files have
+// errors, whose settings are skipped, a warning of them
+export function reloadNotification(result: SettingReload): Notification {
+    const pending = result.pending_restart ?? [];
+    const waiting = pending.length ? `${pending.length === 1 ? '1 setting waits' : `${pending.length} settings wait`} for the server to restart: ${pending.join(', ')}` : undefined;
+    const errors = result.errors ?? [];
+    if (errors.length) {
+        return {
+            kind: 'warning',
+            title: `The configuration was reloaded, but ${errors.length === 1 ? 'a setting was' : `${errors.length} settings were`} skipped`,
+            subtitle: errors.map((e) => `${e.file}:${e.line}${e.name ? ` ${e.name}` : ''}: ${e.error}`).join('; '),
+            caption: waiting,
+        };
+    }
+    return { kind: 'success', title: 'The configuration was reloaded', subtitle: waiting };
 }

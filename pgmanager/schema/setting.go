@@ -97,6 +97,36 @@ type SettingFileAccess bool
 // ConfigLoadTime is when the session last loaded the configuration files
 type ConfigLoadTime time.Time
 
+// SettingReload is the configuration, once it's reloaded: when it was
+// loaded, the settings which wait for the server to restart, and the errors
+// in the configuration files, whose settings are skipped, which are read
+// by a role which can read the configuration files
+type SettingReload struct {
+	Loaded         time.Time          `json:"loaded"`
+	PendingRestart []string           `json:"pending_restart,omitempty"`
+	Errors         []SettingFileError `json:"errors,omitempty"`
+}
+
+// SettingFileError is an error in a configuration file, at a line, of a
+// setting, unless the line can't be read
+type SettingFileError struct {
+	File  string `json:"file"`
+	Line  int    `json:"line"`
+	Name  string `json:"name,omitempty"`
+	Error string `json:"error"`
+}
+
+// SettingPendingRestart are the names of the settings which wait for the
+// server to restart
+type SettingPendingRestart []string
+
+// SettingFileErrors are the errors in the configuration files
+type SettingFileErrors []SettingFileError
+
+func (r SettingReload) String() string {
+	return types.Stringify(r)
+}
+
 // SettingListRequest is used to retrieve server settings
 type SettingListRequest struct {
 	pg.OffsetLimit
@@ -352,6 +382,42 @@ func (f *SettingFiles) Scan(row pg.Row) error {
 		f.Config = types.Ptr(value)
 	}
 	return nil
+}
+
+func (p *SettingPendingRestart) Scan(row pg.Row) error {
+	var name string
+	if err := row.Scan(&name); err != nil {
+		return err
+	}
+	*p = append(*p, name)
+	return nil
+}
+
+func (SettingPendingRestart) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	switch op {
+	case pg.List:
+		return `SELECT name FROM pg_catalog.pg_settings WHERE pending_restart ORDER BY name`, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported SettingPendingRestart operation %q", op)
+	}
+}
+
+func (e *SettingFileErrors) Scan(row pg.Row) error {
+	var err SettingFileError
+	if err := row.Scan(&err.File, &err.Line, &err.Name, &err.Error); err != nil {
+		return err
+	}
+	*e = append(*e, err)
+	return nil
+}
+
+func (SettingFileErrors) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	switch op {
+	case pg.List:
+		return `SELECT COALESCE(sourcefile, ''), COALESCE(sourceline, 0), COALESCE(name, ''), error FROM pg_catalog.pg_file_settings WHERE error IS NOT NULL ORDER BY seqno`, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported SettingFileErrors operation %q", op)
+	}
 }
 
 func (t *ConfigLoadTime) Scan(row pg.Row) error {

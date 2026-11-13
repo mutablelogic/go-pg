@@ -20,6 +20,7 @@ type opts struct {
 	tracer  trace.Tracer
 	metrics metric.Meter
 	cluster string
+	restart []string
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -52,6 +53,17 @@ func WithTracer(tracer trace.Tracer) Opt {
 func WithMeter(meter metric.Meter) Opt {
 	return func(o *opts) error {
 		o.metrics = meter
+		return nil
+	}
+}
+
+// WithRestart lets the manager restart the server, with a command, and its
+// arguments, which asks the server's supervisor to restart it, such as
+// s6-svc -r /run/service/postgres. The command is run without a shell. An
+// empty command doesn't let it.
+func WithRestart(command ...string) Opt {
+	return func(o *opts) error {
+		o.restart = command
 		return nil
 	}
 }

@@ -100,6 +100,7 @@ type SettingClientCommands struct {
 	SettingGet          SettingGetCmd          `cmd:"" name:"setting" help:"Get setting details." group:"SETTING"`
 	SettingUpdate       SettingUpdateCmd       `cmd:"" name:"setting-update" help:"Update a setting." group:"SETTING"`
 	Reload              ReloadCmd              `cmd:"" name:"reload" help:"Reload the configuration files, and list the settings which wait for a restart, and the errors in the files." group:"SETTING"`
+	Restart             RestartCmd             `cmd:"" name:"restart" help:"Restart the server, which ends every session, once a supervisor starts it again." group:"SETTING"`
 }
 
 type RoleListCmd struct {
@@ -267,6 +268,8 @@ type SettingGetCmd struct {
 }
 
 type ReloadCmd struct{}
+
+type RestartCmd struct{}
 
 type SettingUpdateCmd struct {
 	Name string `arg:"" name:"name" help:"Name of the setting."`
@@ -914,6 +917,18 @@ func (cmd *SettingGetCmd) Run(ctx server.Cmd) error {
 		}
 
 		fmt.Println(setting)
+		return nil
+	})
+}
+
+func (cmd *RestartCmd) Run(ctx server.Cmd) error {
+	return withClient(ctx, "restart", func(ctx context.Context, client *httpclient.Client) error {
+		result, err := client.Restart(ctx)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(result)
 		return nil
 	})
 }

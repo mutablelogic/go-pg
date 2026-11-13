@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
@@ -28,8 +29,12 @@ type ServerCommands struct {
 type RunServer struct {
 	cmd.RunServer
 	pgpkg.PostgresFlags `embed:"" prefix:"pg."`
-	Broadcaster         broadcastercmd.Flags `embed:"" prefix:"broadcaster."`
-	Frontend            frontend.Flags       `embed:""`
+
+	// Restart is the command which asks the server's supervisor to
+	// restart it, which lets pgmanager restart the server
+	Restart     string               `name:"pg.restart" env:"PG_RESTART" placeholder:"COMMAND" help:"Command which asks PostgreSQL's supervisor to restart it, such as 's6-svc -r /run/service/postgres', run without a shell. Without it, pgmanager can't restart PostgreSQL"`
+	Broadcaster broadcastercmd.Flags `embed:"" prefix:"broadcaster."`
+	Frontend    frontend.Flags       `embed:""`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -87,6 +92,7 @@ func (runner *RunServer) WithManager(ctx server.Cmd, conn pg.PoolConn, fn func(*
 	opts := []manager.Opt{
 		manager.WithMeter(ctx.Meter()),
 		manager.WithTracer(ctx.Tracer()),
+		manager.WithRestart(strings.Fields(runner.Restart)...),
 	}
 	pgmanager, err := manager.New(conn, opts...)
 	if err != nil {

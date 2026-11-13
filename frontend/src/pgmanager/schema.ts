@@ -104,6 +104,21 @@ export interface SettingReload {
     errors?: { file: string; line: number; name?: string; error: string }[];
 }
 
+// SettingCategoryList is the top levels of the settings' categories, with
+// the settings which wait for the server to restart, and whether pgmanager
+// can restart it
+export interface SettingCategoryList {
+    count: number;
+    body?: SettingCategory[];
+    pending_restart?: string[];
+    restart?: boolean;
+}
+
+// Restart is the server, once it's restarted: when it started
+export interface Restart {
+    started: string;
+}
+
 // SettingCategory is a top level of the settings' categories, which are two
 // levels, such as "Client Connection Defaults / Locale and Formatting", with
 // how many settings it has, and how many of them are changed

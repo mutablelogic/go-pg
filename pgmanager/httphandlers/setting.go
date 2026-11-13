@@ -57,6 +57,18 @@ func RegisterSettingHandlers(manager *manager.Manager, router *httprouter.Router
 				},
 			),
 		),
+		router.RegisterPath("setting/restart", nil, httprequest.NewPathItem("Restart", "Restart the PostgreSQL server").Tag("Settings").
+			Post(
+				func(w http.ResponseWriter, r *http.Request) {
+					_ = Restart(w, r, manager)
+				},
+				func(op httprequest.PathOperation) {
+					op.Summary("Restart the server")
+					op.Description("Signals the server's postmaster to shut down fast, which ends every session, and returns once a supervisor has started it again. It's not available (503) unless pgmanager runs beside the server, with --pg.restart")
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Restart]())
+				},
+			),
+		),
 		router.RegisterPath("setting/{setting}", nil, httprequest.NewPathItem("Settings", "Manage a PostgreSQL setting").Tag("Settings").
 			Get(
 				func(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +138,14 @@ func UpdateSetting(w http.ResponseWriter, r *http.Request, manager *manager.Mana
 
 func Reload(w http.ResponseWriter, r *http.Request, manager *manager.Manager) error {
 	if result, err := manager.Reload(r.Context()); err != nil {
+		return httpresponse.Error(w, pg.HTTPError(err))
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), result)
+	}
+}
+
+func Restart(w http.ResponseWriter, r *http.Request, manager *manager.Manager) error {
+	if result, err := manager.Restart(r.Context()); err != nil {
 		return httpresponse.Error(w, pg.HTTPError(err))
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), result)

@@ -226,3 +226,37 @@ func TestSettingReload(t *testing.T) {
 		assert.NotEqual(t, "max_connections", e.Name)
 	}
 }
+
+// Restarting isn't available, unless it's turned on, and the categories say
+// so, and what waits for a restart
+func TestSettingRestartNotAvailable(t *testing.T) {
+	mgr, ctx := harness.Begin(t)
+	defer harness.End(t)
+
+	_, err := mgr.Restart(ctx)
+	assert.ErrorIs(t, err, pg.ErrNotAvailable)
+
+	// A command which fails isn't a restart, and the server isn't touched
+	failing, err := manager.New(harness.Pool(), manager.WithRestart("sh", "-c", "echo no supervisor >&2; exit 1"))
+	require.NoError(t, err)
+	_, err = failing.Restart(ctx)
+	assert.ErrorIs(t, err, pg.ErrNotAvailable)
+	assert.ErrorContains(t, err, "no supervisor")
+	categories, err := failing.ListSettingCategories(ctx, schema.SettingCategoryListRequest{})
+	require.NoError(t, err)
+	assert.True(t, categories.Restart)
+
+	require.NoError(t, harness.Pool().Exec(ctx, `ALTER SYSTEM SET max_connections = 101`))
+	defer func() {
+		require.NoError(t, harness.Pool().Exec(context.Background(), `ALTER SYSTEM RESET max_connections`))
+		_, err := mgr.Reload(context.Background())
+		require.NoError(t, err)
+	}()
+	_, err = mgr.Reload(ctx)
+	require.NoError(t, err)
+
+	categories, err = mgr.ListSettingCategories(ctx, schema.SettingCategoryListRequest{})
+	require.NoError(t, err)
+	assert.False(t, categories.Restart)
+	assert.Contains(t, categories.PendingRestart, "max_connections")
+}

@@ -8,7 +8,7 @@ import type { SchemaRequest } from './schemaform.ts';
 import type { ExtensionRequest } from './extensionform.ts';
 import type { TablespaceRequest } from './tablespaceform.ts';
 import type { RoleRequest } from './roleform.ts';
-import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type SettingCategory, type SettingReload, type Statement, type StatementSort, type Tablespace } from './schema.ts';
+import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type SettingCategory, type SettingCategoryList, type SettingReload, type Restart, type Statement, type StatementSort, type Tablespace } from './schema.ts';
 
 // listAll returns every page of a list, a page at a time, of at most the
 // limit, from the offset of the items it has, until it has them all
@@ -173,8 +173,8 @@ export function listSettings(client: Client, category: string | undefined, offse
 
 // listSettingCategories returns the top levels of the settings' categories,
 // with how many settings each has, and how many are changed
-export function listSettingCategories(client: Client): Promise<List<SettingCategory>> {
-    return request<List<SettingCategory>>(client, 'GET', 'setting/category');
+export function listSettingCategories(client: Client): Promise<SettingCategoryList> {
+    return request<SettingCategoryList>(client, 'GET', 'setting/category');
 }
 
 // updateSetting changes a setting's value, with ALTER SYSTEM, or removes
@@ -182,6 +182,13 @@ export function listSettingCategories(client: Client): Promise<List<SettingCateg
 // returns it, once the configuration's reloaded
 export function updateSetting(client: Client, name: string, setting: { value: string | null }): Promise<Setting> {
     return request<Setting>(client, 'PATCH', `setting/${encodeURIComponent(name)}`, { body: setting });
+}
+
+// restart restarts the server, which ends every session, and returns once
+// it's started again, by a supervisor. It's not available (503) unless
+// pgmanager runs beside it, with --pg.restart.
+export function restart(client: Client): Promise<Restart> {
+    return request<Restart>(client, 'POST', 'setting/restart');
 }
 
 // reload reloads the configuration files, and returns, once they're

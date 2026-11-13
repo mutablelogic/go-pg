@@ -59,6 +59,7 @@ import TrashIcon from '@carbon/icons/es/trash-can/16.js';
 import ReplicateIcon from '@carbon/icons/es/replicate/32.js';
 import ResetIcon from '@carbon/icons/es/reset/16.js';
 import RenewIcon from '@carbon/icons/es/renew/16.js';
+import RestartIcon from '@carbon/icons/es/restart/16.js';
 import SettingsIcon from '@carbon/icons/es/settings/32.js';
 import SqlIcon from '@carbon/icons/es/SQL/32.js';
 import StoragePoolIcon from '@carbon/icons/es/storage-pool/32.js';
@@ -984,12 +985,64 @@ function renderTypes() {
 // settings each has, and how many are changed, which choose the settings
 // which are shown, of which the table shows the categories under it. The
 // first is chosen, until another is, or when the chosen one's gone.
+// The settings which wait for the server to restart, and whether pgmanager
+// can restart it, which the categories have, are shown above them
+let pendingRestart: string[] = [];
+let canRestart = false;
 const settingCategories = new ListController<SettingCategory>({
     name: 'Setting categories',
-    list: () => api.listSettingCategories(client),
+    list: async () => {
+        const list = await api.listSettingCategories(client);
+        pendingRestart = list.pending_restart ?? [];
+        canRestart = list.restart ?? false;
+        renderRestart();
+        return list;
+    },
     same: (a, b) => a.name === b.name,
     notifications, changes, filter: { table: 'setting' },
 });
+const restartView = document.getElementById('setting-restart');
+function renderRestart() {
+    if (restartView) {
+        render(views.restartBanner(pendingRestart, canRestart, restartServer), restartView);
+    }
+    const header = pageHeader('settings');
+    if (header) {
+        header.actions = [
+            ...(canRestart ? [{ label: 'Restart', kind: 'danger' as const, icon: RestartIcon, run: restartServer }] : []),
+            { label: 'Reload', kind: 'secondary', icon: RenewIcon, run: reloadSettings },
+        ];
+    }
+}
+
+// restartServer restarts the server, once it's confirmed, as it ends every
+// session, and loads the settings again, once it's started
+function restartServer() {
+    if (!confirm('Restart PostgreSQL? Every session is ended, and open transactions are rolled back.')) {
+        return;
+    }
+    notifications.push({ kind: 'info', title: 'Restarting PostgreSQL…' });
+    api.restart(client).then(async () => {
+        notifications.push({ kind: 'success', title: 'PostgreSQL was restarted' });
+        await loadAlterSystem();
+        void settings.refresh();
+        void settingCategories.refresh();
+    }).catch((error) => notifications.error("PostgreSQL couldn't be restarted", error));
+}
+
+// reloadSettings reloads the configuration files, and says what's waiting
+// for a restart, and what's skipped, as the files have errors
+function reloadSettings() {
+    api.reload(client).then(async (result) => {
+        notifications.push(reloadNotification(result));
+        // allow_alter_system may have changed in the configuration file,
+        // so it's read again, before the settings show what can be changed
+        await loadAlterSystem();
+        void settings.refresh();
+        void settingCategories.refresh();
+    }).catch((error) => notifications.error("The configuration couldn't be reloaded", error));
+}
+renderRestart();
 const settingTiles = document.getElementById('setting-tiles') as TilesElement<SettingCategory> | null;
 function renderSettingTiles() {
     if (settingTiles) {
@@ -1045,27 +1098,6 @@ if (tablespacesHeader) {
 const rolesHeader = pageHeader('roles');
 if (rolesHeader) {
     rolesHeader.actions = [{ label: 'Create a role', icon: AddIcon, run: () => void editRole().catch((error) => notifications.error("The form couldn't be opened", error)) }];
-}
-// The settings' action reloads the configuration files, and says what's
-// waiting for a restart, and what's skipped, as the files have errors
-const settingsHeader = pageHeader('settings');
-if (settingsHeader) {
-    settingsHeader.actions = [{
-        label: 'Reload',
-        kind: 'secondary',
-        icon: RenewIcon,
-        run: () => {
-            api.reload(client).then(async (result) => {
-                notifications.push(reloadNotification(result));
-                // allow_alter_system may have changed in the configuration
-                // file, so it's read again, before the settings show what
-                // can be changed
-                await loadAlterSystem();
-                void settings.refresh();
-                void settingCategories.refresh();
-            }).catch((error) => notifications.error("The configuration couldn't be reloaded", error));
-        },
-    }];
 }
 const statementsHeader = pageHeader('statements');
 if (statementsHeader) {

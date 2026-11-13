@@ -381,10 +381,12 @@ function extensionVersion(ext: Extension): string {
     return ext.installed_version;
 }
 
-export const extensionColumns: Column<Extension>[] = [
+// extensionColumns are the extensions' columns: those installed in a
+// database have a schema, and those the server has available don't
+export const extensionColumns = (installed: boolean): Column<Extension>[] => [
     { header: 'Extension', cell: (ext) => ext.name, sort: 'name', sortFirst: 'ascending' },
     { header: 'Version', cell: (ext) => extensionVersion(ext), sort: 'version' },
-    { header: 'Schema', cell: (ext) => ext.schema ?? '', sort: 'schema', sortFirst: 'ascending' },
+    ...(installed ? [{ header: 'Schema', cell: (ext: Extension) => ext.schema ?? '', sort: 'schema', sortFirst: 'ascending' as const }] : []),
     { header: 'Description', cell: (ext) => description(ext.comment) },
 ];
 

@@ -587,7 +587,7 @@ async function deleteTablespace(space: Tablespace) {
     panel.close();
     void tablespaces.refresh();
 }
-table('extension-table', extensions, ListLimits.extension, views.extensionColumns, extensionView);
+table('extension-table', extensions, ListLimits.extension, views.extensionColumns(false), extensionView);
 
 // extensionView is an extension in the panel, which, when it's one a
 // database has, can be removed from it, or else installed in one
@@ -1064,6 +1064,10 @@ databaseTiles('statement', statements, async (database) => (await listStatements
 });
 databaseTiles('extension', extensions, async (database) => (await api.listExtensions(client, database ? { database, installed: true } : {}, 0, 1)).count, (database) => {
     extensionDatabase = database;
+    const extensionTable = document.getElementById('extension-table') as TableElement<Extension> | null;
+    if (extensionTable) {
+        extensionTable.columns = views.extensionColumns(database !== undefined);
+    }
 }, 'Available');
 databaseTiles('connection', connections, async (database) => (await api.listConnections(client, { database }, 0, 1)).count, (database) => {
     connectionDatabase = database;

@@ -83,6 +83,7 @@ export interface Setting {
     context: string;
     description?: string;
     extra_desc?: string;
+    changed?: boolean;
 }
 
 // Tablespace is a tablespace, with its location, and its size, in bytes

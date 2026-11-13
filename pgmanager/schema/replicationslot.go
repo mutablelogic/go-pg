@@ -43,6 +43,11 @@ type ReplicationSlot struct {
 // ReplicationSlotListRequest contains parameters for listing replication slots
 type ReplicationSlotListRequest struct {
 	pg.OffsetLimit
+
+	// Sort is what the slots are sorted by, and Order its direction, asc or
+	// desc, which is asc when it's empty. Empty values are last, either way.
+	Sort  string `json:"sort,omitempty" help:"Sort by name, type, database, plugin, status or lag"`
+	Order string `json:"order,omitempty" help:"Order of the sort (asc or desc)"`
 }
 
 // ReplicationSlotList is a list of replication slots with a total count
@@ -122,6 +127,12 @@ func (d ReplicationSlotListRequest) Query() url.Values {
 	if d.Limit != nil {
 		q.Set("limit", fmt.Sprint(types.Value(d.Limit)))
 	}
+	if d.Sort != "" {
+		q.Set("sort", d.Sort)
+	}
+	if d.Order != "" {
+		q.Set("order", d.Order)
+	}
 	return q
 }
 
@@ -182,9 +193,24 @@ func (n ReplicationSlotName) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	}
 }
 
+// replicationSlotSorts are what replication slots sort by: a physical
+// slot has no database, or plugin, and a slot without a client no lag
+var replicationSlotSorts = sortColumns{
+	"name":     {`"name"`},
+	"type":     {`"type"`},
+	"database": {`NULLIF("database", '')`},
+	"plugin":   {`NULLIF("plugin", '')`},
+	"status":   {`"status"`},
+	"lag":      {`"lag_bytes"`},
+}
+
 func (r *ReplicationSlotListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	bind.Set("where", "")
-	bind.Set("orderby", "ORDER BY name ASC")
+	orderby, err := orderBy(r.Sort, r.Order, replicationSlotSorts, `ORDER BY "name" ASC`, `"name"`)
+	if err != nil {
+		return "", err
+	}
+	bind.Set("orderby", orderby)
 
 	r.OffsetLimit.Bind(bind, ReplicationSlotListLimit)
 

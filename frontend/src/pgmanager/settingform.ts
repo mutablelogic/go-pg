@@ -55,15 +55,24 @@ export function settingFormErrors(setting: Setting, form: SettingForm): SettingF
 }
 
 // settingRequest is the setting's value, as pgmanager takes it, which is
-// null to remove the value set by ALTER SYSTEM
-export function settingRequest(form?: SettingForm): { value: string | null } {
-    return { value: form ? form.value.trim() : null };
+// null to remove the value set by ALTER SYSTEM. A string is as it's typed,
+// as its spaces can matter, such as log_line_prefix's last, and the others
+// are trimmed.
+export function settingRequest(setting: Setting, form?: SettingForm): { value: string | null } {
+    if (!form) {
+        return { value: null };
+    }
+    return { value: setting.type === 'string' ? form.value : form.value.trim() };
 }
 
 // settingReadOnly returns why a setting can't be changed, or else undefined:
-// it's PostgreSQL's own, or it needs a restart, which pgmanager can't do,
-// or ALTER SYSTEM is turned off, with allow_alter_system
+// it's allow_alter_system, which ALTER SYSTEM can't change, it's
+// PostgreSQL's own, or it needs a restart, which pgmanager can't do, or
+// ALTER SYSTEM is turned off, with allow_alter_system
 export function settingReadOnly(setting: Setting, alterSystem = true): string | undefined {
+    if (setting.name === 'allow_alter_system') {
+        return "ALTER SYSTEM can't change it, so it's changed in the configuration file, or on the command line.";
+    }
     switch (setting.context) {
         case 'internal':
             return "It's set when PostgreSQL is built, or its data directory created, so it can't be changed.";

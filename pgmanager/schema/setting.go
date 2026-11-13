@@ -433,9 +433,10 @@ const (
 
 	// settingFileList are a setting's values in the configuration files, in
 	// the order they're read, without those which are in error, and
-	// settingFileAccess is whether they can be read
+	// settingFileAccess is whether they can be read, which needs the view,
+	// and the function it calls
 	settingFileList     = `SELECT sourcefile, setting FROM pg_catalog.pg_file_settings WHERE lower(name) = lower(@name) AND error IS NULL AND setting IS NOT NULL ORDER BY seqno`
-	settingFileAccess   = `SELECT has_function_privilege('pg_catalog.pg_show_all_file_settings()', 'EXECUTE')`
+	settingFileAccess   = `SELECT has_function_privilege('pg_catalog.pg_show_all_file_settings()', 'EXECUTE') AND has_table_privilege('pg_catalog.pg_file_settings', 'SELECT')`
 	settingCategoryList = `
 		SELECT
 			split_part(category, ' / ', 1) AS "name",

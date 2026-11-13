@@ -541,10 +541,15 @@ function settingView(setting: Setting): Omit<Item, 'kind'> {
 // saveSetting changes a setting's value, or removes the value set by ALTER
 // SYSTEM, when it's null, and shows it, once it's reloaded
 async function saveSetting(setting: Setting, value: string | null) {
+    // The panel shows the saved setting, unless it's been closed, or shows
+    // something else, by the time it's reloaded
+    const item = panel.current.item;
     const saved = await api.updateSetting(client, setting.name, { value });
     void settings.refresh();
     void settingCategories.refresh();
-    open({ kind: 'setting-table', ...settingView(saved) });
+    if (panel.current.open && panel.current.item === item) {
+        open({ kind: 'setting', ...settingView(saved) });
+    }
 }
 
 // editSetting shows the form of a setting, in the panel, which saves it, and
@@ -559,7 +564,7 @@ function editSetting(setting: Setting) {
         subtitle: setting.category,
         body: view(),
         actions: [
-            { label: 'Cancel', kind: 'secondary', close: false, run: () => open({ kind: 'setting-table', ...settingView(setting) }) },
+            { label: 'Cancel', kind: 'secondary', close: false, run: () => open({ kind: 'setting', ...settingView(setting) }) },
             {
                 label: 'Save',
                 kind: 'primary',
@@ -570,12 +575,15 @@ function editSetting(setting: Setting) {
                         render(view(), panelView);
                     }
                     if (!Object.keys(errors).length) {
-                        await saveSetting(setting, settingRequest(form).value);
+                        await saveSetting(setting, settingRequest(setting, form).value);
                     }
                 },
             },
         ],
     });
+    // The settings table's selection is closed, once the form's open, so a
+    // refresh doesn't show the setting again in place of the form
+    settings.close();
 }
 table('tablespace-table', tablespaces, ListLimits.tablespace, views.tablespaceColumns, tablespaceView);
 

@@ -151,11 +151,11 @@ var extensionSorts = sortColumns{
 }
 
 // versionSort sorts a version as numbers, such as 1.10, as [1,10], when
-// it's numbers, and then as text, for versions such as 1.0beta, which are
-// after those which are numbers
+// it's numbers, of any size, and then as text, for versions such as
+// 1.0beta, which are after those which are numbers
 func versionSort(version string) []string {
 	return []string{
-		`CASE WHEN ` + version + ` ~ '^[0-9]+(\.[0-9]+)*\Z' THEN string_to_array(` + version + `, '.')::int[] END`,
+		`CASE WHEN ` + version + ` ~ '^[0-9]+(\.[0-9]+)*\Z' THEN string_to_array(` + version + `, '.')::numeric[] END`,
 		version,
 	}
 }

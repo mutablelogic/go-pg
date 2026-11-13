@@ -152,13 +152,15 @@ const extensions = new ListController<Extension>({
     // Without a database, the extensions are the server's, so only what's
     // the same in every database is kept, rather than what's installed in
     // the database pgmanager connects to
-    // The server's extensions show their default version, so they sort by it
+    // The server's extensions show their default version, so they sort by
+    // it, and have no schema, so a sort by it, from a database, is by name
     list: async (offset, limit, sort) => {
         if (extensionDatabase) {
             return api.listExtensions(client, { database: extensionDatabase, installed: true, ...api.listSort(sort) }, offset, limit);
         }
         const order = api.listSort(sort);
-        const list = await api.listExtensions(client, { ...order, sort: order.sort === 'version' ? 'default_version' : order.sort }, offset, limit);
+        const server = order.sort === 'schema' ? {} : { ...order, sort: order.sort === 'version' ? 'default_version' : order.sort };
+        const list = await api.listExtensions(client, server, offset, limit);
         return { ...list, body: list.body?.map(({ name, default_version, comment }) => ({ name, default_version, comment })) };
     },
     same: (a, b) => a.name === b.name && a.database === b.database,

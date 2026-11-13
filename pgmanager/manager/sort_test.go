@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	// Packages
+	pg "github.com/mutablelogic/go-pg"
 	schema "github.com/mutablelogic/go-pg/pgmanager/schema"
 	harness "github.com/mutablelogic/go-pg/pgmanager/test"
 	types "github.com/mutablelogic/go-server/pkg/types"
@@ -94,4 +95,42 @@ func TestExtensionSortVersion(t *testing.T) {
 	}
 	require.NotEmpty(t, versions)
 	assert.True(t, slices.IsSortedFunc(versions, slices.Compare[[]int]))
+}
+
+// Versions sort as numbers, of any size, and versions which aren't numbers
+// are after them, either way
+func TestExtensionVersionOrder(t *testing.T) {
+	_, ctx := harness.Begin(t)
+	defer harness.End(t)
+
+	for order, want := range map[string][]string{
+		"asc":  {"1.9", "1.10", "2147483648.0", "1.0beta"},
+		"desc": {"2147483648.0", "1.10", "1.9", "1.0beta"},
+	} {
+		bind := pg.NewBind()
+		_, err := (&schema.ExtensionListRequest{Sort: "default_version", Order: order}).Select(bind, pg.List)
+		require.NoError(t, err)
+		var got versions
+		require.NoError(t, harness.Pool().With("orderby", bind.Get("orderby")).List(ctx, &got, versionQuery(`SELECT "default_version" FROM (VALUES ('a', '1.10'), ('b', '2147483648.0'), ('c', '1.0beta'), ('d', '1.9')) AS q("name", "default_version") ${orderby}`)))
+		assert.Equal(t, want, []string(got), order)
+	}
+}
+
+// versions are the rows of a query, of a version each
+type versions []string
+
+func (v *versions) Scan(row pg.Row) error {
+	var version string
+	if err := row.Scan(&version); err != nil {
+		return err
+	}
+	*v = append(*v, version)
+	return nil
+}
+
+// versionQuery is a query, as a list's selector
+type versionQuery string
+
+func (q versionQuery) Select(*pg.Bind, pg.Op) (string, error) {
+	return string(q), nil
 }

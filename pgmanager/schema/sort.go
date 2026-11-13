@@ -21,16 +21,9 @@ type sortColumns map[string][]string
 // orderBy returns the ORDER BY clause of a list, by the expressions of the
 // sort, in the order, asc or desc, with empty values last in either, and
 // then by the ties, ascending, so the pages are stable. Without a sort, it's
-// the list's own order, unsorted, whatever the order. A sort, or order,
-// which isn't one is a bad parameter.
+// the list's own order, unsorted. A sort, or order, which isn't one is a bad
+// parameter, with a sort or without.
 func orderBy(sort, order string, columns sortColumns, unsorted string, ties ...string) (string, error) {
-	if sort == "" {
-		return unsorted, nil
-	}
-	exprs, exists := columns[strings.ToLower(sort)]
-	if !exists {
-		return "", pg.ErrBadParameter.Withf("invalid sort parameter %q", sort)
-	}
 	var direction string
 	switch strings.ToLower(order) {
 	case "", "asc":
@@ -39,6 +32,13 @@ func orderBy(sort, order string, columns sortColumns, unsorted string, ties ...s
 		direction = "DESC"
 	default:
 		return "", pg.ErrBadParameter.Withf("invalid order parameter %q", order)
+	}
+	if sort == "" {
+		return unsorted, nil
+	}
+	exprs, exists := columns[strings.ToLower(sort)]
+	if !exists {
+		return "", pg.ErrBadParameter.Withf("invalid sort parameter %q", sort)
 	}
 	terms := make([]string, 0, len(exprs)+len(ties))
 	for _, expr := range exprs {

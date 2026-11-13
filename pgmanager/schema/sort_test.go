@@ -22,7 +22,7 @@ func Test_ListRequest_Sort(t *testing.T) {
 		{"setting changed", &schema.SettingListRequest{Sort: "changed", Order: "DESC"}, `ORDER BY "changed" DESC NULLS LAST, "name" ASC`},
 		{"tablespace location", &schema.TablespaceListRequest{Sort: "location"}, `ORDER BY NULLIF("location", '') ASC NULLS LAST, "name" ASC`},
 		{"slot lag", &schema.ReplicationSlotListRequest{Sort: "lag", Order: "desc"}, `ORDER BY "lag_bytes" DESC NULLS LAST, "name" ASC`},
-		{"extension version", &schema.ExtensionListRequest{Sort: "version"}, `ORDER BY CASE WHEN COALESCE("installed_version", "default_version") ~ '^[0-9]+(\.[0-9]+)*\Z' THEN string_to_array(COALESCE("installed_version", "default_version"), '.')::int[] END ASC NULLS LAST, COALESCE("installed_version", "default_version") ASC NULLS LAST, "name" ASC`},
+		{"extension version", &schema.ExtensionListRequest{Sort: "version"}, `ORDER BY CASE WHEN COALESCE("installed_version", "default_version") ~ '^[0-9]+(\.[0-9]+)*\Z' THEN string_to_array(COALESCE("installed_version", "default_version"), '.')::numeric[] END ASC NULLS LAST, COALESCE("installed_version", "default_version") ASC NULLS LAST, "name" ASC`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -41,6 +41,7 @@ func Test_ListRequest_Sort(t *testing.T) {
 		&schema.TablespaceListRequest{Sort: "size", Order: "up"},
 		&schema.ReplicationSlotListRequest{Sort: "client_addr"},
 		&schema.ExtensionListRequest{Sort: "comment"},
+		&schema.RoleListRequest{Order: "up"},
 	} {
 		_, err := req.Select(pg.NewBind(), pg.List)
 		assert.ErrorIs(t, err, pg.ErrBadParameter)

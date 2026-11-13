@@ -46,6 +46,28 @@ type Setting struct {
 	// configuration file, or by ALTER SYSTEM, rather than its default, or
 	// this connection's
 	Changed bool `json:"changed,omitempty"`
+
+	// Type is the setting's type: bool, enum, integer, real or string
+	Type string `json:"type"`
+
+	// Min and Max are the limits of an integer or real, in its unit
+	Min *string `json:"min,omitempty"`
+	Max *string `json:"max,omitempty"`
+
+	// Values are the values an enum can be
+	Values []string `json:"values,omitempty"`
+
+	// Default is the value it has when it isn't set, which PostgreSQL is
+	// built with, in its unit
+	Default *string `json:"default,omitempty"`
+
+	// Source is where its value is from, such as default, configuration file,
+	// or command line
+	Source string `json:"source"`
+
+	// PendingRestart is true when it's changed in the configuration, but the
+	// server needs to restart before it takes effect
+	PendingRestart bool `json:"pending_restart,omitempty"`
 }
 
 // SettingListRequest is used to retrieve server settings
@@ -267,7 +289,7 @@ func (m SettingMeta) Update(bind *pg.Bind) error {
 // READER
 
 func (s *Setting) Scan(row pg.Row) error {
-	return row.Scan(&s.Name, &s.Value, &s.Unit, &s.Category, &s.Context, &s.Description, &s.ExtraDesc, &s.Changed)
+	return row.Scan(&s.Name, &s.Value, &s.Unit, &s.Category, &s.Context, &s.Description, &s.ExtraDesc, &s.Changed, &s.Type, &s.Min, &s.Max, &s.Values, &s.Default, &s.Source, &s.PendingRestart)
 }
 
 func (l *SettingList) Scan(row pg.Row) error {
@@ -314,7 +336,14 @@ const (
 			context AS "context",
 			COALESCE(short_desc, '') AS "description",
 			COALESCE(extra_desc, '') AS "extra_desc",
-			` + settingChanged + ` AS "changed"
+			` + settingChanged + ` AS "changed",
+			vartype AS "type",
+			min_val AS "min",
+			max_val AS "max",
+			enumvals AS "values",
+			boot_val AS "default",
+			source AS "source",
+			pending_restart AS "pending_restart"
 		FROM
 			pg_catalog.pg_settings
 	`

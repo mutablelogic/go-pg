@@ -110,6 +110,8 @@ func (manager *Manager) DeleteRole(ctx context.Context, name string) (_ *schema.
 	var role schema.Role
 	if err := manager.conn.Get(ctx, &role, schema.RoleName(name)); err != nil {
 		return nil, err
+	} else if role.Current {
+		return nil, pg.ErrConflict.Withf("pgmanager runs as role %q, so it can't be deleted", name)
 	} else if err := manager.conn.Delete(ctx, nil, schema.RoleName(name)); err != nil {
 		return nil, err
 	}

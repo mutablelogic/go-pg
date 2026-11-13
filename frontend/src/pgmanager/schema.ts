@@ -11,6 +11,7 @@ export interface Database {
     owner?: string;
     acl?: string[];
     bytes?: number;
+    current?: boolean;
 }
 
 // Role is a role, with its permissions, and the roles it's a member of
@@ -29,6 +30,7 @@ export interface Role {
     expires?: string;
     memberof?: string[];
     predefined?: boolean;
+    current?: boolean;
 }
 
 // PgObject is an object of a database, such as a table, or an index, in
@@ -71,6 +73,7 @@ export interface Connection {
     query_start?: string;
     query?: string;
     state?: string;
+    current?: boolean;
 }
 
 // Setting is a setting of the server, with its value, its unit, its

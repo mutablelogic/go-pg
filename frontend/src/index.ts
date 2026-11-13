@@ -263,8 +263,11 @@ function roleView(role: Role): Omit<Item, 'kind'> {
     return {
         title: role.name,
         subtitle: role.predefined ? 'Predefined role' : 'Role',
-        body: views.roleBody(role, openRole, describeRole),
-        actions: role.predefined ? undefined : [
+        body: html`${role.current ? html`<p class="helper">pgmanager runs as this role, so it can't be deleted.</p>` : ''}${views.roleBody(role, openRole, describeRole)}`,
+        actions: role.predefined ? undefined : role.current ? [
+            { label: 'Edit', kind: 'secondary', close: false, run: () => editRole(role) },
+            closeAction,
+        ] : [
             { label: 'Delete', kind: 'danger', close: false, run: () => deleteRole(role) },
             { label: 'Edit', kind: 'secondary', close: false, run: () => editRole(role) },
             closeAction,
@@ -448,8 +451,8 @@ function connectionView(conn: Connection): Omit<Item, 'kind'> {
     return {
         title: `Connection ${conn.pid}`,
         subtitle: [conn.role, conn.database].filter(Boolean).join(' · '),
-        body: views.connectionBody(conn),
-        actions: [
+        body: html`${conn.current ? html`<p class="helper">This is pgmanager's own connection, which read the connections, so it can't be ended, or cancelled.</p>` : ''}${views.connectionBody(conn)}`,
+        actions: conn.current ? undefined : [
             { label: 'End the session', kind: 'danger', close: false, run: () => endConnection(conn) },
             ...(conn.state === 'active' ? [{ label: 'Cancel the query', kind: 'secondary' as const, close: false, run: () => cancelConnection(conn) }] : []),
             closeAction,
@@ -941,12 +944,13 @@ function showDatabase(name: string) {
     if (header) {
         header.heading = name;
         // Its description, its owner, as a role is shown, and its size
-        header.details = db ? html`${[db.comment, db.owner && html`<span title="Owner">${views.roleName(db.owner)}</span>`, views.formatBytes(db.bytes)]
+        header.details = db ? html`${[db.comment, db.owner && html`<span title="Owner">${views.roleName(db.owner)}</span>`, views.formatBytes(db.bytes), db.current && views.connected]
             .filter(Boolean)
             .map((part, i) => html`${i ? ' · ' : ''}${part}`)}` : undefined;
         header.actions = [
             ...(db ? [
-                { label: 'Delete', kind: 'danger' as const, icon: TrashIcon, run: () => void deleteDatabase(db).catch((error) => notifications.error(`The database ${db.name} couldn't be deleted`, error)) },
+                // pgmanager's own database can't be deleted
+                ...(db.current ? [] : [{ label: 'Delete', kind: 'danger' as const, icon: TrashIcon, run: () => void deleteDatabase(db).catch((error) => notifications.error(`The database ${db.name} couldn't be deleted`, error)) }]),
                 { label: 'Change', kind: 'secondary' as const, icon: EditIcon, run: () => void editDatabase(db).catch((error) => notifications.error("The form couldn't be opened", error)) },
             ] : []),
             { label: 'Create a database', icon: AddIcon, run: () => void editDatabase().catch((error) => notifications.error("The form couldn't be opened", error)) },
@@ -1213,7 +1217,11 @@ function describeRole(name: string): string | undefined {
 function loadRoleDescriptions() {
     Promise.all([false, true].map((predefined) => api.listAll((offset, limit) => api.listRoles(client, predefined, offset, limit), ListLimits.role))).then((lists) => {
         roleDescriptions.clear();
-        lists.flatMap((list) => list.body ?? []).forEach((role) => roleDescriptions.set(role.name, role.comment));
+        const all = lists.flatMap((list) => list.body ?? []);
+        all.forEach((role) => roleDescriptions.set(role.name, role.comment));
+        // The role pgmanager runs as is badged wherever a role is shown,
+        // including what's shown already, whose badges render again
+        views.setCurrentRole(all.find((role) => role.current)?.name);
     }).catch(() => {
         // The descriptions are left out, as the roles say why they can't be
         // loaded

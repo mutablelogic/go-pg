@@ -41,6 +41,10 @@ type Role struct {
 	// Predefined is true for PostgreSQL's own roles, such as pg_monitor,
 	// whose names start with pg_, which is reserved
 	Predefined bool `json:"predefined,omitempty" help:"PostgreSQL's own role, such as pg_monitor"`
+
+	// Current is true for the role pgmanager runs as, which can't be
+	// deleted
+	Current bool `json:"current,omitempty" help:"The role pgmanager runs as"`
 }
 
 type RoleListRequest struct {
@@ -303,7 +307,7 @@ func (r RoleMeta) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 func (r *Role) Scan(row pg.Row) error {
 	var connlimit int64
-	if err := row.Scan(&r.Oid, &r.Name, &r.Superuser, &r.Inherit, &r.CreateRoles, &r.CreateDatabases, &r.Replication, &connlimit, &r.BypassRowLevelSecurity, &r.Login, &r.Password, &r.Expires, &r.Groups, &r.Predefined, &r.Comment); err != nil {
+	if err := row.Scan(&r.Oid, &r.Name, &r.Superuser, &r.Inherit, &r.CreateRoles, &r.CreateDatabases, &r.Replication, &connlimit, &r.BypassRowLevelSecurity, &r.Login, &r.Password, &r.Expires, &r.Groups, &r.Predefined, &r.Comment, &r.Current); err != nil {
 		return err
 	}
 	if connlimit >= 0 {
@@ -473,7 +477,8 @@ const (
 				"oid", "rolname", "rolsuper", "rolinherit", "rolcreaterole", "rolcreatedb", "rolreplication", "rolconnlimit", "rolbypassrls", "rolcanlogin", "rolpassword", NULLIF("rolvaliduntil", 'infinity') AS "rolvaliduntil",
                 ARRAY(SELECT R2.rolname FROM "pg_catalog".pg_auth_members M JOIN "pg_catalog".pg_roles R2 ON M.roleid = R2.oid WHERE M.member = R.oid) AS groups,
 				"rolname" LIKE 'pg\_%' AS "predefined",
-				shobj_description(R.oid, 'pg_authid') AS "comment"
+				shobj_description(R.oid, 'pg_authid') AS "comment",
+				"rolname" = current_user AS "current"
 			FROM
 				${"schema"}."pg_roles" R
 		) SELECT * FROM roles

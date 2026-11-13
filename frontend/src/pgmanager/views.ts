@@ -2,6 +2,7 @@
 // bodies of the panels which show one
 
 import { html, type TemplateResult } from 'lit';
+import { you } from './current.ts';
 import iconLoader from '@carbon/web-components/es/globals/internal/icon-loader.js';
 import UserIcon from '@carbon/icons/es/user/16.js';
 import TrashIcon from '@carbon/icons/es/trash-can/16.js';
@@ -49,8 +50,12 @@ export function roleName(name?: string) {
     if (!name) {
         return '';
     }
-    return html`<span style="display: inline-flex; align-items: center; gap: 0.25rem">${iconLoader(UserIcon, { width: '12', height: '12', 'aria-hidden': 'true', style: 'flex: none; fill: currentColor' })}${name}</span>`;
+    return html`<span style="display: inline-flex; align-items: center; gap: 0.25rem">${iconLoader(UserIcon, { width: '12', height: '12', 'aria-hidden': 'true', style: 'flex: none; fill: currentColor' })}${name}<pgm-you name=${name}></pgm-you></span>`;
 }
+
+// you, and setCurrentRole, which badges the role pgmanager runs as,
+// wherever it's shown, once it's known
+export { connected, setCurrentRole, you } from './current.ts';
 
 // ownerBadge is a tile's badge of its owner, with a person, which says it's
 // the owner, when it's hovered
@@ -226,7 +231,7 @@ function tag(text?: string, type = 'gray') {
 const stateColours: Record<string, string> = { active: 'green', idle: 'gray', 'idle in transaction': 'warm-gray', 'idle in transaction (aborted)': 'red' };
 
 export const connectionColumns: Column<Connection>[] = [
-    { header: 'PID', cell: (conn) => conn.pid },
+    { header: 'PID', cell: (conn) => html`${conn.pid}${conn.current ? you : ''}` },
     { header: 'Database', cell: (conn) => conn.database, sort: 'database', sortFirst: 'ascending' },
     { header: 'Role', cell: (conn) => roleName(conn.role), sort: 'role', sortFirst: 'ascending' },
     { header: 'Application', cell: (conn) => conn.application ?? '', sort: 'application', sortFirst: 'ascending' },

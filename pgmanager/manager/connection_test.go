@@ -78,3 +78,30 @@ func TestConnectionCancelAndDelete(t *testing.T) {
 	_, err = mgr.CancelConnection(ctx, 1)
 	assert.ErrorIs(t, err, pg.ErrNotFound)
 }
+
+// A connection whose role is dropped, while it's connected, has no role,
+// and is still listed
+func TestConnectionOfDroppedRole(t *testing.T) {
+	mgr, ctx := harness.Begin(t)
+	defer harness.End(t)
+
+	// A connection, by dblink, as a role, which is then dropped
+	require.NoError(t, harness.Pool().Exec(ctx, `CREATE EXTENSION IF NOT EXISTS dblink`))
+	require.NoError(t, harness.Pool().Exec(ctx, `CREATE ROLE dropped_role LOGIN PASSWORD 'dropped'`))
+	require.NoError(t, harness.Pool().Exec(ctx, `SELECT dblink_connect('dropped', 'host=localhost dbname=postgres user=dropped_role password=dropped')`))
+	defer func() {
+		_ = harness.Pool().Exec(context.Background(), `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename IS NULL AND datname IS NOT NULL`)
+	}()
+	require.NoError(t, harness.Pool().Exec(ctx, `DROP ROLE dropped_role`))
+
+	// It's listed, without a role
+	list, err := mgr.ListConnections(ctx, schema.ConnectionListRequest{})
+	require.NoError(t, err)
+	found := false
+	for _, conn := range list.Body {
+		if conn.Role == "" {
+			found = true
+		}
+	}
+	assert.True(t, found)
+}

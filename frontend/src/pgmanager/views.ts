@@ -251,6 +251,15 @@ function settingValue(setting: Setting): string {
     return setting.value === null ? '' : setting.unit ? `${setting.value} ${setting.unit}` : setting.value;
 }
 
+// settingValueCell is a setting's value, in a table, with a pencil after it
+// when it's changed from its default, which says so when it's hovered
+function settingValueCell(setting: Setting) {
+    if (!setting.changed) {
+        return settingValue(setting);
+    }
+    return html`<span style="display: inline-flex; align-items: center; gap: 0.25rem">${settingValue(setting)}<span title="Changed from its default" style="display: inline-flex">${iconLoader(EditIcon, { width: '12', height: '12', 'aria-label': 'Changed from its default', style: 'flex: none; fill: currentColor' })}</span></span>`;
+}
+
 // subcategory is a setting's category, under the top level, such as Locale
 // and Formatting, under Client Connection Defaults, or else its category
 function subcategory(category: string, top?: string): string {
@@ -264,7 +273,7 @@ function subcategory(category: string, top?: string): string {
 // categories, whose settings show the category under it, or of all
 export const settingColumns = (top?: string): Column<Setting>[] => [
     { header: 'Setting', cell: (setting) => setting.name, sort: 'name', sortFirst: 'ascending' },
-    { header: 'Value', cell: (setting) => settingValue(setting) },
+    { header: 'Value', cell: (setting) => settingValueCell(setting) },
     { header: 'Category', cell: (setting) => subcategory(setting.category, top), sort: 'category', sortFirst: 'ascending' },
     { header: 'Context', cell: (setting) => tag(setting.context), sort: 'context', sortFirst: 'ascending' },
 ];

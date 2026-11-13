@@ -22,7 +22,7 @@ func (manager *Manager) RegisterDatabaseMetrics(name string) (err error) {
 		name, metric.WithDescription("Size of database in bytes"),
 	); err != nil {
 		return pg.ErrInternalServerError.Withf("RegisterDatabaseMetrics: %v", err)
-	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) error {
+	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) (err error) {
 		// Otel span
 		ctx, endSpan := otel.StartSpan(manager.tracer, parent, "ObserveDatabaseMetrics",
 			attribute.String("name", name),
@@ -55,7 +55,7 @@ func (manager *Manager) RegisterSchemaMetrics(name string) error {
 		name, metric.WithDescription("Size of schema in bytes"),
 	); err != nil {
 		return pg.ErrInternalServerError.Withf("RegisterSchemaMetrics: %v", err)
-	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) error {
+	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) (err error) {
 		// Otel span
 		ctx, endSpan := otel.StartSpan(manager.tracer, parent, "ObserveSchemaMetrics",
 			attribute.String("name", name),
@@ -89,7 +89,7 @@ func (manager *Manager) RegisterConnectionMetrics(name string) error {
 		name, metric.WithDescription("Number of active connections"),
 	); err != nil {
 		return pg.ErrInternalServerError.Withf("RegisterConnectionMetrics: %v", err)
-	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) error {
+	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) (err error) {
 		// Otel span
 		ctx, endSpan := otel.StartSpan(manager.tracer, parent, "ObserveConnectionMetrics",
 			attribute.String("name", name),
@@ -148,7 +148,7 @@ func (manager *Manager) RegisterTablespaceMetrics(name string) error {
 		name, metric.WithDescription("Size of tablespace in bytes"),
 	); err != nil {
 		return pg.ErrInternalServerError.Withf("RegisterTablespaceMetrics: %v", err)
-	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) error {
+	} else if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) (err error) {
 		// Otel span
 		ctx, endSpan := otel.StartSpan(manager.tracer, parent, "ObserveTablespaceMetrics",
 			attribute.String("name", name),
@@ -191,7 +191,7 @@ func (manager *Manager) RegisterReplicationSlotMetrics(name string) error {
 		return pg.ErrInternalServerError.Withf("RegisterReplicationSlotMetrics: %v", err)
 	}
 
-	if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) error {
+	if _, err := manager.metrics.RegisterCallback(func(parent context.Context, observer metric.Observer) (err error) {
 		// Otel span
 		ctx, endSpan := otel.StartSpan(manager.tracer, parent, "ObserveReplicationSlotMetrics",
 			attribute.String("name", name),

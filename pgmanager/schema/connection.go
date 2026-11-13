@@ -236,9 +236,12 @@ func (c ConnectionPid) Select(bind *pg.Bind, op pg.Op) (string, error) {
 func (c *Connection) Scan(row pg.Row) error {
 	var result bool
 	var connStart, queryStart *time.Time
-	if err := row.Scan(&c.Pid, &c.Database, &c.Role, &c.Application, &c.ClientAddr, &c.ClientPort, &connStart, &queryStart, &c.Query, &c.State, &result); err != nil {
+	// A connection whose role is dropped, while it's connected, has none
+	var role *string
+	if err := row.Scan(&c.Pid, &c.Database, &role, &c.Application, &c.ClientAddr, &c.ClientPort, &connStart, &queryStart, &c.Query, &c.State, &result); err != nil {
 		return err
 	}
+	c.Role = types.Value(role)
 	c.ConnStart = types.Value(connStart)
 	c.QueryStart = types.Value(queryStart)
 	return nil

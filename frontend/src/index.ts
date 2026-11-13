@@ -27,8 +27,7 @@ import { TileSelectEvent, type TilesElement } from '@mutablelogic/go-server/list
 import { Router, type Route } from '@mutablelogic/go-server/router';
 import { NavController } from './core/nav.ts';
 import './core/shell.ts';
-import './core/header.ts';
-import type { PageHeaderElement } from './core/header.ts';
+import { PageActionErrorEvent, type PageHeaderElement } from '@mutablelogic/go-server/page/view';
 import * as api from './pgmanager/httpclient.ts';
 import type { ObjectFilter } from './pgmanager/httpclient.ts';
 import { ListLimits, type Connection, type Database, type Extension, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type SettingCategory, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
@@ -1082,6 +1081,10 @@ if (settingTiles) {
 
 // The pages' headers, with their icons, and the statements' action, which
 // resets their statistics, once it's confirmed
+// An action of a page's header which fails, and doesn't say so itself, is
+// reported
+document.addEventListener(PageActionErrorEvent, (event) => notifications.error(`${event.detail.action.label} failed`, event.detail.error));
+
 function pageHeader(page: string) {
     return document.getElementById(`${page}-header`) as PageHeaderElement | null;
 }

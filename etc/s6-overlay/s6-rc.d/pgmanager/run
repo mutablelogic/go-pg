@@ -12,8 +12,16 @@ if [ "${PGMANAGER_ENABLED}" != "true" ]; then
     exec s6-svc -d .
 fi
 
+# urlencode percent-encodes every byte, so a database or role's name, such
+# as sales#archive, isn't read as part of the URL
+urlencode() {
+    printf '%s' "$1" | od -An -tx1 -v | tr -d ' \n' | sed 's/../%&/g'
+}
+DB="$(urlencode "${POSTGRES_DB:-${POSTGRES_USER:-postgres}}")"
+ROLE="$(urlencode "${POSTGRES_USER:-postgres}")"
+
 set -- --http.addr="${PGMANAGER_ADDR:-:8080}" \
-    --pg.url="postgres:///${POSTGRES_DB:-postgres}?host=/var/run/postgresql&user=${POSTGRES_USER:-postgres}" \
+    --pg.url="postgres://${ROLE}@/${DB}?host=/var/run/postgresql" \
     --pg.restart="pg-restart"
 [ -n "${PGMANAGER_PREFIX}" ] && set -- "$@" --http.prefix="${PGMANAGER_PREFIX}"
 [ -n "${PGMANAGER_ORIGIN}" ] && set -- "$@" --http.origin="${PGMANAGER_ORIGIN}"

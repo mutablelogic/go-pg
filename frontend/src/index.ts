@@ -308,7 +308,8 @@ async function editDatabase(db?: Database, acl?: AclRow[]) {
         form.acl = acl;
     }
     let errors: DatabaseFormErrors = {};
-    const view = (): TemplateResult => databaseFormView(form, roleNames, rerender, errors);
+    // The database pgmanager is connected to can't be renamed
+    const view = (): TemplateResult => databaseFormView(form, roleNames, rerender, errors, db?.current ?? false);
     const rerender = () => {
         if (panelView) {
             render(view(), panelView);

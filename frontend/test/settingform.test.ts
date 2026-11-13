@@ -44,9 +44,12 @@ test('settingFormErrors', async (t) => {
 });
 
 test('settingRequest', () => {
-    // A value is trimmed, and without a form, it's removed
-    assert.deepEqual(settingRequest(settingForm(setting({ value: ' 8MB ' }))), { value: '8MB' });
-    assert.deepEqual(settingRequest(), { value: null });
+    // A number is trimmed, a string isn't, and without a form, it's removed
+    const memory = setting({ type: 'integer', value: ' 8MB ' });
+    assert.deepEqual(settingRequest(memory, settingForm(memory)), { value: '8MB' });
+    const prefix = setting({ name: 'log_line_prefix', value: '%m [%p] ' });
+    assert.deepEqual(settingRequest(prefix, settingForm(prefix)), { value: '%m [%p] ' });
+    assert.deepEqual(settingRequest(prefix), { value: null });
 });
 
 test('settingReadOnly', () => {
@@ -54,6 +57,9 @@ test('settingReadOnly', () => {
     assert.ok(settingReadOnly(setting({ context: 'postmaster' })));
     assert.ok(settingReadOnly(setting({ context: 'sighup' }), false));
     assert.equal(settingReadOnly(setting({ context: 'sighup' })), undefined);
+
+    // ALTER SYSTEM can't change allow_alter_system, even when it's on
+    assert.ok(settingReadOnly(setting({ name: 'allow_alter_system', context: 'sighup', value: 'on' })));
 });
 
 test('settingEffect', () => {

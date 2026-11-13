@@ -1,0 +1,7 @@
+#!/bin/sh
+# Restarts PostgreSQL, through s6, which pgmanager runs, with --pg.restart.
+# The marker tells PostgreSQL's finish script it's a restart, so the
+# container isn't stopped.
+set -e
+touch /run/postgresql/.pgmanager-restart
+exec /command/s6-svc -r /run/service/postgres

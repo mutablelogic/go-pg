@@ -1,0 +1,106 @@
+# pgmanager, beside PostgreSQL, in one container, with every option. Only
+# POSTGRES_PASSWORD is required, from the environment or a .env file:
+#
+#   POSTGRES_PASSWORD=secret docker compose -f etc/docker-compose.yaml up
+#
+# With a replica, which streams from the primary, from its first backup:
+#
+#   POSTGRES_PASSWORD=secret POSTGRES_REPLICATION_PASSWORD=secret \
+#     docker compose -f etc/docker-compose.yaml --profile replica up
+#
+# The image's tag is PostgreSQL's version, such as 17-bookworm or 18-trixie,
+# which docker-postgres has. PostgreSQL 18 keeps its data in
+# /var/lib/postgresql, rather than /var/lib/postgresql/data.
+
+name: pgmanager
+
+x-postgres: &postgres
+  # PostgreSQL's own settings, from the official image
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+  POSTGRES_USER: postgres                       # the superuser
+  POSTGRES_DB: postgres                         # the main database, which pgmanager connects to
+  POSTGRES_INITDB_ARGS: ""                      # more arguments for initdb, such as --data-checksums
+  POSTGRES_HOST_AUTH_METHOD: ""                 # pg_hba.conf's method for host connections, scram-sha-256 by default
+  # PGDATA: /var/lib/postgresql/data            # where the data is, the volume's mount for PostgreSQL 17
+
+  # Replication, from docker-postgres. Without a password, there's none.
+  POSTGRES_REPLICATION_USER: replicator         # the role replicas connect as
+  POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-}
+
+  # Databases, from docker-postgres, besides the main one, each owned by a
+  # role of its name, which signs in with POSTGRES_PASSWORD_<role>, when
+  # it's set
+  POSTGRES_DATABASES: ""                        # such as app,reports
+  # POSTGRES_PASSWORD_app: secret
+
+  # SSL, from docker-postgres, which pgmanager uses too, unless its own
+  # PGMANAGER_TLS_* are set
+  POSTGRES_SSL_CERT: ""                         # such as /certs/server.crt
+  POSTGRES_SSL_KEY: ""                          # such as /certs/server.key
+  POSTGRES_SSL_CA: ""                           # to verify clients' certificates
+
+x-pgmanager: &pgmanager
+  # pgmanager. Without PGMANAGER_ENABLED, the image is PostgreSQL alone.
+  PGMANAGER_ENABLED: "true"
+  PGMANAGER_ADDR: ":8080"                       # where its API and web UI listen
+  PGMANAGER_PREFIX: /api                        # the API's path
+  PGMANAGER_ORIGIN: ""                          # cross-origin requests: empty for none, * for any, or scheme://host[:port]
+  PGMANAGER_TIMEOUT: 15m                        # the HTTP server's read and write timeout
+  PGMANAGER_UI: "true"                          # serve the web UI
+  PGMANAGER_OPENAPI: "true"                     # serve the API's documentation, at {prefix}/openapi.html
+  PGMANAGER_DEBUG: "false"
+  PGMANAGER_VERBOSE: "false"
+  PGMANAGER_TLS_CERT: ""                        # its own certificate, or else POSTGRES_SSL_CERT's
+  PGMANAGER_TLS_KEY: ""                         # its own key, or else POSTGRES_SSL_KEY's
+  PGMANAGER_TLS_NAME: ""                        # the TLS server name
+
+  # OpenTelemetry, which pgmanager sends its traces, logs and metrics to
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""               # such as http://otel-collector:4318, for all three
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ""
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ""
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ""
+  OTEL_EXPORTER_OTLP_HEADERS: ""                # such as authorization=Bearer secret
+  OTEL_SERVICE_NAME: pgmanager
+
+services:
+  primary:
+    image: ghcr.io/mutablelogic/pgmanager:${PG_VERSION:-17-bookworm}
+    restart: unless-stopped
+    ports:
+      - "5432:5432"                             # PostgreSQL
+      - "8080:8080"                             # pgmanager's API and web UI
+    environment:
+      <<: [*postgres, *pgmanager]
+      # The replicas' slots, a comma-separated list
+      POSTGRES_REPLICATION_SLOT: replica1
+    volumes:
+      - primary:/var/lib/postgresql/data        # /var/lib/postgresql for PostgreSQL 18
+      # - ./certs:/certs:ro                     # for SSL
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-h", "/var/run/postgresql"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  replica:
+    profiles: [replica]
+    image: ghcr.io/mutablelogic/pgmanager:${PG_VERSION:-17-bookworm}
+    restart: unless-stopped
+    depends_on:
+      primary:
+        condition: service_healthy
+    ports:
+      - "5433:5432"
+      - "8081:8080"
+    environment:
+      <<: [*postgres, *pgmanager]
+      # The primary, which the replica backs up from, and streams from
+      POSTGRES_REPLICATION_PRIMARY: host=primary port=5432
+      # The replica's slot, one of the primary's
+      POSTGRES_REPLICATION_SLOT: replica1
+    volumes:
+      - replica:/var/lib/postgresql/data
+
+volumes:
+  primary:
+  replica:

@@ -26,10 +26,12 @@ BUILD_LD_FLAGS += -X $(VERSION_PKG).GitBranch=$(shell git name-rev HEAD --name-o
 BUILD_LD_FLAGS += -X $(VERSION_PKG).BuildDate=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 BUILD_FLAGS = -ldflags "-s -w ${BUILD_LD_FLAGS}" 
 
-# Docker
+# Docker: pgmanager, beside PostgreSQL, on top of docker-postgres's image,
+# of PG_VERSION, one of its tags
 DOCKER_REPO ?= ghcr.io/mutablelogic/pgmanager
 DOCKER_SOURCE ?= $(shell cat go.mod | head -1 | cut -d ' ' -f 2)
-DOCKER_TAG = ${DOCKER_REPO}:${VERSION}-${OS}-${ARCH}
+PG_VERSION ?= 17-bookworm
+DOCKER_TAG = ${DOCKER_REPO}:${VERSION}-${PG_VERSION}-${OS}-${ARCH}
 
 ###############################################################################
 # ALL
@@ -63,15 +65,17 @@ frontend-test: npm-dep
 	@echo Frontend Tests
 	@cd $(TS_DIR) && ${NPM} ci --silent && ${NPM} run --silent check && ${NPM} test --silent
 
-# Build the docker image
+# Build the docker image, whose web UI installs from GitHub Packages, with
+# the token in GITHUB_TOKEN, which is passed as a secret
 .PHONY: docker
-docker: docker-dep ${NPM_DIR}
-	@echo build docker image ${DOCKER_TAG} OS=${OS} ARCH=${ARCH} SOURCE=${DOCKER_SOURCE} VERSION=${VERSION}
+docker: docker-dep github-token-dep
+	@echo build docker image ${DOCKER_TAG} OS=${OS} ARCH=${ARCH} SOURCE=${DOCKER_SOURCE} VERSION=${VERSION} PG_VERSION=${PG_VERSION}
 	@${DOCKER} build \
 		--tag ${DOCKER_TAG} \
 		--provenance=false \
-		--build-arg ARCH=${ARCH} \
-		--build-arg OS=${OS} \
+		--platform ${OS}/${ARCH} \
+		--secret id=github_token,env=GITHUB_TOKEN \
+		--build-arg PG_VERSION=${PG_VERSION} \
 		--build-arg SOURCE=${DOCKER_SOURCE} \
 		--build-arg VERSION=${VERSION} \
 		-f etc/Dockerfile .
@@ -142,6 +146,10 @@ npm-dep:
 .PHONY: docker-dep
 docker-dep:
 	@test -f "${DOCKER}" && test -x "${DOCKER}"  || (echo "Missing docker binary" && exit 1)
+
+.PHONY: github-token-dep
+github-token-dep:
+	@test -n "${GITHUB_TOKEN}" || (echo "Missing GITHUB_TOKEN, to install from GitHub Packages" && exit 1)
 
 .PHONY: wasmbuild-dep
 wasmbuild-dep:

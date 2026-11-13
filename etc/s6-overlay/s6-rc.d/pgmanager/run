@@ -1,0 +1,38 @@
+#!/command/with-contenv sh
+# pgmanager, as postgres, over PostgreSQL's Unix socket, with peer
+# authentication, so it needs no password, once PostgreSQL is ready. It can
+# restart PostgreSQL, with pg-restart, through s6, which the postgres group
+# is let control. Without PGMANAGER_ENABLED, it doesn't run.
+#
+# Its flags are from PGMANAGER_* variables, and its OpenTelemetry settings
+# from OTEL_*, which it reads itself. TLS is PGMANAGER_TLS_*, or else
+# PostgreSQL's, POSTGRES_SSL_*.
+export PATH="/usr/lib/postgresql/${PG_MAJOR}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/command"
+if [ "${PGMANAGER_ENABLED}" != "true" ]; then
+    exec s6-svc -d .
+fi
+
+set -- --http.addr="${PGMANAGER_ADDR:-:8080}" \
+    --pg.url="postgres:///${POSTGRES_DB:-postgres}?host=/var/run/postgresql&user=${POSTGRES_USER:-postgres}" \
+    --pg.restart="pg-restart"
+[ -n "${PGMANAGER_PREFIX}" ] && set -- "$@" --http.prefix="${PGMANAGER_PREFIX}"
+[ -n "${PGMANAGER_ORIGIN}" ] && set -- "$@" --http.origin="${PGMANAGER_ORIGIN}"
+[ -n "${PGMANAGER_TIMEOUT}" ] && set -- "$@" --http.timeout="${PGMANAGER_TIMEOUT}"
+[ "${PGMANAGER_UI}" = "false" ] && set -- "$@" --no-ui
+[ "${PGMANAGER_OPENAPI}" = "false" ] && set -- "$@" --no-openapi
+[ "${PGMANAGER_DEBUG}" = "true" ] && set -- "$@" --debug
+[ "${PGMANAGER_VERBOSE}" = "true" ] && set -- "$@" --verbose
+TLS_CERT="${PGMANAGER_TLS_CERT:-${POSTGRES_SSL_CERT}}"
+TLS_KEY="${PGMANAGER_TLS_KEY:-${POSTGRES_SSL_KEY}}"
+if [ -n "${TLS_CERT}" ] && [ -n "${TLS_KEY}" ]; then
+    set -- "$@" --tls.cert="${TLS_CERT}" --tls.key="${TLS_KEY}"
+    [ -n "${PGMANAGER_TLS_NAME}" ] && set -- "$@" --tls.name="${PGMANAGER_TLS_NAME}"
+fi
+
+# Let the postgres group restart PostgreSQL, and wait until it's ready
+s6-svperms -G postgres /run/service/postgres
+until s6-setuidgid postgres pg_isready -q -h /var/run/postgresql; do
+    sleep 1
+done
+export HOME=/var/lib/postgresql
+exec s6-setuidgid postgres pgmanager run "$@"

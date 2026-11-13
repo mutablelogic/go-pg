@@ -1,0 +1,17 @@
+#!/bin/sh
+# PostgreSQL has stopped. When pgmanager asked to restart it, with
+# pg-restart, which leaves a marker, s6 starts it again. Otherwise, it
+# stopped by itself, or the container's stopping, which stops the container,
+# with PostgreSQL's exit code, or 128 and the signal which killed it, as it
+# does without s6.
+MARKER=/run/postgresql/.pgmanager-restart
+if [ -e "${MARKER}" ]; then
+    rm -f "${MARKER}"
+    exit 0
+fi
+if [ "$1" -eq 256 ]; then
+    echo $((128 + $2)) > /run/s6-linux-init-container-results/exitcode
+else
+    echo "$1" > /run/s6-linux-init-container-results/exitcode
+fi
+exec /run/s6/basedir/bin/halt

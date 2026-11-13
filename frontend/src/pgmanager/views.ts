@@ -7,7 +7,7 @@ import UserIcon from '@carbon/icons/es/user/16.js';
 import TrashIcon from '@carbon/icons/es/trash-can/16.js';
 import EditIcon from '@carbon/icons/es/edit/16.js';
 import RestartIcon from '@carbon/icons/es/restart/16.js';
-import type { Column } from '@mutablelogic/go-server/list/view';
+import type { Column, Legend } from '@mutablelogic/go-server/list/view';
 import type { Tile } from '@mutablelogic/go-server/list/tiles';
 import type { Connection, Extension, PgObject, ReplicationSlot, Role, Schema, Setting, Statement, Tablespace } from './schema.ts';
 
@@ -295,6 +295,24 @@ export const settingColumns = (top?: string): Column<Setting>[] => [
 // settingBody is a setting in the panel, with its values in the
 // configuration files, and when a change takes effect, or why it can't be
 // changed
+// settingLegend explains the settings' table: the icons after a value, and
+// each context, from the least which can change it to the most, as it's
+// tagged in the table
+export const settingLegend: Legend = {
+    title: 'Legend',
+    items: [
+        { term: settingIcon(EditIcon, 'Changed from its default'), description: 'Changed from its default, such as in the configuration file, or by ALTER SYSTEM' },
+        { term: settingIcon(RestartIcon, 'Waiting for a restart'), description: 'Changed, but waiting for the server to restart' },
+        { term: tag('internal'), description: "Set when PostgreSQL is built, or its data directory is created, and can't be changed" },
+        { term: tag('postmaster'), description: 'Changed in the configuration, and takes effect when the server restarts' },
+        { term: tag('sighup'), description: "Changed in the configuration, and takes effect in every session, once it's reloaded" },
+        { term: tag('superuser-backend'), description: 'Changed in the configuration, or by a superuser when connecting, and takes effect in new sessions' },
+        { term: tag('backend'), description: 'Changed in the configuration, or when connecting, and takes effect in new sessions' },
+        { term: tag('superuser'), description: "Changed in the configuration, once it's reloaded, or by a superuser in their session, with SET" },
+        { term: tag('user'), description: "Changed in the configuration, once it's reloaded, or by anyone in their session, with SET" },
+    ],
+};
+
 export function settingBody(setting: Setting, effect?: string, readOnly?: string): TemplateResult {
     return html`
         ${setting.description ? html`<p class="description">${setting.description}</p>` : ''}

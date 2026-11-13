@@ -32,10 +32,11 @@ export function formatBytes(bytes?: number): string {
     return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-// description is a comment, in a table's cell, which is cut short, and
-// shown in full when it's hovered
-function description(comment?: string) {
-    return comment ? html`<span style="display: block; max-width: 20rem; overflow: hidden; text-overflow: ellipsis" title=${comment}>${comment}</span>` : '';
+// description is a comment, in a table's cell, which is cut short, at the
+// width, and shown in full when it's hovered. It's wider when it's the last
+// column, as there are no columns after it to push out of the table.
+function description(comment?: string, width = '20rem') {
+    return comment ? html`<span style="display: block; max-width: ${width}; overflow: hidden; text-overflow: ellipsis" title=${comment}>${comment}</span>` : '';
 }
 
 // roleName is a role's name, with a person before it, so it's seen to be a
@@ -387,7 +388,7 @@ export const extensionColumns = (installed: boolean): Column<Extension>[] => [
     { header: 'Extension', cell: (ext) => ext.name, sort: 'name', sortFirst: 'ascending' },
     { header: 'Version', cell: (ext) => extensionVersion(ext), sort: 'version' },
     ...(installed ? [{ header: 'Schema', cell: (ext: Extension) => ext.schema ?? '', sort: 'schema', sortFirst: 'ascending' as const }] : []),
-    { header: 'Description', cell: (ext) => description(ext.comment) },
+    { header: 'Description', cell: (ext) => description(ext.comment, 'min(40rem, 40vw)') },
 ];
 
 export function extensionBody(ext: Extension): TemplateResult {

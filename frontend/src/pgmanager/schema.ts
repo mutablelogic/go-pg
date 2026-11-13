@@ -84,6 +84,22 @@ export interface Setting {
     description?: string;
     extra_desc?: string;
     changed?: boolean;
+    type: 'bool' | 'enum' | 'integer' | 'real' | 'string';
+    min?: string;
+    max?: string;
+    values?: string[];
+    default?: string;
+    source: string;
+    pending_restart?: boolean;
+}
+
+// SettingCategory is a top level of the settings' categories, which are two
+// levels, such as "Client Connection Defaults / Locale and Formatting", with
+// how many settings it has, and how many of them are changed
+export interface SettingCategory {
+    name: string;
+    count: number;
+    changed: number;
 }
 
 // SettingCategory is a top level of the settings' categories, which are two

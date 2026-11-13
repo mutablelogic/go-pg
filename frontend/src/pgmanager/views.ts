@@ -6,6 +6,7 @@ import iconLoader from '@carbon/web-components/es/globals/internal/icon-loader.j
 import UserIcon from '@carbon/icons/es/user/16.js';
 import TrashIcon from '@carbon/icons/es/trash-can/16.js';
 import EditIcon from '@carbon/icons/es/edit/16.js';
+import RestartIcon from '@carbon/icons/es/restart/16.js';
 import type { Column } from '@mutablelogic/go-server/list/view';
 import type { Tile } from '@mutablelogic/go-server/list/tiles';
 import type { Connection, Extension, PgObject, ReplicationSlot, Role, Schema, Setting, Statement, Tablespace } from './schema.ts';
@@ -246,18 +247,46 @@ export function connectionBody(conn: Connection): TemplateResult {
     ]);
 }
 
-// settingValue returns a setting's value, with its unit
+// settingValue returns a setting's value, or another of its values, such as
+// its default, with its unit
 function settingValue(setting: Setting): string {
-    return setting.value === null ? '' : setting.unit ? `${setting.value} ${setting.unit}` : setting.value;
+    return setting.value === null ? '' : withUnit(setting, setting.value);
+}
+
+// withUnit is one of a setting's values, such as its default, with its unit
+function withUnit(setting: Setting, value: string): string {
+    return setting.unit ? `${value} ${setting.unit}` : value;
+}
+
+// settingDefault is a setting's default, with its unit, which is said to be
+// empty, when it is, such as application_name's, or else undefined, when the
+// setting doesn't have one
+function settingDefault(setting: Setting): string | TemplateResult | undefined {
+    if (setting.default === undefined) {
+        return undefined;
+    }
+    return setting.default === '' ? html`<em>empty</em>` : withUnit(setting, setting.default);
+}
+
+// settingLimits are the limits of an integer or real, with its unit
+function settingLimits(setting: Setting): string | undefined {
+    return setting.min !== undefined && setting.max !== undefined ? `${setting.min} to ${withUnit(setting, setting.max)}` : undefined;
+}
+
+// settingIcon is a small icon, after a setting's value, which says what it
+// means when it's hovered
+function settingIcon(icon: typeof EditIcon, title: string) {
+    return html`<span title=${title} style="display: inline-flex">${iconLoader(icon, { width: '12', height: '12', 'aria-label': title, style: 'flex: none; fill: currentColor' })}</span>`;
 }
 
 // settingValueCell is a setting's value, in a table, with a pencil after it
-// when it's changed from its default, which says so when it's hovered
+// when it's changed from its default, and a restart when it's changed, but
+// waits for the server to restart, which say so when they're hovered
 function settingValueCell(setting: Setting) {
-    if (!setting.changed) {
+    if (!setting.changed && !setting.pending_restart) {
         return settingValue(setting);
     }
-    return html`<span style="display: inline-flex; align-items: center; gap: 0.25rem">${settingValue(setting)}<span title="Changed from its default" style="display: inline-flex">${iconLoader(EditIcon, { width: '12', height: '12', 'aria-label': 'Changed from its default', style: 'flex: none; fill: currentColor' })}</span></span>`;
+    return html`<span style="display: inline-flex; align-items: center; gap: 0.25rem">${settingValue(setting)}${setting.changed ? settingIcon(EditIcon, 'Changed from its default') : ''}${setting.pending_restart ? settingIcon(RestartIcon, 'Changed, and waiting for the server to restart') : ''}</span>`;
 }
 
 // subcategory is a setting's category, under the top level, such as Locale
@@ -282,7 +311,17 @@ export function settingBody(setting: Setting): TemplateResult {
     return html`
         ${setting.description ? html`<p class="description">${setting.description}</p>` : ''}
         ${setting.extra_desc ? html`<p class="description">${setting.extra_desc}</p>` : ''}
-        ${fields([['Value', settingValue(setting)], ['Category', setting.category], ['Context', setting.context]])}
+        ${setting.pending_restart ? html`<p class="helper">It's changed, but the server needs to restart before the change takes effect.</p>` : ''}
+        ${fields([
+            ['Value', settingValue(setting)],
+            ['Default', settingDefault(setting)],
+            ['Source', setting.source],
+            ['Type', setting.type],
+            ['Limits', settingLimits(setting)],
+            ['Values', setting.values?.join(', ')],
+            ['Category', setting.category],
+            ['Context', setting.context],
+        ])}
     `;
 }
 

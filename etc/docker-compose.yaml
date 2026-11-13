@@ -98,6 +98,10 @@ services:
       POSTGRES_REPLICATION_PRIMARY: host=primary port=5432
       # The replica's slot, one of the primary's
       POSTGRES_REPLICATION_SLOT: replica1
+      # A replica's pgmanager serves its API, for the primary's, without the
+      # web UI, or the API's documentation
+      PGMANAGER_UI: "false"
+      PGMANAGER_OPENAPI: "false"
     volumes:
       - replica:/var/lib/postgresql/data
 

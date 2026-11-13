@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"time"
 
 	// Packages
 	otel "github.com/mutablelogic/go-client/pkg/otel"
@@ -59,9 +60,25 @@ func (manager *Manager) GetSetting(ctx context.Context, name string) (_ *schema.
 	)
 	defer func() { endSpan(err) }()
 
+	return getSetting(ctx, manager.conn, name)
+}
+
+// getSetting returns a setting, with its values in the configuration files,
+// when they can be read
+func getSetting(ctx context.Context, conn pg.Conn, name string) (*schema.Setting, error) {
 	var result schema.Setting
-	if err := manager.conn.Get(ctx, &result, schema.SettingName(name)); err != nil {
+	if err := conn.Get(ctx, &result, schema.SettingName(name)); err != nil {
 		return nil, err
+	}
+	var access schema.SettingFileAccess
+	if err := conn.Get(ctx, &access, access); err != nil {
+		return nil, err
+	} else if access {
+		var files schema.SettingFiles
+		if err := conn.List(ctx, &files, schema.SettingFileRequest(result.Name)); err != nil {
+			return nil, err
+		}
+		result.Config, result.Override = files.Config, files.Override
 	}
 	return &result, nil
 }
@@ -98,13 +115,15 @@ func (manager *Manager) UpdateSetting(ctx context.Context, name string, meta sch
 		return nil, err
 	}
 
-	// Perform a reload
-	if err := manager.ReloadConfig(ctx); err != nil {
+	// Reload, and return the setting, once it's reloaded
+	var result *schema.Setting
+	if err := reload(ctx, manager.conn, func(conn pg.Conn) (err error) {
+		result, err = getSetting(ctx, conn, name)
+		return err
+	}); err != nil {
 		return nil, err
 	}
-
-	// Get and return the updated setting
-	return manager.GetSetting(ctx, name)
+	return result, nil
 }
 
 // ReloadConfig calls pg_reload_conf() to reload server configuration.
@@ -114,6 +133,42 @@ func (manager *Manager) ReloadConfig(ctx context.Context) (err error) {
 	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ReloadConfig")
 	defer func() { endSpan(err) }()
 
-	// Execute the reload command
-	return manager.conn.Exec(ctx, "SELECT pg_reload_conf()")
+	// Reload, and wait for it
+	return reload(ctx, manager.conn, nil)
+}
+
+// reload reloads the configuration files, which the server is signalled to
+// do, and waits until a session's reloaded them, in which it calls the
+// function, so what it reads is reloaded. A session reloads them before its
+// next command, even in a transaction, which keeps the one session.
+func reload(ctx context.Context, conn pg.Conn, fn func(pg.Conn) error) error {
+	return conn.Tx(ctx, func(conn pg.Conn) error {
+		var before schema.ConfigLoadTime
+		if err := conn.Get(ctx, &before, before); err != nil {
+			return err
+		}
+		if err := conn.Exec(ctx, "SELECT pg_reload_conf()"); err != nil {
+			return err
+		}
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			var after schema.ConfigLoadTime
+			if err := conn.Get(ctx, &after, after); err != nil {
+				return err
+			}
+			if time.Time(after).After(time.Time(before)) {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+			}
+		}
+		if fn != nil {
+			return fn(conn)
+		}
+		return nil
+	})
 }

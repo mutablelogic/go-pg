@@ -42,6 +42,8 @@ import { schemaCreateAcl, schemaForm, schemaFormErrors, schemaRequest, type Sche
 import { schemaFormView } from './pgmanager/schemaformview.ts';
 import { tablespaceCreateAcl, tablespaceForm, tablespaceFormErrors, tablespaceLocationError, tablespaceRequest, type TablespaceFormErrors } from './pgmanager/tablespaceform.ts';
 import { tablespaceFormView } from './pgmanager/tablespaceformview.ts';
+import { settingEffect, settingForm, settingFormErrors, settingReadOnly, settingRequest, type SettingFormErrors } from './pgmanager/settingform.ts';
+import { settingFormView } from './pgmanager/settingformview.ts';
 import { extensionForm, extensionFormErrors, extensionRequest, type ExtensionFormErrors } from './pgmanager/extensionform.ts';
 import { extensionFormView } from './pgmanager/extensionformview.ts';
 
@@ -490,7 +492,87 @@ async function endConnection(conn: Connection) {
         panel.close();
     }
 }
-table('setting-table', settings, ListLimits.setting, views.settingColumns(), (setting) => ({ title: setting.name, subtitle: setting.category, body: views.settingBody(setting) }));
+table('setting-table', settings, ListLimits.setting, views.settingColumns(), (setting) => {
+    void showSetting(setting.name);
+    return settingView(setting);
+});
+
+// showSetting shows a setting in the panel, with its values in the
+// configuration files, which only a setting by itself has, unless the panel
+// has been closed, or shows another, by the time it's loaded
+let showing = 0;
+async function showSetting(name: string) {
+    const token = ++showing;
+    const setting = await api.getSetting(client, name).catch(() => undefined);
+    if (setting && token === showing && panel.current.open && panel.current.item?.kind === 'setting-table' && panel.current.item.title === name) {
+        open({ kind: 'setting-table', ...settingView(setting) });
+    }
+}
+
+// alterSystem is whether ALTER SYSTEM is allowed, which PostgreSQL 17 can
+// turn off, with allow_alter_system, and which earlier versions don't have
+let alterSystem = true;
+api.getSetting(client, 'allow_alter_system').then((setting) => {
+    alterSystem = setting.value !== 'off';
+}).catch(() => undefined);
+
+// settingView is a setting in the panel, which can be changed, unless it's
+// PostgreSQL's own, needs a restart, or ALTER SYSTEM is turned off, and
+// whose value set by ALTER SYSTEM can be removed, so the configuration
+// file's is used
+function settingView(setting: Setting): Omit<Item, 'kind'> {
+    const readOnly = settingReadOnly(setting, alterSystem);
+    return {
+        title: setting.name,
+        subtitle: setting.category,
+        body: views.settingBody(setting, settingEffect(setting.context), readOnly),
+        actions: readOnly ? undefined : [
+            ...(setting.override !== undefined ? [{ label: 'Use configuration file', kind: 'secondary' as const, close: false, run: () => saveSetting(setting, null) }] : []),
+            { label: 'Change', kind: 'secondary', close: false, run: () => editSetting(setting) },
+            closeAction,
+        ],
+    };
+}
+
+// saveSetting changes a setting's value, or removes the value set by ALTER
+// SYSTEM, when it's null, and shows it, once it's reloaded
+async function saveSetting(setting: Setting, value: string | null) {
+    const saved = await api.updateSetting(client, setting.name, { value });
+    void settings.refresh();
+    void settingCategories.refresh();
+    open({ kind: 'setting-table', ...settingView(saved) });
+}
+
+// editSetting shows the form of a setting, in the panel, which saves it, and
+// shows it, or, when it's cancelled, shows it again
+function editSetting(setting: Setting) {
+    const form = settingForm(setting);
+    let errors: SettingFormErrors = {};
+    const view = (): TemplateResult => settingFormView(setting, form, settingEffect(setting.context), errors);
+    open({
+        kind: 'setting-form',
+        title: `Change ${setting.name}`,
+        subtitle: setting.category,
+        body: view(),
+        actions: [
+            { label: 'Cancel', kind: 'secondary', close: false, run: () => open({ kind: 'setting-table', ...settingView(setting) }) },
+            {
+                label: 'Save',
+                kind: 'primary',
+                close: false,
+                run: async () => {
+                    errors = settingFormErrors(setting, form);
+                    if (panelView) {
+                        render(view(), panelView);
+                    }
+                    if (!Object.keys(errors).length) {
+                        await saveSetting(setting, settingRequest(form).value);
+                    }
+                },
+            },
+        ],
+    });
+}
 table('tablespace-table', tablespaces, ListLimits.tablespace, views.tablespaceColumns, tablespaceView);
 
 // tablespaceView is a tablespace in the panel, which, unless it's

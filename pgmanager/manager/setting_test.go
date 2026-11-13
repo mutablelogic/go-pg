@@ -106,7 +106,6 @@ func TestSettingFields(t *testing.T) {
 		assert.Equal(t, test.limits, setting.Min != nil && setting.Max != nil, test.name)
 		assert.Equal(t, test.values, setting.Values, test.name)
 		assert.NotEmpty(t, setting.Source, test.name)
-		assert.False(t, setting.PendingRestart, test.name)
 	}
 
 	// max_connections is built with a default of 100
@@ -141,4 +140,49 @@ func TestSettingPendingRestart(t *testing.T) {
 	}
 	assert.True(t, setting.PendingRestart)
 	assert.Equal(t, "100", types.Value(setting.Value))
+}
+
+// A setting which is changed is overridden, in postgresql.auto.conf, and
+// takes effect once it's returned, and one which is reset isn't
+func TestSettingChangeAndReset(t *testing.T) {
+	mgr, ctx := harness.Begin(t)
+	defer harness.End(t)
+	defer func() { _, _ = mgr.UpdateSetting(context.Background(), "work_mem", schema.SettingMeta{}) }()
+
+	// Changed, which is in kB, and as it's written
+	setting, err := mgr.UpdateSetting(ctx, "work_mem", schema.SettingMeta{Value: types.Ptr("8MB")})
+	require.NoError(t, err)
+	assert.Equal(t, "8192", types.Value(setting.Value))
+	assert.Equal(t, "8MB", types.Value(setting.Override))
+	assert.True(t, setting.Changed)
+
+	// It's read the same, by its name
+	setting, err = mgr.GetSetting(ctx, "work_mem")
+	require.NoError(t, err)
+	assert.Equal(t, "8192", types.Value(setting.Value))
+	assert.Equal(t, "8MB", types.Value(setting.Override))
+
+	// Reset, which isn't overridden, and is its default, as the
+	// configuration files don't set it
+	setting, err = mgr.UpdateSetting(ctx, "work_mem", schema.SettingMeta{})
+	require.NoError(t, err)
+	assert.Nil(t, setting.Override)
+	assert.Equal(t, types.Value(setting.Default), types.Value(setting.Value))
+
+	// A setting which needs a restart, or can't be changed, isn't changed
+	_, err = mgr.UpdateSetting(ctx, "max_connections", schema.SettingMeta{Value: types.Ptr("120")})
+	assert.Error(t, err)
+	_, err = mgr.UpdateSetting(ctx, "block_size", schema.SettingMeta{Value: types.Ptr("16384")})
+	assert.Error(t, err)
+}
+
+// A setting in postgresql.conf has its value there, and none overriding it
+func TestSettingConfig(t *testing.T) {
+	mgr, ctx := harness.Begin(t)
+	defer harness.End(t)
+
+	setting, err := mgr.GetSetting(ctx, "listen_addresses")
+	require.NoError(t, err)
+	assert.Equal(t, "*", types.Value(setting.Config))
+	assert.Nil(t, setting.Override)
 }

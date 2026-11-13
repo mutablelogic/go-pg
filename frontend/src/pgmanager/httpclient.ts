@@ -177,6 +177,13 @@ export function listSettingCategories(client: Client): Promise<List<SettingCateg
     return request<List<SettingCategory>>(client, 'GET', 'setting/category');
 }
 
+// updateSetting changes a setting's value, with ALTER SYSTEM, or removes
+// the value it set, when it's null, so the configuration file's is used, and
+// returns it, once the configuration's reloaded
+export function updateSetting(client: Client, name: string, setting: { value: string | null }): Promise<Setting> {
+    return request<Setting>(client, 'PATCH', `setting/${encodeURIComponent(name)}`, { body: setting });
+}
+
 // getSetting returns a setting, by its name
 export function getSetting(client: Client, name: string): Promise<Setting> {
     return request<Setting>(client, 'GET', `setting/${encodeURIComponent(name)}`);

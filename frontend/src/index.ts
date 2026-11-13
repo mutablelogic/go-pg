@@ -175,10 +175,12 @@ const connections = new ListController<Connection>({
     same: (a, b) => a.pid === b.pid,
     notifications, changes, filter: { table: 'connection' },
 });
+// The settings are of a top level of their categories, which is the first,
+// until another is chosen, so there are none until the categories load
 let category: string | undefined;
 const settings = new ListController<Setting>({
     name: 'Settings',
-    list: (offset, limit, sort) => api.listSettings(client, category, offset, limit, api.listSort(sort)),
+    list: (offset, limit, sort) => category === undefined ? Promise.resolve({ count: 0 }) : api.listSettings(client, category, offset, limit, api.listSort(sort)),
     get: (setting) => api.getSetting(client, setting.name),
     same: (a, b) => a.name === b.name,
     notifications, changes, filter: { table: 'setting' },
@@ -882,7 +884,8 @@ function renderTypes() {
 
 // The tiles of the top levels of the settings' categories, with how many
 // settings each has, and how many are changed, which choose the settings
-// which are shown, of which the table shows the categories under it
+// which are shown, of which the table shows the categories under it. The
+// first is chosen, until another is, or when the chosen one's gone.
 const settingCategories = new ListController<SettingCategory>({
     name: 'Setting categories',
     list: () => api.listSettingCategories(client),
@@ -892,17 +895,14 @@ const settingCategories = new ListController<SettingCategory>({
 const settingTiles = document.getElementById('setting-tiles') as TilesElement<SettingCategory> | null;
 function renderSettingTiles() {
     if (settingTiles) {
-        const items = settingCategories.current.items ?? [];
-        const sum = (n: (c: SettingCategory) => number) => items.reduce((total, c) => total + n(c), 0);
-        settingTiles.all = { ...views.settingCategoryTile('All', items.length ? sum((c) => c.count) : undefined, sum((c) => c.changed)), value: '' };
         settingTiles.tile = (c) => views.settingCategoryTile(c.name, c.count, c.changed);
         settingTiles.selected = category ?? '';
     }
 }
 if (settingTiles) {
     settingTiles.controller = settingCategories;
-    settingTiles.addEventListener(TileSelectEvent, (event) => {
-        category = (event as CustomEvent<string>).detail || undefined;
+    const chooseCategory = (name: string) => {
+        category = name;
         if (panel.current.item?.kind === 'setting-table') {
             panel.close();
         }
@@ -912,8 +912,15 @@ if (settingTiles) {
         }
         renderSettingTiles();
         void settings.reset();
+    };
+    settingTiles.addEventListener(TileSelectEvent, (event) => chooseCategory((event as CustomEvent<string>).detail));
+    settingCategories.subscribe(({ items }) => {
+        if (items?.length && !items.some((c) => c.name === category)) {
+            chooseCategory(items[0].name);
+        } else {
+            renderSettingTiles();
+        }
     });
-    settingCategories.subscribe(() => renderSettingTiles());
     renderSettingTiles();
     void settingCategories.load();
 }

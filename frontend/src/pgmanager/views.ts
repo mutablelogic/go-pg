@@ -307,13 +307,19 @@ export const settingColumns = (top?: string): Column<Setting>[] => [
     { header: 'Context', cell: (setting) => tag(setting.context), sort: 'context', sortFirst: 'ascending' },
 ];
 
-export function settingBody(setting: Setting): TemplateResult {
+// settingBody is a setting in the panel, with its values in the
+// configuration files, and when a change takes effect, or why it can't be
+// changed
+export function settingBody(setting: Setting, effect?: string, readOnly?: string): TemplateResult {
     return html`
         ${setting.description ? html`<p class="description">${setting.description}</p>` : ''}
         ${setting.extra_desc ? html`<p class="description">${setting.extra_desc}</p>` : ''}
         ${setting.pending_restart ? html`<p class="helper">It's changed, but the server needs to restart before the change takes effect.</p>` : ''}
+        ${readOnly ? html`<p class="helper">${readOnly}</p>` : ''}
         ${fields([
             ['Value', settingValue(setting)],
+            ['Set by ALTER SYSTEM', setting.override],
+            ['Configuration file', setting.config],
             ['Default', settingDefault(setting)],
             ['Source', setting.source],
             ['Type', setting.type],
@@ -321,6 +327,7 @@ export function settingBody(setting: Setting): TemplateResult {
             ['Values', setting.values?.join(', ')],
             ['Category', setting.category],
             ['Context', setting.context],
+            ['Takes effect', effect],
         ])}
     `;
 }

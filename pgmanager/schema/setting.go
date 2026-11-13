@@ -1,12 +1,13 @@
 package schema
 
 import (
-
-	// Packages
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
+	"time"
 
+	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	tui "github.com/mutablelogic/go-server/pkg/tui"
 	types "github.com/mutablelogic/go-server/pkg/types"
@@ -68,7 +69,33 @@ type Setting struct {
 	// PendingRestart is true when it's changed in the configuration, but the
 	// server needs to restart before it takes effect
 	PendingRestart bool `json:"pending_restart,omitempty"`
+
+	// Config is its value in the configuration files, such as
+	// postgresql.conf, and Override its value set by ALTER SYSTEM, in
+	// postgresql.auto.conf, which is used rather than the configuration
+	// files'. They're read for a setting by its name, by a role which can
+	// read the configuration files, and are in its unit, or as they're
+	// written, such as 128MB.
+	Config   *string `json:"config,omitempty"`
+	Override *string `json:"override,omitempty"`
 }
+
+// SettingFileRequest is the values of a setting, by its name, in the
+// configuration files
+type SettingFileRequest string
+
+// SettingFiles are the values of a setting in the configuration files, the
+// last of which in each file is used
+type SettingFiles struct {
+	Config   *string
+	Override *string
+}
+
+// SettingFileAccess is whether the configuration files can be read
+type SettingFileAccess bool
+
+// ConfigLoadTime is when the session last loaded the configuration files
+type ConfigLoadTime time.Time
 
 // SettingListRequest is used to retrieve server settings
 type SettingListRequest struct {
@@ -251,6 +278,25 @@ func (r SettingCategoryListRequest) Select(bind *pg.Bind, op pg.Op) (string, err
 	}
 }
 
+func (r SettingFileRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	bind.Set("name", string(r))
+	switch op {
+	case pg.List:
+		return settingFileList, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported SettingFileRequest operation %q", op)
+	}
+}
+
+func (SettingFileAccess) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	switch op {
+	case pg.Get:
+		return settingFileAccess, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported SettingFileAccess operation %q", op)
+	}
+}
+
 func (n SettingName) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Set name
 	bind.Set("name", string(n))
@@ -290,6 +336,39 @@ func (m SettingMeta) Update(bind *pg.Bind) error {
 
 func (s *Setting) Scan(row pg.Row) error {
 	return row.Scan(&s.Name, &s.Value, &s.Unit, &s.Category, &s.Context, &s.Description, &s.ExtraDesc, &s.Changed, &s.Type, &s.Min, &s.Max, &s.Values, &s.Default, &s.Source, &s.PendingRestart)
+}
+
+// Scan is a value in a configuration file: postgresql.auto.conf's are the
+// override, and the others' the configuration's, and the last of each is
+// used
+func (f *SettingFiles) Scan(row pg.Row) error {
+	var file, value string
+	if err := row.Scan(&file, &value); err != nil {
+		return err
+	}
+	if filepath.Base(file) == "postgresql.auto.conf" {
+		f.Override = types.Ptr(value)
+	} else {
+		f.Config = types.Ptr(value)
+	}
+	return nil
+}
+
+func (t *ConfigLoadTime) Scan(row pg.Row) error {
+	return row.Scan((*time.Time)(t))
+}
+
+func (ConfigLoadTime) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	switch op {
+	case pg.Get:
+		return `SELECT pg_conf_load_time()`, nil
+	default:
+		return "", pg.ErrNotImplemented.Withf("unsupported ConfigLoadTime operation %q", op)
+	}
+}
+
+func (a *SettingFileAccess) Scan(row pg.Row) error {
+	return row.Scan((*bool)(a))
 }
 
 func (l *SettingList) Scan(row pg.Row) error {
@@ -347,10 +426,17 @@ const (
 		FROM
 			pg_catalog.pg_settings
 	`
-	settingList         = `WITH q AS (` + settingSelect + `) SELECT * FROM q ${where} ${orderby}`
-	settingGet          = settingSelect + ` WHERE name = ${'name'}`
-	settingUpdate       = `ALTER SYSTEM SET ${"name"} = ${'value'}`
-	settingReset        = `ALTER SYSTEM RESET ${"name"}`
+	settingList   = `WITH q AS (` + settingSelect + `) SELECT * FROM q ${where} ${orderby}`
+	settingGet    = settingSelect + ` WHERE name = ${'name'}`
+	settingUpdate = `ALTER SYSTEM SET ${"name"} = ${'value'}`
+	settingReset  = `ALTER SYSTEM RESET ${"name"}`
+
+	// settingFileList are a setting's values in the configuration files, in
+	// the order they're read, without those which are in error, and
+	// settingFileAccess is whether they can be read, which needs the view,
+	// and the function it calls
+	settingFileList     = `SELECT sourcefile, setting FROM pg_catalog.pg_file_settings WHERE lower(name) = lower(@name) AND error IS NULL AND setting IS NOT NULL ORDER BY seqno`
+	settingFileAccess   = `SELECT has_function_privilege('pg_catalog.pg_show_all_file_settings()', 'EXECUTE') AND has_table_privilege('pg_catalog.pg_file_settings', 'SELECT')`
 	settingCategoryList = `
 		SELECT
 			split_part(category, ' / ', 1) AS "name",

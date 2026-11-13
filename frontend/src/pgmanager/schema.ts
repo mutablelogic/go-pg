@@ -91,6 +91,8 @@ export interface Setting {
     default?: string;
     source: string;
     pending_restart?: boolean;
+    config?: string;
+    override?: string;
 }
 
 // SettingCategory is a top level of the settings' categories, which are two

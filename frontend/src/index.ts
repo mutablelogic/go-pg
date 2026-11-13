@@ -492,6 +492,10 @@ async function endConnection(conn: Connection) {
         panel.close();
     }
 }
+const settingTable = document.getElementById('setting-table') as TableElement<Setting> | null;
+if (settingTable) {
+    settingTable.legend = views.settingLegend;
+}
 table('setting-table', settings, ListLimits.setting, views.settingColumns(), (setting) => {
     void showSetting(setting.name);
     return settingView(setting);

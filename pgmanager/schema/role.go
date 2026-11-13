@@ -49,6 +49,11 @@ type RoleListRequest struct {
 	// Predefined lists PostgreSQL's own roles, such as pg_monitor, rather
 	// than the others, which are listed when it's false, or not set
 	Predefined *bool `json:"predefined,omitempty" help:"List PostgreSQL's own roles, such as pg_monitor, rather than the others" negatable:""`
+
+	// Sort is what the roles are sorted by, and Order its direction, asc or
+	// desc, which is asc when it's empty. Empty values are last, either way.
+	Sort  string `json:"sort,omitempty" help:"Sort by name, conlimit, expires or login"`
+	Order string `json:"order,omitempty" help:"Order of the sort (asc or desc)"`
 }
 
 type RoleList struct {
@@ -148,6 +153,12 @@ func (d RoleListRequest) Query() url.Values {
 	if d.Predefined != nil {
 		q.Set("predefined", fmt.Sprint(types.Value(d.Predefined)))
 	}
+	if d.Sort != "" {
+		q.Set("sort", d.Sort)
+	}
+	if d.Order != "" {
+		q.Set("order", d.Order)
+	}
 	return q
 }
 
@@ -213,6 +224,15 @@ func (r RoleMeta) name() (string, error) {
 ////////////////////////////////////////////////////////////////////////////////
 // SELECT
 
+// roleSorts are what roles sort by: a role without a connection limit, or
+// an expiry, is last
+var roleSorts = sortColumns{
+	"name":     {`"rolname"`},
+	"conlimit": {`NULLIF("rolconnlimit", -1)`},
+	"expires":  {`"rolvaliduntil"`},
+	"login":    {`"rolcanlogin"`},
+}
+
 func (r *RoleListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// PostgreSQL's own roles, or the others, by name
 	if types.Value(r.Predefined) {
@@ -220,7 +240,11 @@ func (r *RoleListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	} else {
 		bind.Set("where", `WHERE NOT "predefined"`)
 	}
-	bind.Set("orderby", `ORDER BY "rolname"`)
+	orderby, err := orderBy(r.Sort, r.Order, roleSorts, `ORDER BY "rolname"`, `"rolname"`)
+	if err != nil {
+		return "", err
+	}
+	bind.Set("orderby", orderby)
 
 	// Bind offset and limit
 	r.OffsetLimit.Bind(bind, RoleListLimit)

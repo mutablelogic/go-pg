@@ -2,6 +2,7 @@
 
 import type { Client } from '@mutablelogic/go-server/api';
 import { request } from '@mutablelogic/go-server/api';
+import type { Sort } from '@mutablelogic/go-server/list';
 import type { DatabaseRequest } from './databaseform.ts';
 import type { SchemaRequest } from './schemaform.ts';
 import type { ExtensionRequest } from './extensionform.ts';
@@ -48,10 +49,22 @@ export function getDatabase(client: Client, name: string): Promise<Database> {
     return request<Database>(client, 'GET', `database/${encodeURIComponent(name)}`);
 }
 
+// ListSort is what a list is sorted by, and in which order, or, without a
+// sort, the list's own order
+export interface ListSort {
+    sort?: string;
+    order?: 'asc' | 'desc';
+}
+
+// listSort is a table's sort, by a column, as a list takes it
+export function listSort(sort?: Sort): ListSort {
+    return sort ? { sort: sort.key, order: sort.direction === 'descending' ? 'desc' : 'asc' } : {};
+}
+
 // listRoles returns a page of the roles: PostgreSQL's own, such as
 // pg_monitor, when predefined is true, or else the others
-export function listRoles(client: Client, predefined: boolean, offset: number, limit: number): Promise<List<Role>> {
-    return request<List<Role>>(client, 'GET', 'role', { query: { predefined, offset, limit } });
+export function listRoles(client: Client, predefined: boolean, offset: number, limit: number, sort: ListSort = {}): Promise<List<Role>> {
+    return request<List<Role>>(client, 'GET', 'role', { query: { predefined, ...sort, offset, limit } });
 }
 
 // createRole creates a role, and returns it
@@ -126,10 +139,8 @@ export function getObject(client: Client, object: PgObject): Promise<PgObject> {
 
 // ConnectionFilter is the database whose connections are listed, or all
 // of them, and what they're sorted by, in which order
-export interface ConnectionFilter {
+export interface ConnectionFilter extends ListSort {
     database?: string;
-    sort?: string;
-    order?: 'asc' | 'desc';
 }
 
 // listConnections returns a page of the connections to the server, of the
@@ -155,8 +166,8 @@ export function endConnection(client: Client, pid: number): Promise<Connection> 
 }
 
 // listSettings returns a page of the settings, of a category, or of all
-export function listSettings(client: Client, category: string | undefined, offset: number, limit: number): Promise<List<Setting>> {
-    return request<List<Setting>>(client, 'GET', 'setting', { query: { category, offset, limit } });
+export function listSettings(client: Client, category: string | undefined, offset: number, limit: number, sort: ListSort = {}): Promise<List<Setting>> {
+    return request<List<Setting>>(client, 'GET', 'setting', { query: { category, ...sort, offset, limit } });
 }
 
 // listSettingCategories returns the categories of the settings
@@ -170,8 +181,8 @@ export function getSetting(client: Client, name: string): Promise<Setting> {
 }
 
 // listTablespaces returns a page of the tablespaces
-export function listTablespaces(client: Client, offset: number, limit: number): Promise<List<Tablespace>> {
-    return request<List<Tablespace>>(client, 'GET', 'tablespace', { query: { offset, limit } });
+export function listTablespaces(client: Client, offset: number, limit: number, sort: ListSort = {}): Promise<List<Tablespace>> {
+    return request<List<Tablespace>>(client, 'GET', 'tablespace', { query: { ...sort, offset, limit } });
 }
 
 // createTablespace creates a tablespace, in its location, and returns it
@@ -196,8 +207,8 @@ export function getTablespace(client: Client, name: string): Promise<Tablespace>
 }
 
 // listReplicationSlots returns a page of the replication slots
-export function listReplicationSlots(client: Client, offset: number, limit: number): Promise<List<ReplicationSlot>> {
-    return request<List<ReplicationSlot>>(client, 'GET', 'replication-slot', { query: { offset, limit } });
+export function listReplicationSlots(client: Client, offset: number, limit: number, sort: ListSort = {}): Promise<List<ReplicationSlot>> {
+    return request<List<ReplicationSlot>>(client, 'GET', 'replication-slot', { query: { ...sort, offset, limit } });
 }
 
 // getReplicationSlot returns a replication slot, by its name
@@ -225,8 +236,9 @@ export async function resetStatements(client: Client): Promise<void> {
 }
 
 // ExtensionFilter is the database whose extensions are listed, or none, for
-// those the server has available, and whether only those installed are
-export interface ExtensionFilter {
+// those the server has available, whether only those installed are, and
+// what they're sorted by, in which order
+export interface ExtensionFilter extends ListSort {
     database?: string;
     installed?: boolean;
 }

@@ -138,7 +138,7 @@ let predefinedRoles = false;
 const roles = new ListController<Role>({
     pageSize: 20,
     name: 'Roles',
-    list: (offset, limit) => api.listRoles(client, predefinedRoles, offset, limit),
+    list: (offset, limit, sort) => api.listRoles(client, predefinedRoles, offset, limit, api.listSort(sort)),
     get: (role) => api.getRole(client, role.name),
     same: (a, b) => a.name === b.name,
     notifications, changes, filter: { table: 'role' },
@@ -152,11 +152,13 @@ const extensions = new ListController<Extension>({
     // Without a database, the extensions are the server's, so only what's
     // the same in every database is kept, rather than what's installed in
     // the database pgmanager connects to
-    list: async (offset, limit) => {
+    // The server's extensions show their default version, so they sort by it
+    list: async (offset, limit, sort) => {
         if (extensionDatabase) {
-            return api.listExtensions(client, { database: extensionDatabase, installed: true }, offset, limit);
+            return api.listExtensions(client, { database: extensionDatabase, installed: true, ...api.listSort(sort) }, offset, limit);
         }
-        const list = await api.listExtensions(client, {}, offset, limit);
+        const order = api.listSort(sort);
+        const list = await api.listExtensions(client, { ...order, sort: order.sort === 'version' ? 'default_version' : order.sort }, offset, limit);
         return { ...list, body: list.body?.map(({ name, default_version, comment }) => ({ name, default_version, comment })) };
     },
     same: (a, b) => a.name === b.name && a.database === b.database,
@@ -166,11 +168,7 @@ let connectionDatabase: string | undefined;
 const connections = new ListController<Connection>({
     pageSize: 20,
     name: 'Connections',
-    list: (offset, limit, sort) => api.listConnections(client, {
-        database: connectionDatabase,
-        sort: sort?.key,
-        order: sort && (sort.direction === 'descending' ? 'desc' : 'asc'),
-    }, offset, limit),
+    list: (offset, limit, sort) => api.listConnections(client, { database: connectionDatabase, ...api.listSort(sort) }, offset, limit),
     get: (conn) => api.getConnection(client, conn.pid),
     same: (a, b) => a.pid === b.pid,
     notifications, changes, filter: { table: 'connection' },
@@ -178,7 +176,7 @@ const connections = new ListController<Connection>({
 let category: string | undefined;
 const settings = new ListController<Setting>({
     name: 'Settings',
-    list: (offset, limit) => api.listSettings(client, category, offset, limit),
+    list: (offset, limit, sort) => api.listSettings(client, category, offset, limit, api.listSort(sort)),
     get: (setting) => api.getSetting(client, setting.name),
     same: (a, b) => a.name === b.name,
     notifications, changes, filter: { table: 'setting' },
@@ -187,7 +185,7 @@ const settings = new ListController<Setting>({
 const tablespaces = new ListController<Tablespace>({
     pageSize: 20,
     name: 'Tablespaces',
-    list: (offset, limit) => api.listTablespaces(client, offset, limit),
+    list: (offset, limit, sort) => api.listTablespaces(client, offset, limit, api.listSort(sort)),
     get: (space) => api.getTablespace(client, space.name),
     same: (a, b) => a.name === b.name,
     notifications, changes, filter: { table: 'tablespace' },
@@ -195,7 +193,7 @@ const tablespaces = new ListController<Tablespace>({
 const slots = new ListController<ReplicationSlot>({
     pageSize: 20,
     name: 'Replication slots',
-    list: (offset, limit) => api.listReplicationSlots(client, offset, limit),
+    list: (offset, limit, sort) => api.listReplicationSlots(client, offset, limit, api.listSort(sort)),
     get: (slot) => api.getReplicationSlot(client, slot.name),
     same: (a, b) => a.name === b.name,
     notifications, changes, filter: { table: 'replication_slot' },

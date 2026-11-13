@@ -38,6 +38,11 @@ type Tablespace struct {
 
 type TablespaceListRequest struct {
 	pg.OffsetLimit
+
+	// Sort is what the tablespaces are sorted by, and Order its direction, asc or
+	// desc, which is asc when it's empty. Empty values are last, either way.
+	Sort  string `json:"sort,omitempty" help:"Sort by name, owner, location or size"`
+	Order string `json:"order,omitempty" help:"Order of the sort (asc or desc)"`
 }
 
 type TablespaceList struct {
@@ -114,15 +119,33 @@ func (d TablespaceListRequest) Query() url.Values {
 	if d.Limit != nil {
 		q.Set("limit", fmt.Sprint(types.Value(d.Limit)))
 	}
+	if d.Sort != "" {
+		q.Set("sort", d.Sort)
+	}
+	if d.Order != "" {
+		q.Set("order", d.Order)
+	}
 	return q
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // SELECT
 
+// tablespaceSorts are what tablespaces sort by
+var tablespaceSorts = sortColumns{
+	"name":     {`"name"`},
+	"owner":    {`"owner"`},
+	"location": {`NULLIF("location", '')`},
+	"size":     {`"size"`},
+}
+
 func (t *TablespaceListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Order
-	bind.Set("orderby", `ORDER BY name ASC`)
+	orderby, err := orderBy(t.Sort, t.Order, tablespaceSorts, `ORDER BY "name" ASC`, `"name"`)
+	if err != nil {
+		return "", err
+	}
+	bind.Set("orderby", orderby)
 
 	// Bind offset and limit
 	t.OffsetLimit.Bind(bind, TablespaceListLimit)

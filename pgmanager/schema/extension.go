@@ -38,6 +38,11 @@ type ExtensionListRequest struct {
 	Database  *string `json:"database,omitempty" help:"Database"`
 	Installed *bool   `json:"installed,omitempty" help:"Filter by installed status"`
 	pg.OffsetLimit
+
+	// Sort is what the extensions are sorted by, and Order its direction, asc or
+	// desc, which is asc when it's empty. Empty values are last, either way.
+	Sort  string `json:"sort,omitempty" help:"Sort by name, version, default_version or schema"`
+	Order string `json:"order,omitempty" help:"Order of the sort (asc or desc)"`
 }
 
 type ExtensionList struct {
@@ -81,6 +86,12 @@ func (q ExtensionListRequest) Query() url.Values {
 	}
 	if q.Installed != nil {
 		values.Set("installed", fmt.Sprint(types.Value(q.Installed)))
+	}
+	if q.Sort != "" {
+		values.Set("sort", q.Sort)
+	}
+	if q.Order != "" {
+		values.Set("order", q.Order)
 	}
 	return values
 }
@@ -129,6 +140,26 @@ func (r Extension) Cell(col int) tui.CellText {
 ////////////////////////////////////////////////////////////////////////////////
 // SELECT
 
+// extensionSorts are what extensions sort by: their version, which is
+// installed, or else the default, and their default version, as numbers
+// where they're numbers, so 1.10 is after 1.9, and as text after
+var extensionSorts = sortColumns{
+	"name":            {`"name"`},
+	"version":         versionSort(`COALESCE("installed_version", "default_version")`),
+	"default_version": versionSort(`"default_version"`),
+	"schema":          {`NULLIF("schema", '')`},
+}
+
+// versionSort sorts a version as numbers, such as 1.10, as [1,10], when
+// it's numbers, and then as text, for versions such as 1.0beta, which are
+// after those which are numbers
+func versionSort(version string) []string {
+	return []string{
+		`CASE WHEN ` + version + ` ~ '^[0-9]+(\.[0-9]+)*\Z' THEN string_to_array(` + version + `, '.')::int[] END`,
+		version,
+	}
+}
+
 func (e *ExtensionListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	if op != pg.List {
 		return "", pg.ErrNotImplemented.Withf("operation %q", op)
@@ -146,7 +177,11 @@ func (e *ExtensionListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	}
 
 	e.OffsetLimit.Bind(bind, ExtensionListLimit)
-	bind.Set("orderby", "ORDER BY name ASC")
+	orderby, err := orderBy(e.Sort, e.Order, extensionSorts, `ORDER BY "name" ASC`, `"name"`)
+	if err != nil {
+		return "", err
+	}
+	bind.Set("orderby", orderby)
 	return queryExtensionList, nil
 }
 

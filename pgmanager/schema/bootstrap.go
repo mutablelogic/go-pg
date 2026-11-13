@@ -16,7 +16,24 @@ import (
 type BootstrapResult struct {
 	// StatStatementsAvailable indicates if pg_stat_statements extension is available
 	StatStatementsAvailable bool
+
+	// Replica is true when the server is a replica, in recovery, which is
+	// read only, so nothing is created, as it's the primary's
+	Replica bool
 }
+
+// recovery is whether the server is in recovery, as a replica is, and
+// extension whether an extension is installed
+type recovery bool
+type extension bool
+
+func (r *recovery) Scan(row pg.Row) error  { return row.Scan((*bool)(r)) }
+func (e *extension) Scan(row pg.Row) error { return row.Scan((*bool)(e)) }
+
+// query is a query, as a selector
+type query string
+
+func (q query) Select(*pg.Bind, pg.Op) (string, error) { return string(q), nil }
 
 // Bootstrap creates required extensions for the manager.
 // - dblink: Required for remote database queries
@@ -24,6 +41,26 @@ type BootstrapResult struct {
 // This should be called once when initializing the manager.
 func Bootstrap(ctx context.Context, conn pg.PoolConn) (*BootstrapResult, error) {
 	result := &BootstrapResult{}
+
+	// A replica is read only, so its extensions, and its roles'
+	// descriptions, are the primary's, which are checked, not created
+	var inRecovery recovery
+	if err := conn.Get(ctx, &inRecovery, query(inRecoveryQuery)); err != nil {
+		return nil, err
+	}
+	result.Replica = bool(inRecovery)
+	if result.Replica {
+		var dblink extension
+		if err := conn.Get(ctx, &dblink, query(dblinkExistsQuery)); err != nil {
+			return nil, err
+		} else if !dblink {
+			return nil, pg.ErrNotAvailable.With("the server is a replica, without the dblink extension, which pgmanager needs, so it's created on the primary, such as by running pgmanager there")
+		}
+		if err := conn.Exec(ctx, statStatementsVerify); err == nil {
+			result.StatStatementsAvailable = true
+		}
+		return result, nil
+	}
 
 	// Create dblink extension (required)
 	if err := conn.Exec(ctx, dblinkCreateExtension); err != nil {
@@ -83,4 +120,6 @@ const (
 	dblinkCreateExtension         = `CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA ` + defaultSchema
 	statStatementsCreateExtension = `CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA ` + defaultSchema
 	statStatementsVerify          = `SELECT 1 FROM public.pg_stat_statements LIMIT 1`
+	inRecoveryQuery               = `SELECT pg_is_in_recovery()`
+	dblinkExistsQuery             = `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'dblink')`
 )

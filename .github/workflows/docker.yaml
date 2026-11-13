@@ -5,9 +5,14 @@ on:
             - published
     workflow_dispatch:
 
+# pgmanager, beside PostgreSQL, on docker-postgres's image, for each of its
+# PostgreSQL versions, and each architecture. Each version's image is
+# <version>-<pg>, such as 1.5.0-17-bookworm, and <pg>, such as 17-bookworm,
+# for the latest, and latest is 17-bookworm.
 env:
     DOCKER_REPO: ghcr.io/${{ github.repository_owner }}/pgmanager
     DOCKER_SOURCE: github.com/${{ github.repository }}
+    LATEST: 17-bookworm
 
 jobs:
     build:
@@ -15,12 +20,16 @@ jobs:
         strategy:
             matrix:
                 arch: [amd64, arm64]
+                pg: [17-bookworm, 18-trixie]
         runs-on:
             ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || matrix.arch == 'arm64'
             && 'ubuntu-24.04-arm' }}
         env:
             OS: linux
             ARCH: ${{ matrix.arch }}
+            PG_VERSION: ${{ matrix.pg }}
+            # The web UI installs @mutablelogic/go-server from GitHub Packages
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         outputs:
             tag: ${{ steps.build.outputs.tag }}
         permissions:
@@ -52,9 +61,7 @@ jobs:
         needs: build
         strategy:
             matrix:
-                tag:
-                    - ${{ needs.build.outputs.tag }}
-                    - "latest"
+                pg: [17-bookworm, 18-trixie]
         runs-on: ubuntu-latest
         permissions:
             packages: write
@@ -65,19 +72,18 @@ jobs:
                   registry: ghcr.io
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
-            - name: Create
+            - name: Create, annotate and push
+              env:
+                  VERSION: ${{ needs.build.outputs.tag }}
+                  PG: ${{ matrix.pg }}
               run: |
-                  docker manifest create ${DOCKER_REPO}:${{ matrix.tag }} \
-                                        --amend ${DOCKER_REPO}:${{ needs.build.outputs.tag }}-linux-amd64 \
-                                        --amend ${DOCKER_REPO}:${{ needs.build.outputs.tag }}-linux-arm64
-            - name: Annotate
-              run: |
-                  docker manifest annotate --arch amd64 --os linux \
-                    ${DOCKER_REPO}:${{ matrix.tag }} \
-                                        ${DOCKER_REPO}:${{ needs.build.outputs.tag }}-linux-amd64
-                  docker manifest annotate --arch arm64 --os linux \
-                    ${DOCKER_REPO}:${{ matrix.tag }} \
-                                        ${DOCKER_REPO}:${{ needs.build.outputs.tag }}-linux-arm64
-            - name: Push
-              run: |
-                  docker manifest push ${DOCKER_REPO}:${{ matrix.tag }}
+                  TAGS="${VERSION}-${PG} ${PG}"
+                  if [ "${PG}" = "${LATEST}" ]; then TAGS="${TAGS} latest"; fi
+                  for TAG in ${TAGS}; do
+                      docker manifest create ${DOCKER_REPO}:${TAG} \
+                          --amend ${DOCKER_REPO}:${VERSION}-${PG}-linux-amd64 \
+                          --amend ${DOCKER_REPO}:${VERSION}-${PG}-linux-arm64
+                      docker manifest annotate --arch amd64 --os linux ${DOCKER_REPO}:${TAG} ${DOCKER_REPO}:${VERSION}-${PG}-linux-amd64
+                      docker manifest annotate --arch arm64 --os linux ${DOCKER_REPO}:${TAG} ${DOCKER_REPO}:${VERSION}-${PG}-linux-arm64
+                      docker manifest push ${DOCKER_REPO}:${TAG}
+                  done

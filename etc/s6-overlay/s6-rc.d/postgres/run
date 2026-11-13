@@ -1,0 +1,14 @@
+#!/command/with-contenv sh
+# PostgreSQL, through docker-postgres's entrypoint, which initialises it, the
+# first time, and runs it as postgres, or the official one, which an image
+# of docker-postgres before its own has. Its down-signal, SIGINT, is a fast
+# shutdown, which a restart is.
+export PATH="/usr/lib/postgresql/${PG_MAJOR}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# postgres's home, rather than the container's, root's, which s6 keeps, so
+# libpq finds the replica's .pgpass there
+export HOME=/var/lib/postgresql
+if [ -x /usr/local/bin/entrypoint.sh ]; then
+    exec /usr/local/bin/entrypoint.sh postgres
+fi
+exec /usr/local/bin/docker-entrypoint.sh postgres

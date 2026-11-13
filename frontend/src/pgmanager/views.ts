@@ -32,10 +32,11 @@ export function formatBytes(bytes?: number): string {
     return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-// description is a comment, in a table's cell, which is cut short, and
-// shown in full when it's hovered
-function description(comment?: string) {
-    return comment ? html`<span style="display: block; max-width: 20rem; overflow: hidden; text-overflow: ellipsis" title=${comment}>${comment}</span>` : '';
+// description is a comment, in a table's cell, which is cut short, at the
+// width, and shown in full when it's hovered. It's wider when it's the last
+// column, as there are no columns after it to push out of the table.
+function description(comment?: string, width = '20rem') {
+    return comment ? html`<span style="display: block; max-width: ${width}; overflow: hidden; text-overflow: ellipsis" title=${comment}>${comment}</span>` : '';
 }
 
 // roleName is a role's name, with a person before it, so it's seen to be a
@@ -109,7 +110,7 @@ function roleLinks(names: readonly string[] | undefined, onRole: (name: string) 
 // with the function. PostgreSQL's own roles have no permissions, so they've
 // no column of them.
 export const roleColumns = (onRole: (name: string) => void, predefined = false): Column<Role>[] => [
-    { header: 'Role', cell: (role) => roleName(role.name) },
+    { header: 'Role', cell: (role) => roleName(role.name), sort: 'name', sortFirst: 'ascending' },
     { header: 'Description', cell: (role) => description(role.comment) },
     ...(predefined ? [] : [{ header: 'Permissions', cell: (role: Role) => roleFlags(role).map((flag) => html`<cds-tag size="sm" type="gray">${flag}</cds-tag>`) }]),
     { header: 'Member of', cell: (role) => roleLinks(role.memberof, onRole) },
@@ -242,10 +243,10 @@ function settingValue(setting: Setting): string {
 }
 
 export const settingColumns: Column<Setting>[] = [
-    { header: 'Setting', cell: (setting) => setting.name },
+    { header: 'Setting', cell: (setting) => setting.name, sort: 'name', sortFirst: 'ascending' },
     { header: 'Value', cell: (setting) => settingValue(setting) },
-    { header: 'Category', cell: (setting) => setting.category },
-    { header: 'Context', cell: (setting) => tag(setting.context) },
+    { header: 'Category', cell: (setting) => setting.category, sort: 'category', sortFirst: 'ascending' },
+    { header: 'Context', cell: (setting) => tag(setting.context), sort: 'context', sortFirst: 'ascending' },
 ];
 
 export function settingBody(setting: Setting): TemplateResult {
@@ -269,11 +270,11 @@ export function settingCategories(categories: readonly string[], category: strin
 }
 
 export const tablespaceColumns: Column<Tablespace>[] = [
-    { header: 'Tablespace', cell: (space) => space.name },
+    { header: 'Tablespace', cell: (space) => space.name, sort: 'name', sortFirst: 'ascending' },
     { header: 'Description', cell: (space) => description(space.comment) },
-    { header: 'Owner', cell: (space) => roleName(space.owner) },
-    { header: 'Location', cell: (space) => space.location || 'default' },
-    { header: 'Size', cell: (space) => formatBytes(space.bytes) },
+    { header: 'Owner', cell: (space) => roleName(space.owner), sort: 'owner', sortFirst: 'ascending' },
+    { header: 'Location', cell: (space) => space.location || 'default', sort: 'location', sortFirst: 'ascending' },
+    { header: 'Size', cell: (space) => formatBytes(space.bytes), sort: 'size' },
 ];
 
 // tablespaceBody is a tablespace in the panel, with the databases which have
@@ -307,12 +308,12 @@ function formatLag(slot: ReplicationSlot): string {
 }
 
 export const replicationSlotColumns: Column<ReplicationSlot>[] = [
-    { header: 'Slot', cell: (slot) => slot.name },
-    { header: 'Type', cell: (slot) => tag(slot.type) },
-    { header: 'Database', cell: (slot) => slot.database ?? '' },
-    { header: 'Plugin', cell: (slot) => slot.plugin ?? '' },
-    { header: 'Status', cell: (slot) => tag(slot.status, slot.status === 'active' || slot.status === 'streaming' ? 'green' : 'gray') },
-    { header: 'Lag', cell: (slot) => formatLag(slot) },
+    { header: 'Slot', cell: (slot) => slot.name, sort: 'name', sortFirst: 'ascending' },
+    { header: 'Type', cell: (slot) => tag(slot.type), sort: 'type', sortFirst: 'ascending' },
+    { header: 'Database', cell: (slot) => slot.database ?? '', sort: 'database', sortFirst: 'ascending' },
+    { header: 'Plugin', cell: (slot) => slot.plugin ?? '', sort: 'plugin', sortFirst: 'ascending' },
+    { header: 'Status', cell: (slot) => tag(slot.status, slot.status === 'active' || slot.status === 'streaming' ? 'green' : 'gray'), sort: 'status', sortFirst: 'ascending' },
+    { header: 'Lag', cell: (slot) => formatLag(slot), sort: 'lag' },
 ];
 
 export function replicationSlotBody(slot: ReplicationSlot): TemplateResult {
@@ -381,11 +382,13 @@ function extensionVersion(ext: Extension): string {
     return ext.installed_version;
 }
 
-export const extensionColumns: Column<Extension>[] = [
-    { header: 'Extension', cell: (ext) => ext.name },
-    { header: 'Version', cell: (ext) => extensionVersion(ext) },
-    { header: 'Schema', cell: (ext) => ext.schema ?? '' },
-    { header: 'Description', cell: (ext) => description(ext.comment) },
+// extensionColumns are the extensions' columns: those installed in a
+// database have a schema, and those the server has available don't
+export const extensionColumns = (installed: boolean): Column<Extension>[] => [
+    { header: 'Extension', cell: (ext) => ext.name, sort: 'name', sortFirst: 'ascending' },
+    { header: 'Version', cell: (ext) => extensionVersion(ext), sort: 'version' },
+    ...(installed ? [{ header: 'Schema', cell: (ext: Extension) => ext.schema ?? '', sort: 'schema', sortFirst: 'ascending' as const }] : []),
+    { header: 'Description', cell: (ext) => description(ext.comment, 'min(40rem, 40vw)') },
 ];
 
 export function extensionBody(ext: Extension): TemplateResult {

@@ -34,12 +34,22 @@ type Setting struct {
 	Context     string  `json:"context"` // internal, postmaster, sighup, superuser, user
 	Description string  `json:"description,omitempty"`
 	ExtraDesc   string  `json:"extra_desc,omitempty"`
+
+	// Changed is true when the setting is set for the server, such as in its
+	// configuration file, or by ALTER SYSTEM, rather than its default, or
+	// this connection's
+	Changed bool `json:"changed,omitempty"`
 }
 
 // SettingListRequest is used to retrieve server settings
 type SettingListRequest struct {
 	pg.OffsetLimit
 	Category *string `json:"category,omitempty" help:"Filter by category"`
+
+	// Sort is what the settings are sorted by, and Order its direction, asc or
+	// desc, which is asc when it's empty. Empty values are last, either way.
+	Sort  string `json:"sort,omitempty" help:"Sort by name, category, context or changed"`
+	Order string `json:"order,omitempty" help:"Order of the sort (asc or desc)"`
 }
 
 // SettingList contains the list of settings
@@ -142,6 +152,12 @@ func (d SettingListRequest) Query() url.Values {
 	if d.Category != nil {
 		q.Set("category", *d.Category)
 	}
+	if d.Sort != "" {
+		q.Set("sort", d.Sort)
+	}
+	if d.Order != "" {
+		q.Set("order", d.Order)
+	}
 	return q
 }
 
@@ -152,10 +168,22 @@ func (d SettingCategoryListRequest) Query() url.Values {
 ///////////////////////////////////////////////////////////////////////////////
 // SELECT
 
+// settingSorts are what settings sort by
+var settingSorts = sortColumns{
+	"name":     {`"name"`},
+	"category": {`"category"`},
+	"context":  {`"context"`},
+	"changed":  {`"changed"`},
+}
+
 func (r *SettingListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Set empty where
 	bind.Set("where", "")
-	bind.Set("orderby", "ORDER BY category, name")
+	orderby, err := orderBy(r.Sort, r.Order, settingSorts, `ORDER BY "category", "name"`, `"name"`)
+	if err != nil {
+		return "", err
+	}
+	bind.Set("orderby", orderby)
 
 	// Filter by category
 	if r.Category != nil {
@@ -223,7 +251,7 @@ func (m SettingMeta) Update(bind *pg.Bind) error {
 // READER
 
 func (s *Setting) Scan(row pg.Row) error {
-	return row.Scan(&s.Name, &s.Value, &s.Unit, &s.Category, &s.Context, &s.Description, &s.ExtraDesc)
+	return row.Scan(&s.Name, &s.Value, &s.Unit, &s.Category, &s.Context, &s.Description, &s.ExtraDesc, &s.Changed)
 }
 
 func (l *SettingList) Scan(row pg.Row) error {
@@ -264,7 +292,8 @@ const (
 			category AS "category",
 			context AS "context",
 			COALESCE(short_desc, '') AS "description",
-			COALESCE(extra_desc, '') AS "extra_desc"
+			COALESCE(extra_desc, '') AS "extra_desc",
+			source NOT IN ('default', 'override', 'client', 'session') AS "changed"
 		FROM
 			pg_catalog.pg_settings
 	`

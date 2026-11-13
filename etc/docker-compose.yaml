@@ -66,6 +66,9 @@ services:
   primary:
     image: ghcr.io/mutablelogic/pgmanager:${PG_VERSION:-17-bookworm}
     restart: unless-stopped
+    # Time to stop pgmanager, then PostgreSQL, whose shutdown checkpoint can
+    # take a while, before Docker kills them, which exits 137
+    stop_grace_period: 1m
     ports:
       - "5432:5432"                             # PostgreSQL
       - "8080:8080"                             # pgmanager's API and web UI
@@ -86,6 +89,7 @@ services:
     profiles: [replica]
     image: ghcr.io/mutablelogic/pgmanager:${PG_VERSION:-17-bookworm}
     restart: unless-stopped
+    stop_grace_period: 1m
     depends_on:
       primary:
         condition: service_healthy

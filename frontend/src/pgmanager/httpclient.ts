@@ -8,7 +8,7 @@ import type { SchemaRequest } from './schemaform.ts';
 import type { ExtensionRequest } from './extensionform.ts';
 import type { TablespaceRequest } from './tablespaceform.ts';
 import type { RoleRequest } from './roleform.ts';
-import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './schema.ts';
+import { ListLimits, type Connection, type Database, type Extension, type List, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type SettingCategory, type Statement, type StatementSort, type Tablespace } from './schema.ts';
 
 // listAll returns every page of a list, a page at a time, of at most the
 // limit, from the offset of the items it has, until it has them all
@@ -165,14 +165,16 @@ export function endConnection(client: Client, pid: number): Promise<Connection> 
     return request<Connection>(client, 'DELETE', `connection/${pid}`);
 }
 
-// listSettings returns a page of the settings, of a category, or of all
+// listSettings returns a page of the settings, of a category, or a top level
+// of them, or of all
 export function listSettings(client: Client, category: string | undefined, offset: number, limit: number, sort: ListSort = {}): Promise<List<Setting>> {
     return request<List<Setting>>(client, 'GET', 'setting', { query: { category, ...sort, offset, limit } });
 }
 
-// listSettingCategories returns the categories of the settings
-export function listSettingCategories(client: Client): Promise<List<string>> {
-    return request<List<string>>(client, 'GET', 'setting/category');
+// listSettingCategories returns the top levels of the settings' categories,
+// with how many settings each has, and how many are changed
+export function listSettingCategories(client: Client): Promise<List<SettingCategory>> {
+    return request<List<SettingCategory>>(client, 'GET', 'setting/category');
 }
 
 // getSetting returns a setting, by its name

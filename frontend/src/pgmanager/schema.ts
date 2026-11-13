@@ -86,6 +86,15 @@ export interface Setting {
     changed?: boolean;
 }
 
+// SettingCategory is a top level of the settings' categories, which are two
+// levels, such as "Client Connection Defaults / Locale and Formatting", with
+// how many settings it has, and how many of them are changed
+export interface SettingCategory {
+    name: string;
+    count: number;
+    changed: number;
+}
+
 // Tablespace is a tablespace, with its location, and its size, in bytes
 export interface Tablespace {
     oid: number;

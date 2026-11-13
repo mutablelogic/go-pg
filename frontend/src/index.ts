@@ -31,7 +31,7 @@ import './core/header.ts';
 import type { PageHeaderElement } from './core/header.ts';
 import * as api from './pgmanager/httpclient.ts';
 import type { ObjectFilter } from './pgmanager/httpclient.ts';
-import { ListLimits, type Connection, type Database, type Extension, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
+import { ListLimits, type Connection, type Database, type Extension, type PgObject, type ReplicationSlot, type Role, type Schema, type Setting, type SettingCategory, type Statement, type StatementSort, type Tablespace } from './pgmanager/schema.ts';
 import * as views from './pgmanager/views.ts';
 import type { AclItem, AclRow } from './pgmanager/aclform.ts';
 import { roleForm, roleFormErrors, roleRequest, type RoleFormErrors } from './pgmanager/roleform.ts';
@@ -488,7 +488,7 @@ async function endConnection(conn: Connection) {
         panel.close();
     }
 }
-table('setting-table', settings, ListLimits.setting, views.settingColumns, (setting) => ({ title: setting.name, subtitle: setting.category, body: views.settingBody(setting) }));
+table('setting-table', settings, ListLimits.setting, views.settingColumns(), (setting) => ({ title: setting.name, subtitle: setting.category, body: views.settingBody(setting) }));
 table('tablespace-table', tablespaces, ListLimits.tablespace, views.tablespaceColumns, tablespaceView);
 
 // tablespaceView is a tablespace in the panel, which, unless it's
@@ -880,26 +880,43 @@ function renderTypes() {
     }
 }
 
-// The dropdown of the settings' categories, which are loaded once, and
-// choose the category of the settings which are shown
-const categoriesView = document.getElementById('setting-categories');
-let categories: string[] = [];
-function renderCategories() {
-    if (categoriesView) {
-        render(views.settingCategories(categories, category, (next) => {
-            category = next;
-            if (panel.current.item?.kind === 'setting-table') {
-                panel.close();
-            }
-            renderCategories();
-            void settings.reset();
-        }), categoriesView);
+// The tiles of the top levels of the settings' categories, with how many
+// settings each has, and how many are changed, which choose the settings
+// which are shown, of which the table shows the categories under it
+const settingCategories = new ListController<SettingCategory>({
+    name: 'Setting categories',
+    list: () => api.listSettingCategories(client),
+    same: (a, b) => a.name === b.name,
+    notifications, changes, filter: { table: 'setting' },
+});
+const settingTiles = document.getElementById('setting-tiles') as TilesElement<SettingCategory> | null;
+function renderSettingTiles() {
+    if (settingTiles) {
+        const items = settingCategories.current.items ?? [];
+        const sum = (n: (c: SettingCategory) => number) => items.reduce((total, c) => total + n(c), 0);
+        settingTiles.all = { ...views.settingCategoryTile('All', items.length ? sum((c) => c.count) : undefined, sum((c) => c.changed)), value: '' };
+        settingTiles.tile = (c) => views.settingCategoryTile(c.name, c.count, c.changed);
+        settingTiles.selected = category ?? '';
     }
 }
-api.listSettingCategories(client).then((list) => {
-    categories = list.body ?? [];
-    renderCategories();
-}).catch((error) => notifications.error("The settings' categories couldn't be loaded", error));
+if (settingTiles) {
+    settingTiles.controller = settingCategories;
+    settingTiles.addEventListener(TileSelectEvent, (event) => {
+        category = (event as CustomEvent<string>).detail || undefined;
+        if (panel.current.item?.kind === 'setting-table') {
+            panel.close();
+        }
+        const settingTable = document.getElementById('setting-table') as TableElement<Setting> | null;
+        if (settingTable) {
+            settingTable.columns = views.settingColumns(category);
+        }
+        renderSettingTiles();
+        void settings.reset();
+    });
+    settingCategories.subscribe(() => renderSettingTiles());
+    renderSettingTiles();
+    void settingCategories.load();
+}
 
 // The pages' headers, with their icons, and the statements' action, which
 // resets their statistics, once it's confirmed

@@ -96,7 +96,7 @@ type ExtensionClientCommands struct {
 
 type SettingClientCommands struct {
 	SettingList         SettingListCmd         `cmd:"" name:"settings" help:"List server settings." group:"SETTING"`
-	SettingCategoryList SettingCategoryListCmd `cmd:"" name:"categories" help:"List distinct setting categories." group:"SETTING"`
+	SettingCategoryList SettingCategoryListCmd `cmd:"" name:"categories" help:"List the top levels of the setting categories, with how many settings each has, and how many are changed." group:"SETTING"`
 	SettingGet          SettingGetCmd          `cmd:"" name:"setting" help:"Get setting details." group:"SETTING"`
 	SettingUpdate       SettingUpdateCmd       `cmd:"" name:"setting-update" help:"Update a setting." group:"SETTING"`
 }
@@ -887,20 +887,14 @@ func (cmd *SettingCategoryListCmd) Run(ctx server.Cmd) error {
 			return err
 		}
 
-		// Comvert string to schema.CategoryName for table rendering
-		categoryNames := make([]schema.CategoryName, len(categories.Body))
-		for i, category := range categories.Body {
-			categoryNames[i] = schema.CategoryName(category)
-		}
-
 		// Categories list table
-		table := tui.TableFor[schema.CategoryName](tui.SetWidth(width))
-		if _, err := table.Write(os.Stdout, categoryNames...); err != nil {
+		table := tui.TableFor[schema.SettingCategory](tui.SetWidth(width))
+		if _, err := table.Write(os.Stdout, categories.Body...); err != nil {
 			return err
 		}
 
 		// Categories list summary
-		summary := tui.TableSummary("categories", uint(categories.Count), uint(len(categoryNames)), 0, nil)
+		summary := tui.TableSummary("categories", uint(categories.Count), uint(len(categories.Body)), 0, nil)
 		if _, err := summary.Write(os.Stdout); err != nil {
 			return err
 		}

@@ -5,6 +5,7 @@ import { html, type TemplateResult } from 'lit';
 import iconLoader from '@carbon/web-components/es/globals/internal/icon-loader.js';
 import UserIcon from '@carbon/icons/es/user/16.js';
 import TrashIcon from '@carbon/icons/es/trash-can/16.js';
+import EditIcon from '@carbon/icons/es/edit/16.js';
 import type { Column } from '@mutablelogic/go-server/list/view';
 import type { Tile } from '@mutablelogic/go-server/list/tiles';
 import type { Connection, Extension, PgObject, ReplicationSlot, Role, Schema, Setting, Statement, Tablespace } from './schema.ts';
@@ -53,6 +54,14 @@ export function roleName(name?: string) {
 // the owner, when it's hovered
 export function ownerBadge(owner?: string): Pick<Tile, 'badge' | 'badgeIcon' | 'badgeTitle'> {
     return owner ? { badge: owner, badgeIcon: iconLoader(UserIcon), badgeTitle: 'Owner' } : {};
+}
+
+// settingCategoryTile is a top level of the settings' categories, with how
+// many settings it has, and a pencil, with how many of them are changed,
+// unless none are, and its name, which may be cut short, when it's hovered
+export function settingCategoryTile(name: string, count: number | undefined, changed: number): Tile {
+    const badge = changed ? { badge: changed.toLocaleString(), badgeIcon: iconLoader(EditIcon), badgeTitle: `${changed.toLocaleString()} changed from their defaults` } : {};
+    return { value: name, label: name, text: count?.toLocaleString(), title: name, ...badge };
 }
 
 // schemaTile is a schema's tile, with its owner, and its size
@@ -242,10 +251,21 @@ function settingValue(setting: Setting): string {
     return setting.value === null ? '' : setting.unit ? `${setting.value} ${setting.unit}` : setting.value;
 }
 
-export const settingColumns: Column<Setting>[] = [
+// subcategory is a setting's category, under the top level, such as Locale
+// and Formatting, under Client Connection Defaults, or else its category
+function subcategory(category: string, top?: string): string {
+    if (!top) {
+        return category;
+    }
+    return category.startsWith(`${top} / `) ? category.slice(top.length + 3) : '';
+}
+
+// settingColumns are the settings' columns, of a top level of their
+// categories, whose settings show the category under it, or of all
+export const settingColumns = (top?: string): Column<Setting>[] => [
     { header: 'Setting', cell: (setting) => setting.name, sort: 'name', sortFirst: 'ascending' },
     { header: 'Value', cell: (setting) => settingValue(setting) },
-    { header: 'Category', cell: (setting) => setting.category, sort: 'category', sortFirst: 'ascending' },
+    { header: 'Category', cell: (setting) => subcategory(setting.category, top), sort: 'category', sortFirst: 'ascending' },
     { header: 'Context', cell: (setting) => tag(setting.context), sort: 'context', sortFirst: 'ascending' },
 ];
 
@@ -254,18 +274,6 @@ export function settingBody(setting: Setting): TemplateResult {
         ${setting.description ? html`<p class="description">${setting.description}</p>` : ''}
         ${setting.extra_desc ? html`<p class="description">${setting.extra_desc}</p>` : ''}
         ${fields([['Value', settingValue(setting)], ['Category', setting.category], ['Context', setting.context]])}
-    `;
-}
-
-// settingCategories is the dropdown of the settings' categories, of which
-// the category, or all, is chosen, which calls the function with the
-// category which is chosen
-export function settingCategories(categories: readonly string[], category: string | undefined, onCategory: (category?: string) => void): TemplateResult {
-    return html`
-        <cds-dropdown type="inline" title-text="Category" value=${category ?? ''} @cds-dropdown-selected=${(event: CustomEvent<{ item: { value: string } }>) => onCategory(event.detail.item.value || undefined)}>
-            <cds-dropdown-item value="">All</cds-dropdown-item>
-            ${categories.map((name) => html`<cds-dropdown-item value=${name}>${name}</cds-dropdown-item>`)}
-        </cds-dropdown>
     `;
 }
 

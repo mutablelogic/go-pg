@@ -11,6 +11,10 @@ import '@carbon/web-components/es/components/tag/tag.js';
 // to, the role it runs as, and its connection, which can't be deleted
 export const you = html`<cds-tag size="sm" type="blue" title="pgmanager's own" style="margin: 0 0 0 0.25rem">you</cds-tag>`;
 
+// connected is the badge of the database pgmanager is connected to, which
+// says so, rather than "you", beside its owner, who may be "you" too
+export const connected = html`<cds-tag size="sm" type="blue" title="pgmanager is connected to this database, so it can't be deleted" style="margin: 0">connected</cds-tag>`;
+
 // currentRole is the role pgmanager runs as, and badges are the elements
 // which badge it, wherever they are, such as in a page's header, or a
 // panel, which are rendered again when it changes

@@ -55,7 +55,7 @@ export function roleName(name?: string) {
 
 // you, and setCurrentRole, which badges the role pgmanager runs as,
 // wherever it's shown, once it's known
-export { setCurrentRole, you } from './current.ts';
+export { connected, setCurrentRole, you } from './current.ts';
 
 // ownerBadge is a tile's badge of its owner, with a person, which says it's
 // the owner, when it's hovered

@@ -944,7 +944,7 @@ function showDatabase(name: string) {
     if (header) {
         header.heading = name;
         // Its description, its owner, as a role is shown, and its size
-        header.details = db ? html`${[db.comment, db.owner && html`<span title="Owner">${views.roleName(db.owner)}</span>`, views.formatBytes(db.bytes), db.current && html`<span title="pgmanager is connected to this database, so it can't be deleted">${views.you}</span>`]
+        header.details = db ? html`${[db.comment, db.owner && html`<span title="Owner">${views.roleName(db.owner)}</span>`, views.formatBytes(db.bytes), db.current && views.connected]
             .filter(Boolean)
             .map((part, i) => html`${i ? ' · ' : ''}${part}`)}` : undefined;
         header.actions = [

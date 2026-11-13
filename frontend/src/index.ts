@@ -514,9 +514,12 @@ async function showSetting(name: string) {
 // alterSystem is whether ALTER SYSTEM is allowed, which PostgreSQL 17 can
 // turn off, with allow_alter_system, and which earlier versions don't have
 let alterSystem = true;
-api.getSetting(client, 'allow_alter_system').then((setting) => {
-    alterSystem = setting.value !== 'off';
-}).catch(() => undefined);
+function loadAlterSystem(): Promise<void> {
+    return api.getSetting(client, 'allow_alter_system').then((setting) => {
+        alterSystem = setting.value !== 'off';
+    }).catch(() => undefined);
+}
+void loadAlterSystem();
 
 // settingView is a setting in the panel, which can be changed, unless it's
 // PostgreSQL's own, needs a restart, or ALTER SYSTEM is turned off, and
@@ -1015,8 +1018,9 @@ function restartServer() {
         return;
     }
     notifications.push({ kind: 'info', title: 'Restarting PostgreSQL…' });
-    api.restart(client).then(() => {
+    api.restart(client).then(async () => {
         notifications.push({ kind: 'success', title: 'PostgreSQL was restarted' });
+        await loadAlterSystem();
         void settings.refresh();
         void settingCategories.refresh();
     }).catch((error) => notifications.error("PostgreSQL couldn't be restarted", error));
@@ -1025,8 +1029,11 @@ function restartServer() {
 // reloadSettings reloads the configuration files, and says what's waiting
 // for a restart, and what's skipped, as the files have errors
 function reloadSettings() {
-    api.reload(client).then((result) => {
+    api.reload(client).then(async (result) => {
         notifications.push(reloadNotification(result));
+        // allow_alter_system may have changed in the configuration file,
+        // so it's read again, before the settings show what can be changed
+        await loadAlterSystem();
         void settings.refresh();
         void settingCategories.refresh();
     }).catch((error) => notifications.error("The configuration couldn't be reloaded", error));

@@ -2,8 +2,12 @@ package schema
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -114,6 +118,11 @@ type SettingFileError struct {
 	Line  int    `json:"line"`
 	Name  string `json:"name,omitempty"`
 	Error string `json:"error"`
+
+	// The value in the file, and the setting's, to tell whether the error
+	// is only that it waits for a restart
+	value   string
+	setting *Setting
 }
 
 // SettingPendingRestart are the names of the settings which wait for the
@@ -408,17 +417,66 @@ func (SettingPendingRestart) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 func (e *SettingFileErrors) Scan(row pg.Row) error {
 	var err SettingFileError
-	if err := row.Scan(&err.File, &err.Line, &err.Name, &err.Error); err != nil {
+	var known bool
+	var setting Setting
+	if err := row.Scan(&err.File, &err.Line, &err.Name, &err.Error, &err.value, &known, &setting.Type, &setting.Context, &setting.Min, &setting.Max, &setting.Values, &setting.PendingRestart); err != nil {
 		return err
+	}
+	if known {
+		err.setting = &setting
 	}
 	*e = append(*e, err)
 	return nil
 }
 
+// RestartOnly is true when the error is only that the setting waits for the
+// server to restart, which PostgreSQL doesn't tell apart from a value which
+// is invalid: the setting needs a restart, waits for one, and its value in
+// the file is one of its type, within its limits, or with a unit, which
+// the server checks. A value which isn't, or can't be told, is an error.
+func (e SettingFileError) RestartOnly() bool {
+	if e.setting == nil || e.setting.Context != "postmaster" || !e.setting.PendingRestart {
+		return false
+	}
+	value := strings.TrimSpace(e.value)
+	switch e.setting.Type {
+	case "bool":
+		switch strings.ToLower(value) {
+		case "on", "off", "true", "false", "yes", "no", "1", "0":
+			return true
+		}
+		return false
+	case "enum":
+		return slices.ContainsFunc(e.setting.Values, func(v string) bool { return strings.EqualFold(v, value) })
+	case "integer", "real":
+		if withUnit.MatchString(value) {
+			return true
+		}
+		number, err := strconv.ParseFloat(value, 64)
+		if err != nil || (e.setting.Type == "integer" && number != math.Trunc(number)) {
+			return false
+		}
+		if min, err := strconv.ParseFloat(types.Value(e.setting.Min), 64); err == nil && number < min {
+			return false
+		}
+		if max, err := strconv.ParseFloat(types.Value(e.setting.Max), 64); err == nil && number > max {
+			return false
+		}
+		return true
+	case "string":
+		return true
+	default:
+		return false
+	}
+}
+
+// withUnit is a number with a unit, such as 128MB, or 30s
+var withUnit = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?\s*(B|kB|MB|GB|TB|us|ms|s|min|h|d)$`)
+
 func (SettingFileErrors) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	switch op {
 	case pg.List:
-		return `SELECT COALESCE(sourcefile, ''), COALESCE(sourceline, 0), COALESCE(name, ''), error FROM pg_catalog.pg_file_settings WHERE error IS NOT NULL ORDER BY seqno`, nil
+		return `SELECT COALESCE(F.sourcefile, ''), COALESCE(F.sourceline, 0), COALESCE(F.name, ''), F.error, COALESCE(F.setting, ''), S.name IS NOT NULL, COALESCE(S.vartype, ''), COALESCE(S.context, ''), S.min_val, S.max_val, S.enumvals, COALESCE(S.pending_restart, false) FROM pg_catalog.pg_file_settings F LEFT JOIN pg_catalog.pg_settings S ON lower(S.name) = lower(F.name) WHERE F.error IS NOT NULL ORDER BY F.seqno`, nil
 	default:
 		return "", pg.ErrNotImplemented.Withf("unsupported SettingFileErrors operation %q", op)
 	}

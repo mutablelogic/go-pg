@@ -2,8 +2,6 @@ package manager
 
 import (
 	"context"
-	"slices"
-	"strings"
 	"time"
 
 	// Packages
@@ -140,7 +138,8 @@ func (manager *Manager) UpdateSetting(ctx context.Context, name string, meta sch
 // when it was loaded, the settings which wait for the server to restart, and
 // the errors in the configuration files, which pg_reload_conf() doesn't
 // report, and whose settings are skipped. A setting which waits for a
-// restart is an error in the files too, which isn't returned as one.
+// restart is an error in the files too, which isn't returned as one, when
+// its value is one of its type.
 func (manager *Manager) Reload(ctx context.Context) (_ *schema.SettingReload, err error) {
 	// Otel span
 	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "Reload")
@@ -169,7 +168,7 @@ func (manager *Manager) Reload(ctx context.Context) (_ *schema.SettingReload, er
 			return err
 		}
 		for _, e := range errs {
-			if !slices.ContainsFunc(pending, func(name string) bool { return strings.EqualFold(name, e.Name) }) {
+			if !e.RestartOnly() {
 				result.Errors = append(result.Errors, e)
 			}
 		}

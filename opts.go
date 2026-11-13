@@ -241,11 +241,21 @@ func (o *opt) encode(skip ...string) []string {
 			continue
 		}
 		if value := o.Values.Get(key); value != "" {
-			parts = append(parts, fmt.Sprintf("%v=%v", key, o.Values.Get(key)))
+			parts = append(parts, key+"="+quoteValue(value))
 		}
 	}
 
 	return parts
+}
+
+// quoteValue quotes a value of a keyword/value connection string, when it
+// has a space, a quote or a backslash, such as a role called Ops Team, with
+// its quotes and backslashes escaped, as libpq and pgx parse it
+func quoteValue(value string) string {
+	if !strings.ContainsAny(value, " \t\n\r\f\v'\\") {
+		return value
+	}
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(value) + "'"
 }
 
 // Encode the options as a connection string

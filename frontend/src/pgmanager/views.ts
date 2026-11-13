@@ -249,13 +249,28 @@ export function connectionBody(conn: Connection): TemplateResult {
 
 // settingValue returns a setting's value, or another of its values, such as
 // its default, with its unit
-function settingValue(setting: Setting, value: string | null | undefined = setting.value): string {
-    return value === null || value === undefined ? '' : setting.unit ? `${value} ${setting.unit}` : value;
+function settingValue(setting: Setting): string {
+    return setting.value === null ? '' : withUnit(setting, setting.value);
+}
+
+// withUnit is one of a setting's values, such as its default, with its unit
+function withUnit(setting: Setting, value: string): string {
+    return setting.unit ? `${value} ${setting.unit}` : value;
+}
+
+// settingDefault is a setting's default, with its unit, which is said to be
+// empty, when it is, such as application_name's, or else undefined, when the
+// setting doesn't have one
+function settingDefault(setting: Setting): string | TemplateResult | undefined {
+    if (setting.default === undefined) {
+        return undefined;
+    }
+    return setting.default === '' ? html`<em>empty</em>` : withUnit(setting, setting.default);
 }
 
 // settingLimits are the limits of an integer or real, with its unit
 function settingLimits(setting: Setting): string | undefined {
-    return setting.min !== undefined && setting.max !== undefined ? `${setting.min} to ${settingValue(setting, setting.max)}` : undefined;
+    return setting.min !== undefined && setting.max !== undefined ? `${setting.min} to ${withUnit(setting, setting.max)}` : undefined;
 }
 
 // settingIcon is a small icon, after a setting's value, which says what it
@@ -305,7 +320,7 @@ export function settingBody(setting: Setting, effect?: string, readOnly?: string
             ['Value', settingValue(setting)],
             ['Set by ALTER SYSTEM', setting.override],
             ['Configuration file', setting.config],
-            ['Default', settingValue(setting, setting.default)],
+            ['Default', settingDefault(setting)],
             ['Source', setting.source],
             ['Type', setting.type],
             ['Limits', settingLimits(setting)],

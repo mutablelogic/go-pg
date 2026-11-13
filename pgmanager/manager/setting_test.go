@@ -120,24 +120,34 @@ func TestSettingPendingRestart(t *testing.T) {
 	mgr, ctx := harness.Begin(t)
 	defer harness.End(t)
 
+	// The reload is signalled, so it's waited for, until max_connections is
+	// pending, or isn't
+	pending := func(want bool) *schema.Setting {
+		t.Helper()
+		var setting *schema.Setting
+		for range 50 {
+			var err error
+			setting, err = mgr.GetSetting(context.Background(), "max_connections")
+			require.NoError(t, err)
+			if setting.PendingRestart == want {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		return setting
+	}
+
 	require.NoError(t, harness.Pool().Exec(ctx, `ALTER SYSTEM SET max_connections = 101`))
 	defer func() {
-		_ = harness.Pool().Exec(context.Background(), `ALTER SYSTEM RESET max_connections`)
-		_ = harness.Pool().Exec(context.Background(), `SELECT pg_reload_conf()`)
+		// It's reset, and reloaded, before the next test, which shares the
+		// server
+		require.NoError(t, harness.Pool().Exec(context.Background(), `ALTER SYSTEM RESET max_connections`))
+		require.NoError(t, harness.Pool().Exec(context.Background(), `SELECT pg_reload_conf()`))
+		assert.False(t, pending(false).PendingRestart)
 	}()
 	require.NoError(t, harness.Pool().Exec(ctx, `SELECT pg_reload_conf()`))
 
-	// The reload is signalled, so it's waited for
-	var setting *schema.Setting
-	for range 50 {
-		var err error
-		setting, err = mgr.GetSetting(ctx, "max_connections")
-		require.NoError(t, err)
-		if setting.PendingRestart {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	setting := pending(true)
 	assert.True(t, setting.PendingRestart)
 	assert.Equal(t, "100", types.Value(setting.Value))
 }

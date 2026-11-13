@@ -56,7 +56,7 @@ func (manager *Manager) ListSettingCategories(ctx context.Context, req schema.Se
 		return nil, err
 	}
 	result.PendingRestart = pending
-	result.Restart = manager.restart
+	result.Restart = len(manager.restart) > 0
 	return &result, nil
 }
 

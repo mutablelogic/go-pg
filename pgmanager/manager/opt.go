@@ -20,7 +20,7 @@ type opts struct {
 	tracer  trace.Tracer
 	metrics metric.Meter
 	cluster string
-	restart bool
+	restart []string
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -57,15 +57,13 @@ func WithMeter(meter metric.Meter) Opt {
 	}
 }
 
-// WithRestart lets the manager restart the server, which it does by
-// signalling its postmaster to shut down, which a supervisor, such as
-// docker-postgres's, starts again. The manager must be able to read the
-// server's postmaster.pid, in its data directory, and signal it, so it runs
-// beside it, as the same user, or root. Without a supervisor, the server
-// isn't started again.
-func WithRestart(restart bool) Opt {
+// WithRestart lets the manager restart the server, with a command, and its
+// arguments, which asks the server's supervisor to restart it, such as
+// s6-svc -r /run/service/postgres. The command is run without a shell. An
+// empty command doesn't let it.
+func WithRestart(command ...string) Opt {
 	return func(o *opts) error {
-		o.restart = restart
+		o.restart = command
 		return nil
 	}
 }

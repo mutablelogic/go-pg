@@ -51,6 +51,14 @@ func (manager *Manager) ListSettingCategories(ctx context.Context, req schema.Se
 	if err := manager.conn.List(ctx, &result, req); err != nil {
 		return nil, err
 	}
+
+	// The settings which wait for a restart, and whether it can be
+	var pending schema.SettingPendingRestart
+	if err := manager.conn.List(ctx, &pending, pending); err != nil {
+		return nil, err
+	}
+	result.PendingRestart = pending
+	result.Restart = manager.restart
 	return &result, nil
 }
 

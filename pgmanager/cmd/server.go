@@ -28,8 +28,12 @@ type ServerCommands struct {
 type RunServer struct {
 	cmd.RunServer
 	pgpkg.PostgresFlags `embed:"" prefix:"pg."`
-	Broadcaster         broadcastercmd.Flags `embed:"" prefix:"broadcaster."`
-	Frontend            frontend.Flags       `embed:""`
+
+	// Restart lets pgmanager restart the server, beside which it runs,
+	// under a supervisor, which starts it again
+	Restart     bool                 `name:"pg.restart" env:"PG_RESTART" help:"Let pgmanager restart PostgreSQL, which it must run beside, as the same user, or root, with a supervisor which starts it again"`
+	Broadcaster broadcastercmd.Flags `embed:"" prefix:"broadcaster."`
+	Frontend    frontend.Flags       `embed:""`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -87,6 +91,7 @@ func (runner *RunServer) WithManager(ctx server.Cmd, conn pg.PoolConn, fn func(*
 	opts := []manager.Opt{
 		manager.WithMeter(ctx.Meter()),
 		manager.WithTracer(ctx.Tracer()),
+		manager.WithRestart(runner.Restart),
 	}
 	pgmanager, err := manager.New(conn, opts...)
 	if err != nil {

@@ -153,10 +153,14 @@ type SettingList struct {
 // settings' categories
 type SettingCategoryListRequest struct{}
 
-// SettingCategoryList contains the top levels of the settings' categories
+// SettingCategoryList contains the top levels of the settings' categories,
+// with the settings which wait for the server to restart, and whether it
+// can be restarted
 type SettingCategoryList struct {
-	Count uint64            `json:"count"`
-	Body  []SettingCategory `json:"body,omitempty"`
+	Count          uint64            `json:"count"`
+	Body           []SettingCategory `json:"body,omitempty"`
+	PendingRestart []string          `json:"pending_restart,omitempty"`
+	Restart        bool              `json:"restart,omitempty"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -18,6 +18,7 @@ import '@carbon/web-components/es/components/dropdown/index.js';
 import '@carbon/web-components/es/components/icon-button/index.js';
 import '@carbon/web-components/es/components/link/index.js';
 import '@carbon/web-components/es/components/tag/tag.js';
+import '@carbon/web-components/es/components/notification/index.js';
 
 // formatBytes returns a size, such as 7.4 MB
 export function formatBytes(bytes?: number): string {
@@ -310,6 +311,23 @@ export const settingColumns = (top?: string): Column<Setting>[] => [
 // settingBody is a setting in the panel, with its values in the
 // configuration files, and when a change takes effect, or why it can't be
 // changed
+// restartBanner says which settings wait for the server to restart, with a
+// button which restarts it, when pgmanager can, or else nothing, when none
+// wait
+export function restartBanner(pending: readonly string[], canRestart: boolean, onRestart: () => void): TemplateResult {
+    if (!pending.length) {
+        return html``;
+    }
+    const title = pending.length === 1 ? '1 setting waits for the server to restart' : `${pending.length} settings wait for the server to restart`;
+    return html`
+        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem">
+            <cds-inline-notification kind="warning" low-contrast hide-close-button style="flex: 1; max-width: none; margin: 0"
+                title=${title} subtitle=${`${pending.join(', ')}${canRestart ? '' : '. Restart PostgreSQL to apply them.'}`}></cds-inline-notification>
+            ${canRestart ? html`<cds-button kind="danger" size="md" @click=${onRestart}>Restart</cds-button>` : ''}
+        </div>
+    `;
+}
+
 export function settingBody(setting: Setting, effect?: string, readOnly?: string): TemplateResult {
     return html`
         ${setting.description ? html`<p class="description">${setting.description}</p>` : ''}

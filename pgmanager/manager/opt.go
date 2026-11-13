@@ -20,6 +20,7 @@ type opts struct {
 	tracer  trace.Tracer
 	metrics metric.Meter
 	cluster string
+	restart bool
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -52,6 +53,19 @@ func WithTracer(tracer trace.Tracer) Opt {
 func WithMeter(meter metric.Meter) Opt {
 	return func(o *opts) error {
 		o.metrics = meter
+		return nil
+	}
+}
+
+// WithRestart lets the manager restart the server, which it does by
+// signalling its postmaster to shut down, which a supervisor, such as
+// docker-postgres's, starts again. The manager must be able to read the
+// server's postmaster.pid, in its data directory, and signal it, so it runs
+// beside it, as the same user, or root. Without a supervisor, the server
+// isn't started again.
+func WithRestart(restart bool) Opt {
+	return func(o *opts) error {
+		o.restart = restart
 		return nil
 	}
 }

@@ -70,3 +70,14 @@ func (c *Client) Reload(ctx context.Context) (*schema.SettingReload, error) {
 	// Return the responses
 	return types.Ptr(response), nil
 }
+
+// Restart restarts the server, and returns, once it's started again
+func (c *Client) Restart(ctx context.Context) (*schema.Restart, error) {
+	var response schema.Restart
+	if err := c.DoWithContext(ctx, client.MethodPost, &response, client.OptPath("setting", "restart")); err != nil {
+		return nil, err
+	}
+
+	// Return the responses
+	return types.Ptr(response), nil
+}

@@ -1,7 +1,8 @@
 package test
 
 import (
-	"fmt"
+	"net"
+	"net/url"
 	"strings"
 
 	// Packages
@@ -137,8 +138,17 @@ func (o *opts) appendWaitStrategy(strategy wait.Strategy) {
 	}
 }
 
-// postgresURL builds a Postgres connection URL from the given parameters.
+// postgresURL builds a Postgres connection URL from the given parameters,
+// escaped, so a user, password or database can have any characters, such
+// as a space
 func postgresURL(user, password, database, host, port string) string {
 	port, _, _ = strings.Cut(port, "/")
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", user, password, host, port, database)
+	u := url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(user, password),
+		Host:     net.JoinHostPort(host, port),
+		Path:     "/" + database,
+		RawQuery: "sslmode=disable",
+	}
+	return u.String()
 }

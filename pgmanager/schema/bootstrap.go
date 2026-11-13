@@ -84,6 +84,10 @@ func Bootstrap(ctx context.Context, conn pg.PoolConn) (*BootstrapResult, error) 
 		_ = conn.Exec(ctx, fmt.Sprintf(predefinedRoleComment, types.Quote(role.name), types.DoubleQuote(role.name), types.Quote(role.description)))
 	}
 
+	// Describe the superuser which created the server, postgres, unless it's
+	// called otherwise, which is the role whose OID is 10, the same way
+	_ = conn.Exec(ctx, fmt.Sprintf(bootstrapRoleComment, types.Quote(bootstrapRoleDescription)))
+
 	return result, nil
 }
 
@@ -116,6 +120,18 @@ const (
 			COMMENT ON ROLE %s IS %s;
 		END IF;
 	END $$`
+
+	// bootstrapRoleComment describes the superuser which created the server,
+	// whose OID is always 10, whatever its name, unless it has a description
+	bootstrapRoleComment = `DO $$ DECLARE r name; BEGIN
+		SELECT rolname INTO r FROM pg_catalog.pg_roles WHERE oid = 10 AND shobj_description(oid, 'pg_authid') IS NULL;
+		IF r IS NOT NULL THEN
+			EXECUTE format('COMMENT ON ROLE %%I IS %%L', r, %s);
+		END IF;
+	END $$`
+
+	// bootstrapRoleDescription is the superuser's description
+	bootstrapRoleDescription = "Administrator"
 
 	dblinkCreateExtension         = `CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA ` + defaultSchema
 	statStatementsCreateExtension = `CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA ` + defaultSchema

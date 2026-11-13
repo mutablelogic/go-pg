@@ -77,4 +77,9 @@ func TestPredefinedRoleDescriptions(t *testing.T) {
 	for _, role := range list.Body {
 		assert.NotEmpty(t, types.Value(role.Comment), role.Name)
 	}
+
+	// The superuser which created the server is the administrator
+	role, err = mgr.GetRole(ctx, "postgres")
+	require.NoError(t, err)
+	assert.Equal(t, "Administrator", types.Value(role.Comment))
 }

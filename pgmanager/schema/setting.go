@@ -5,6 +5,7 @@ import (
 	// Packages
 	"fmt"
 	"net/url"
+	"strings"
 
 	pg "github.com/mutablelogic/go-pg"
 	tui "github.com/mutablelogic/go-server/pkg/tui"
@@ -17,8 +18,14 @@ import (
 // SettingName is a setting name identifier
 type SettingName string
 
-// CategoryName is a setting category identifier
-type CategoryName string
+// SettingCategory is a top level of the settings' categories, which are two
+// levels, such as "Client Connection Defaults / Locale and Formatting", with
+// how many settings it has, and how many of them are changed
+type SettingCategory struct {
+	Name    string `json:"name"`
+	Count   uint64 `json:"count"`
+	Changed uint64 `json:"changed"`
+}
 
 // SettingMeta represents the mutable parts of a setting
 type SettingMeta struct {
@@ -44,7 +51,11 @@ type Setting struct {
 // SettingListRequest is used to retrieve server settings
 type SettingListRequest struct {
 	pg.OffsetLimit
-	Category *string `json:"category,omitempty" help:"Filter by category"`
+
+	// Category is a category, such as "Client Connection Defaults / Locale and
+	// Formatting", or a top level of them, such as "Client Connection
+	// Defaults", which is every category under it
+	Category *string `json:"category,omitempty" help:"Filter by category, or a top level of them"`
 
 	// Sort is what the settings are sorted by, and Order its direction, asc or
 	// desc, which is asc when it's empty. Empty values are last, either way.
@@ -59,13 +70,14 @@ type SettingList struct {
 	Body  []Setting `json:"body,omitempty"`
 }
 
-// SettingCategoryListRequest is used to retrieve distinct setting categories
+// SettingCategoryListRequest is used to retrieve the top levels of the
+// settings' categories
 type SettingCategoryListRequest struct{}
 
-// SettingCategoryList contains the list of setting categories
+// SettingCategoryList contains the top levels of the settings' categories
 type SettingCategoryList struct {
-	Count uint64   `json:"count"`
-	Body  []string `json:"body,omitempty"`
+	Count uint64            `json:"count"`
+	Body  []SettingCategory `json:"body,omitempty"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -121,18 +133,22 @@ func (r Setting) Cell(col int) tui.CellText {
 	}
 }
 
-func (r CategoryName) Header() []string {
-	return []string{"Category"}
+func (r SettingCategory) Header() []string {
+	return []string{"Category", "Settings", "Changed"}
 }
 
-func (r CategoryName) Width(col int) int {
+func (r SettingCategory) Width(col int) int {
 	return 0
 }
 
-func (r CategoryName) Cell(col int) tui.CellText {
+func (r SettingCategory) Cell(col int) tui.CellText {
 	switch col {
 	case 0:
-		return string(r)
+		return r.Name
+	case 1:
+		return fmt.Sprint(r.Count)
+	case 2:
+		return fmt.Sprint(r.Changed)
 	default:
 		return ""
 	}
@@ -187,8 +203,8 @@ func (r *SettingListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 	// Filter by category
 	if r.Category != nil {
-		bind.Set("category", *r.Category)
-		bind.Set("where", `WHERE category = @category`)
+		bind.Set("category", strings.TrimSpace(*r.Category))
+		bind.Set("where", `WHERE ("category" = @category OR starts_with("category", @category || ' / '))`)
 	}
 
 	// Bind offset and limit
@@ -268,8 +284,8 @@ func (l *SettingList) ScanCount(row pg.Row) error {
 }
 
 func (l *SettingCategoryList) Scan(row pg.Row) error {
-	var category string
-	if err := row.Scan(&category); err != nil {
+	var category SettingCategory
+	if err := row.Scan(&category.Name, &category.Count, &category.Changed); err != nil {
 		return err
 	}
 	l.Body = append(l.Body, category)
@@ -283,6 +299,11 @@ func (l *SettingCategoryList) ScanCount(row pg.Row) error {
 ///////////////////////////////////////////////////////////////////////////////
 // SQL
 
+// settingChanged is true when a setting is set for the server, such as in
+// its configuration file, or by ALTER SYSTEM, rather than its default, or
+// the connection's
+const settingChanged = `source NOT IN ('default', 'override', 'client', 'session')`
+
 const (
 	settingSelect = `
 		SELECT
@@ -293,7 +314,7 @@ const (
 			context AS "context",
 			COALESCE(short_desc, '') AS "description",
 			COALESCE(extra_desc, '') AS "extra_desc",
-			source NOT IN ('default', 'override', 'client', 'session') AS "changed"
+			` + settingChanged + ` AS "changed"
 		FROM
 			pg_catalog.pg_settings
 	`
@@ -301,5 +322,16 @@ const (
 	settingGet          = settingSelect + ` WHERE name = ${'name'}`
 	settingUpdate       = `ALTER SYSTEM SET ${"name"} = ${'value'}`
 	settingReset        = `ALTER SYSTEM RESET ${"name"}`
-	settingCategoryList = `SELECT DISTINCT category FROM pg_catalog.pg_settings ORDER BY category`
+	settingCategoryList = `
+		SELECT
+			split_part(category, ' / ', 1) AS "name",
+			COUNT(*) AS "count",
+			COUNT(*) FILTER (WHERE ` + settingChanged + `) AS "changed"
+		FROM
+			pg_catalog.pg_settings
+		GROUP BY
+			1
+		ORDER BY
+			1
+	`
 )

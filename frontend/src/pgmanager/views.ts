@@ -49,7 +49,18 @@ export function roleName(name?: string) {
     if (!name) {
         return '';
     }
-    return html`<span style="display: inline-flex; align-items: center; gap: 0.25rem">${iconLoader(UserIcon, { width: '12', height: '12', 'aria-hidden': 'true', style: 'flex: none; fill: currentColor' })}${name}</span>`;
+    return html`<span style="display: inline-flex; align-items: center; gap: 0.25rem">${iconLoader(UserIcon, { width: '12', height: '12', 'aria-hidden': 'true', style: 'flex: none; fill: currentColor' })}${name}${name === currentRole ? you : ''}</span>`;
+}
+
+// you is the badge of what's pgmanager's own: the database it's connected
+// to, the role it runs as, and its connection, which can't be deleted
+export const you = html`<cds-tag size="sm" type="blue" title="pgmanager's own" style="margin: 0 0 0 0.25rem">you</cds-tag>`;
+
+// currentRole is the role pgmanager runs as, which roleName badges, once
+// the roles are loaded
+let currentRole: string | undefined;
+export function setCurrentRole(name?: string) {
+    currentRole = name;
 }
 
 // ownerBadge is a tile's badge of its owner, with a person, which says it's
@@ -226,7 +237,7 @@ function tag(text?: string, type = 'gray') {
 const stateColours: Record<string, string> = { active: 'green', idle: 'gray', 'idle in transaction': 'warm-gray', 'idle in transaction (aborted)': 'red' };
 
 export const connectionColumns: Column<Connection>[] = [
-    { header: 'PID', cell: (conn) => conn.pid },
+    { header: 'PID', cell: (conn) => html`${conn.pid}${conn.current ? you : ''}` },
     { header: 'Database', cell: (conn) => conn.database, sort: 'database', sortFirst: 'ascending' },
     { header: 'Role', cell: (conn) => roleName(conn.role), sort: 'role', sortFirst: 'ascending' },
     { header: 'Application', cell: (conn) => conn.application ?? '', sort: 'application', sortFirst: 'ascending' },

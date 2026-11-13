@@ -20,6 +20,10 @@ type Database struct {
 	Oid uint32 `json:"oid"`
 	DatabaseMeta
 	Size uint64 `json:"bytes,omitempty" help:"Size of database in bytes"`
+
+	// Current is true for the database pgmanager is connected to, which
+	// can't be deleted
+	Current bool `json:"current,omitempty" help:"The database pgmanager is connected to"`
 }
 
 type DatabaseMeta struct {
@@ -229,7 +233,7 @@ func (d DatabaseName) Update(bind *pg.Bind) error {
 func (d *Database) Scan(row pg.Row) error {
 	var priv []string
 	d.Acl = ACLList{}
-	if err := row.Scan(&d.Oid, &d.Name, &d.Owner, &priv, &d.Size, &d.Comment); err != nil {
+	if err := row.Scan(&d.Oid, &d.Name, &d.Owner, &priv, &d.Size, &d.Comment, &d.Current); err != nil {
 		return err
 	}
 	for _, v := range priv {
@@ -327,7 +331,7 @@ func (d DatabaseMeta) with(insert bool) string {
 const (
 	databaseSelect = `
 		WITH s AS (SELECT
-			D.oid AS "oid", D.datname AS "name", R.rolname AS "owner", COALESCE(D.datacl, acldefault('d', D.datdba)) AS "acl", pg_database_size(D.oid) AS "size", shobj_description(D.oid, 'pg_database') AS "comment"
+			D.oid AS "oid", D.datname AS "name", R.rolname AS "owner", COALESCE(D.datacl, acldefault('d', D.datdba)) AS "acl", pg_database_size(D.oid) AS "size", shobj_description(D.oid, 'pg_database') AS "comment", D.datname = current_database() AS "current"
 		FROM
 			${"schema"}."pg_database" D
 		JOIN

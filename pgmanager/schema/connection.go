@@ -28,6 +28,10 @@ type Connection struct {
 	QueryStart  time.Time `json:"query_start,omitempty" help:"Query start"`
 	Query       string    `json:"query,omitempty" help:"Query"`
 	State       string    `json:"state,omitempty" help:"State"`
+
+	// Current is true for the connection which reads it, which can't be
+	// ended, or cancelled
+	Current bool `json:"current,omitempty" help:"The connection which reads it"`
 }
 
 type ConnectionListRequest struct {
@@ -238,7 +242,7 @@ func (c *Connection) Scan(row pg.Row) error {
 	var connStart, queryStart *time.Time
 	// A connection whose role is dropped, while it's connected, has none
 	var role *string
-	if err := row.Scan(&c.Pid, &c.Database, &role, &c.Application, &c.ClientAddr, &c.ClientPort, &connStart, &queryStart, &c.Query, &c.State, &result); err != nil {
+	if err := row.Scan(&c.Pid, &c.Database, &role, &c.Application, &c.ClientAddr, &c.ClientPort, &connStart, &queryStart, &c.Query, &c.State, &c.Current, &result); err != nil {
 		return err
 	}
 	c.Role = types.Value(role)
@@ -277,7 +281,8 @@ const (
 				C.backend_start AS "conn_start",
 				C.query_start AS "query_start",
 				C.query AS "query",
-				C.state AS "state"
+				C.state AS "state",
+				C.pid = pg_backend_pid() AS "current"
 			FROM
 				${"schema"}."pg_stat_activity" C
 			WHERE

@@ -76,9 +76,11 @@ func (manager *Manager) DeleteConnection(ctx context.Context, pid uint64) (_ *sc
 		return nil, pg.ErrBadParameter.With("pid is zero")
 	}
 
-	// Delete the connection
+	// Delete the connection, unless it's this one
 	var connection schema.Connection
-	if err := manager.conn.Delete(ctx, &connection, schema.ConnectionPid(pid)); err != nil {
+	if err := notCurrent(ctx, manager.conn, pid, func(conn pg.Conn) error {
+		return conn.Delete(ctx, &connection, schema.ConnectionPid(pid))
+	}); err != nil {
 		return nil, err
 	}
 
@@ -87,7 +89,7 @@ func (manager *Manager) DeleteConnection(ctx context.Context, pid uint64) (_ *sc
 }
 
 // CancelConnection cancels the query of a connection, by its pid, which
-// stays connected, and returns it. It's not found when it's this one.
+// stays connected, and returns it. It can't be this one.
 func (manager *Manager) CancelConnection(ctx context.Context, pid uint64) (_ *schema.Connection, err error) {
 	// Otel span
 	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "CancelConnection",
@@ -100,12 +102,30 @@ func (manager *Manager) CancelConnection(ctx context.Context, pid uint64) (_ *sc
 		return nil, pg.ErrBadParameter.With("pid is zero")
 	}
 
-	// Cancel its query
+	// Cancel its query, unless it's this one
 	var connection schema.Connection
-	if err := manager.conn.Get(ctx, &connection, schema.ConnectionCancel(pid)); err != nil {
+	if err := notCurrent(ctx, manager.conn, pid, func(conn pg.Conn) error {
+		return conn.Get(ctx, &connection, schema.ConnectionCancel(pid))
+	}); err != nil {
 		return nil, err
 	}
 
 	// Return success
 	return &connection, nil
+}
+
+// notCurrent calls the function, which ends, or cancels, a connection, by
+// its pid, unless it's the connection which does so, which is a conflict.
+// They're in a transaction, which keeps the one connection, as which is
+// the current one is the connection's own.
+func notCurrent(ctx context.Context, conn pg.PoolConn, pid uint64, fn func(pg.Conn) error) error {
+	return conn.Tx(ctx, func(conn pg.Conn) error {
+		var connection schema.Connection
+		if err := conn.Get(ctx, &connection, schema.ConnectionPid(pid)); err != nil {
+			return err
+		} else if connection.Current {
+			return pg.ErrConflict.Withf("connection %d is pgmanager's own, so it can't be ended, or cancelled", pid)
+		}
+		return fn(conn)
+	})
 }

@@ -130,6 +130,8 @@ func (manager *Manager) DeleteDatabase(ctx context.Context, name string, force b
 	var database schema.Database
 	if err := manager.conn.Get(ctx, &database, schema.DatabaseName(name)); err != nil {
 		return nil, err
+	} else if database.Current {
+		return nil, pg.ErrConflict.Withf("pgmanager is connected to database %q, so it can't be deleted", name)
 	} else if err := manager.conn.With("force", force).Delete(ctx, nil, schema.DatabaseName(name)); err != nil {
 		return nil, err
 	}

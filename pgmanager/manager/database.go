@@ -175,8 +175,12 @@ func (manager *Manager) UpdateDatabase(ctx context.Context, name string, meta sc
 			return err
 		}
 
-		// Update the name if it's different
+		// Update the name if it's different, unless pgmanager is connected
+		// to it, which PostgreSQL refuses
 		if meta.Name != "" && name != meta.Name {
+			if database.Current {
+				return pg.ErrConflict.Withf("pgmanager is connected to database %q, so it can't be renamed", name)
+			}
 			if err := conn.Update(ctx, nil, schema.DatabaseName(meta.Name), schema.DatabaseName(name)); err != nil {
 				return err
 			}

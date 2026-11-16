@@ -53,6 +53,15 @@ func TestCurrentDatabaseAndRole(t *testing.T) {
 	_, err = mgr.DeleteDatabase(ctx, current[0], true)
 	assert.ErrorIs(t, err, pg.ErrConflict)
 
+	// Nor renamed, though its description can change
+	_, err = mgr.UpdateDatabase(ctx, current[0], schema.DatabaseMeta{Name: current[0] + "_renamed"})
+	assert.ErrorIs(t, err, pg.ErrConflict)
+	db, err := mgr.UpdateDatabase(ctx, current[0], schema.DatabaseMeta{Comment: types.Ptr("Renamed? No")})
+	require.NoError(t, err)
+	assert.Equal(t, current[0], db.Name)
+	assert.Equal(t, "Renamed? No", types.Value(db.Comment))
+	_, _ = mgr.UpdateDatabase(ctx, current[0], schema.DatabaseMeta{Comment: types.Ptr("")})
+
 	roles, err := mgr.ListRoles(ctx, schema.RoleListRequest{})
 	require.NoError(t, err)
 	current = nil

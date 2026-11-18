@@ -84,8 +84,7 @@ func (bind *Bind) Copy(pairs ...any) *Bind {
 
 // Return a new bind object with the given database link
 func (bind *Bind) withRemote(database string) *Bind {
-	varsCopy := make(pgx.NamedArgs, len(bind.vars))
-	maps.Copy(varsCopy, bind.vars)
+	varsCopy := bind.snapshot()
 
 	// Return the copied Bind object
 	return &Bind{vars: varsCopy, dblink: "dbname=" + types.Quote(database)}
@@ -98,8 +97,7 @@ func (bind *Bind) withQueries(queries ...*Queries) *Bind {
 	}
 
 	// Make a copy of the bind vars
-	varsCopy := make(pgx.NamedArgs, len(bind.vars))
-	maps.Copy(varsCopy, bind.vars)
+	varsCopy := bind.snapshot()
 
 	// Iterate through queries
 	for _, q := range queries {
@@ -116,11 +114,11 @@ func (bind *Bind) withQueries(queries ...*Queries) *Bind {
 // STRINGIFY
 
 func (bind *Bind) MarshalJSON() ([]byte, error) {
-	return json.Marshal(bind.vars)
+	return json.Marshal(bind.snapshot())
 }
 
 func (bind *Bind) String() string {
-	data, err := json.MarshalIndent(bind.vars, "", "  ")
+	data, err := json.MarshalIndent(bind.snapshot(), "", "  ")
 	if err != nil {
 		return err.Error()
 	} else {
@@ -212,19 +210,21 @@ func (bind *Bind) Append(key string, value any) bool {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - QUERY
 
-// Query looks up a named query, sets the span name for OpenTelemetry tracing,
-// and returns the resolved SQL string. The name should match a query key
-// that was loaded via withQueries (e.g., "pgqueue.get").
+// Query looks up a named query, which was loaded via WithQueries, such as
+// "pgqueue.get", sets the span name for OpenTelemetry tracing, and returns
+// its SQL, whose ${key} substitutions are replaced once, when it's executed,
+// so a value which has a $ in it, such as a path, isn't replaced again. It
+// returns an empty string when there's no query of the name.
 func (bind *Bind) Query(name string) string {
 	bind.Set(TraceSpanNameArg, name)
-	return bind.Replace("${" + name + "}")
+	sql, _ := bind.Get(name).(string)
+	return sql
 }
 
 // Queue a query - for bulk operations
 func (bind *Bind) queuerow(batch *pgx.Batch, query string, reader Reader) {
-	bind.RLock()
-	defer bind.RUnlock()
-	queuedquery := batch.Queue(bind.Replace(query), bind.vars)
+	vars := bind.snapshot()
+	queuedquery := batch.Queue(replace(query, vars), vars)
 	queuedquery.QueryRow(func(row pgx.Row) error {
 		return reader.Scan(row)
 	})
@@ -234,66 +234,63 @@ func (bind *Bind) queuerow(batch *pgx.Batch, query string, reader Reader) {
 // PRIVATE METHODS - QUERY EXECUTION
 
 func (bind *Bind) queryRow(ctx context.Context, conn pgx.Tx, query string) pgx.Row {
-	bind.RLock()
-	defer bind.RUnlock()
+	vars := bind.snapshot()
 
 	// dblink version
 	if bind.dblink != "" {
 		// 'as' is used to define the column names
 		var def string
-		if bind.Has("as") {
-			def = ` AS ` + bind.Get("as").(string)
+		if as, ok := vars["as"].(string); ok {
+			def = ` AS ` + as
 		}
 		// TODO: Attempt to unroll the @parameters in the query
 		return conn.QueryRow(ctx, replace(dblinkSelect, pgx.NamedArgs{
 			"conn":  bind.dblink,
-			"query": bind.Replace(query),
+			"query": replace(query, vars),
 			"as":    def,
 		}))
 	}
 
 	// normal version
-	return conn.QueryRow(ctx, bind.Replace(query), bind.vars)
+	return conn.QueryRow(ctx, replace(query, vars), vars)
 }
 
 func (bind *Bind) query(ctx context.Context, conn pgx.Tx, query string) (pgx.Rows, error) {
-	bind.RLock()
-	defer bind.RUnlock()
+	vars := bind.snapshot()
 
 	// dblink version
 	if bind.dblink != "" {
 		// 'as' is used to define the column names
 		var def string
-		if bind.Has("as") {
-			def = ` AS ` + bind.Get("as").(string)
+		if as, ok := vars["as"].(string); ok {
+			def = ` AS ` + as
 		}
 		return conn.Query(ctx, replace(dblinkSelect, pgx.NamedArgs{
 			"conn":  bind.dblink,
-			"query": bind.Replace(query),
+			"query": replace(query, vars),
 			"as":    def,
 		}))
 	}
 
 	// normal version
-	return conn.Query(ctx, bind.Replace(query), bind.vars)
+	return conn.Query(ctx, replace(query, vars), vars)
 }
 
 func (bind *Bind) exec(ctx context.Context, conn pgx.Tx, query string) error {
-	bind.RLock()
-	defer bind.RUnlock()
+	vars := bind.snapshot()
 
 	// dblink version
 	if bind.dblink != "" {
 		// TODO: Attempt to unroll the parameters
 		_, err := conn.Exec(ctx, replace(dblinkExec, pgx.NamedArgs{
 			"conn":  bind.dblink,
-			"query": bind.Replace(query),
+			"query": replace(query, vars),
 		}))
 		return err
 	}
 
 	// normal version
-	_, err := conn.Exec(ctx, bind.Replace(query), bind.vars)
+	_, err := conn.Exec(ctx, replace(query, vars), vars)
 	return err
 }
 
@@ -307,8 +304,16 @@ func (bind *Bind) exec(ctx context.Context, conn pgx.Tx, query string) error {
 //   - $1 => $1
 //   - $$ => $$
 func (bind *Bind) Replace(query string) string {
-	// Perform the replacement
-	return replace(query, bind.vars)
+	return replace(query, bind.snapshot())
+}
+
+// snapshot returns a copy of the bind vars, so they're read, formatted,
+// marshaled or passed to a query without the lock held, while they may be
+// set
+func (bind *Bind) snapshot() pgx.NamedArgs {
+	bind.RLock()
+	defer bind.RUnlock()
+	return maps.Clone(bind.vars)
 }
 
 func replace(query string, vars pgx.NamedArgs) string {

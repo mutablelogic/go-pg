@@ -1,30 +1,79 @@
 # go-pg
 
-Postgresql Support for Go, built on top of [pgx](https://github.com/jackc/pgx). This module provides:
-
-* Binding SQL statements to named arguments;
-* Support for mapping go structures to SQL tables, and vice versa;
-* Easy semantics for Insert, Delete, Update, Get and List operations;
-* Bulk insert operations and transactions;
-* Support for queries stored in external files with named parameters to improve separation of concerns;
-* Support for tracing and observability;
-* [PostgreSQL Manager](pgmanager/README.md) for server administration with REST API, an optional frontend and prometheus metrics;
-* [Task Queue](pgqueue/README.md) for task queue (and interval task) processing using PostgreSQL as a backend;
-* [Testing utilities](pkg/test/README.md) for integration testing with testcontainers.
+PostgreSQL for Go, whose operations map directly onto API calls. You write the SQL; the library binds it and scans the results into your types. Built on [pgx](https://github.com/jackc/pgx), with the same semantics as [go-sqlite](https://github.com/mutablelogic/go-sqlite) for SQLite.
 
 Documentation: <https://pkg.go.dev/github.com/mutablelogic/go-pg>
 
-## Motivation
+## Operations map onto API calls
 
-The package provides a simple way to interact with a Postgresql database from Go, to reduce
-the amount of boilerplate code required to interact with the database. The supported operations
-align with API calls _POST_, _PUT_, _GET_, _DELETE_ and _PATCH_.
+Each operation is an API call. A request type selects the rows, and a response type reads them:
 
-* **Insert** - Insert a row into a table, and return the inserted row (_POST_ or _PUT_);
-* **Delete** - Delete one or more rows from a table, and optionally return the deleted rows (_DELETE_);
-* **Update** - Update one or more rows in a table, and optionally return the updated rows (_PATCH_);
-* **Get** - Get a single row from a table (_GET_);
-* **List** - Get a list of rows from a table (_GET_).
+* **Insert** a row, and return it (_POST_ or _PUT_);
+* **Update** rows, and optionally return them (_PATCH_);
+* **Delete** rows, and optionally return them (_DELETE_);
+* **Get** a row (_GET_);
+* **List** rows, and count them (_GET_).
+
+So a handler is one call, and `pg.HTTPError` turns its errors into HTTP errors, such as not found or conflict:
+
+```go
+// GET /objects/{id}
+func (h *Handler) Get(w http.ResponseWriter, r *http.Request, id int) error {
+  var obj MyObject
+  if err := h.conn.Get(r.Context(), &obj, MyObject{Id: id}); err != nil {
+    return httpresponse.Error(w, pg.HTTPError(err))
+  }
+  return httpresponse.JSON(w, http.StatusOK, 2, obj)
+}
+
+// POST /objects
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request) error {
+  var req MyObject
+  if err := httprequest.Read(r, &req); err != nil {
+    return httpresponse.Error(w, err)
+  }
+  var obj MyObject
+  if err := h.conn.Insert(r.Context(), &obj, req); err != nil {
+    return httpresponse.Error(w, pg.HTTPError(err))
+  }
+  return httpresponse.JSON(w, http.StatusCreated, 2, obj)
+}
+```
+
+A handler for go-sqlite, against SQLite, has the same shape, with `sqlite.HTTPError`.
+
+## SQL first, not an ORM
+
+There's no query builder, no generated SQL, and no mapping of struct tags to tables. Your types return the SQL for each operation, and bind its arguments:
+
+```go
+func (obj MyObject) Select(bind *pg.Bind, op pg.Op) (string, error) {
+  bind.Set("id", obj.Id)
+  switch op {
+  case pg.Get:
+    return `SELECT id, name FROM mytable WHERE id = @id`, nil
+  case pg.Delete:
+    return `DELETE FROM mytable WHERE id = @id RETURNING id, name`, nil
+  }
+  return "", pg.ErrNotImplemented
+}
+```
+
+* **What runs is what you read.** Queries can be reviewed as they are, and tested in `psql`, once their `@key` arguments and `${key}` substitutions are replaced with values.
+* **All of PostgreSQL:** CTEs, window functions, JSONB, `RETURNING`, `ON CONFLICT`, `LISTEN` and `NOTIFY`, with nothing to wait for or work around.
+* **Queries in files:** keep them in `.sql` files, by name, with `WithQueries`, and `${key}` substitutions for names, such as a schema.
+* **Thin types:** a `Selector` binds and returns SQL, a `Reader` scans a row, and a `Writer` binds values. Nothing else needs to know about the database.
+
+## Features
+
+* **Bulk inserts and transactions.**
+* **Notify and listen,** and changes published to a broadcaster, with [pgbroadcaster](pgbroadcaster).
+* **Tracing and observability.**
+* [PostgreSQL Manager](pgmanager/README.md) for server administration, with a REST API, an optional frontend and Prometheus metrics.
+* [Task Queue](pgqueue/README.md) for tasks, and tasks at intervals, with PostgreSQL as their backend.
+* [Testing utilities](pkg/test/README.md) for integration tests with testcontainers.
+
+## Interfaces
 
 In order to support database operations on go types, those types need to implement one or
 more of the following interfaces:

@@ -18,7 +18,7 @@ So a handler is one call, and `pg.HTTPError` turns its errors into HTTP errors, 
 
 ```go
 // GET /objects/{id}
-func (h *Handler) Get(w http.ResponseWriter, r *http.Request, id int64) error {
+func (h *Handler) Get(w http.ResponseWriter, r *http.Request, id int) error {
   var obj MyObject
   if err := h.conn.Get(r.Context(), &obj, MyObject{Id: id}); err != nil {
     return httpresponse.Error(w, pg.HTTPError(err))
@@ -59,7 +59,7 @@ func (obj MyObject) Select(bind *pg.Bind, op pg.Op) (string, error) {
 }
 ```
 
-* **What runs is what you read.** Queries can be reviewed, and tested in `psql`, as they are.
+* **What runs is what you read.** Queries can be reviewed as they are, and tested in `psql`, once their `@key` arguments and `${key}` substitutions are replaced with values.
 * **All of PostgreSQL:** CTEs, window functions, JSONB, `RETURNING`, `ON CONFLICT`, `LISTEN` and `NOTIFY`, with nothing to wait for or work around.
 * **Queries in files:** keep them in `.sql` files, by name, with `WithQueries`, and `${key}` substitutions for names, such as a schema.
 * **Thin types:** a `Selector` binds and returns SQL, a `Reader` scans a row, and a `Writer` binds values. Nothing else needs to know about the database.

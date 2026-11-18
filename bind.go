@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"os"
 	"strings"
 	"sync"
 
@@ -301,8 +300,10 @@ func (bind *Bind) exec(ctx context.Context, conn pgx.Tx, query string) error {
 //   - ${key} => value
 //   - ${'key'} => 'value'
 //   - ${"key"} => "value"
-//   - $1 => $1
-//   - $$ => $$
+//   - ${1} => $1
+//
+// Anything else is kept as it is, such as $1, $$ and $body$, of a
+// dollar-quoted body, and @key, which are PostgreSQL's, or pgx's.
 func (bind *Bind) Replace(query string) string {
 	return replace(query, bind.snapshot())
 }
@@ -316,37 +317,54 @@ func (bind *Bind) snapshot() pgx.NamedArgs {
 	return maps.Clone(bind.vars)
 }
 
+// replace replaces the ${key} substitutions of the query, and keeps the rest
+// of it, including a $ which isn't one
 func replace(query string, vars pgx.NamedArgs) string {
+	var result strings.Builder
+	for {
+		start := strings.Index(query, "${")
+		if start < 0 {
+			break
+		}
+		end := strings.IndexByte(query[start+2:], '}')
+		if end < 0 {
+			break
+		}
+		result.WriteString(query[:start])
+		result.WriteString(substitute(query[start+2:start+2+end], vars))
+		query = query[start+3+end:]
+	}
+	result.WriteString(query)
+	return result.String()
+}
+
+// substitute returns the value of a ${key} substitution
+func substitute(key string, vars pgx.NamedArgs) string {
 	fetch := func(key string) string {
 		return fmt.Sprint(vars[key])
 	}
-	return os.Expand(query, func(key string) string {
-		if key == "$" { // $$ => $$
-			return "$$"
-		}
-		if types.IsNumeric(key) {
-			return "$" + key // $1 => $1
-		}
-		if types.IsSingleQuoted(key) { // ${'key'} => 'value'
-			// Special case where value is []string and single quote for IN (${key})
-			key := strings.Trim(key, "'")
-			value := vars[key]
-			switch v := value.(type) {
-			case []string:
-				result := make([]string, len(v))
-				for i, s := range v {
-					result[i] = types.Quote(s)
-				}
-				return strings.Join(result, ",")
-			default:
-				return types.Quote(fetch(key))
+	if types.IsNumeric(key) {
+		return "$" + key // ${1} => $1
+	}
+	if types.IsSingleQuoted(key) { // ${'key'} => 'value'
+		// Special case where value is []string and single quote for IN (${key})
+		key := strings.Trim(key, "'")
+		value := vars[key]
+		switch v := value.(type) {
+		case []string:
+			result := make([]string, len(v))
+			for i, s := range v {
+				result[i] = types.Quote(s)
 			}
+			return strings.Join(result, ",")
+		default:
+			return types.Quote(fetch(key))
 		}
-		if types.IsDoubleQuoted(key) { // ${"key"} => "value"
-			return types.DoubleQuote(fetch(strings.Trim(key, "\"")))
-		}
-		return fetch(key) // ${key} => value
-	})
+	}
+	if types.IsDoubleQuoted(key) { // ${"key"} => "value"
+		return types.DoubleQuote(fetch(strings.Trim(key, "\"")))
+	}
+	return fetch(key) // ${key} => value
 }
 
 ///////////////////////////////////////////////////////////////////////////////
